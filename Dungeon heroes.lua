@@ -5675,7 +5675,7 @@ local AutoExecEnabled = true
 local TeleportQueued = false
 
 -- Yahan apni is પૂरी script ka Raw Link (Pastefy/GitHub) dalein:
-local SCRIPT_URL = "https://pastebin.com/raw/1VAwzbWy"
+local SCRIPT_URL = "https://raw.githubusercontent.com/golu321-xd/Dungeon-Heros/refs/heads/main/Dungeon%20heroes.lua"
 
 local queueTeleport = queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
 
