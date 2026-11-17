@@ -3071,6 +3071,1113 @@ Player.CharacterAdded:Connect(function()
     PetLockEnabled = false
 end)
 
+UtilityTab:CreateSection("Ultimate Item Bank Manager")
+do
+    --====================================================
+    -- DUNGEON HEROES | ULTIMATE ITEM BANK MANAGER (FIXED)
+    -- Verified against Live Profile & Items Module Dump:
+    -- * Uses Items:GetItemUid(Item) & Item:GetAttribute("ItemUid")
+    -- * Reads both Instance Folders & Items:GetTableItems("ItemBank")
+    -- * Custom 3-Second Top UI Notification (No Rayfield Notify)
+    -- * Level Range (1-500), Rarities (1-9), Batch & Space Guard
+    --====================================================
+
+    local Players = game:GetService("Players")
+    local RS = game:GetService("ReplicatedStorage")
+    local TweenService = game:GetService("TweenService")
+    local CoreGui = game:GetService("CoreGui")
+
+    local Player = Players.LocalPlayer
+
+    local Items = require(RS.Systems.Items)
+    local ProfileSystem = require(RS.Systems.Profile)
+    local ItemBankRemote = RS:WaitForChild("Remotes"):WaitForChild("ItemBankTransfer")
+
+    -- ==========================================
+    -- CUSTOM 3-SECOND TOP UI NOTIFICATION
+    -- ==========================================
+    local function ShowTopNotification(TitleText, SubText, AccentColor, Duration)
+        task.spawn(function()
+            pcall(function()
+                local ParentGui = (gethui and gethui())
+                    or CoreGui
+                    or Player:WaitForChild("PlayerGui")
+
+                local OldGui = ParentGui:FindFirstChild("DH_BankTopNotify")
+                if OldGui then OldGui:Destroy() end
+
+                local ScreenGui = Instance.new("ScreenGui")
+                ScreenGui.Name = "DH_BankTopNotify"
+                ScreenGui.IgnoreGuiInset = true
+                ScreenGui.DisplayOrder = 999999
+                ScreenGui.Parent = ParentGui
+
+                local Frame = Instance.new("Frame")
+                Frame.Size = UDim2.new(0, 380, 0, 60)
+                Frame.Position = UDim2.new(0.5, -190, 0, -75)
+                Frame.BackgroundColor3 = Color3.fromRGB(18, 20, 26)
+                Frame.BorderSizePixel = 0
+                Frame.Parent = ScreenGui
+
+                local Corner = Instance.new("UICorner")
+                Corner.CornerRadius = UDim.new(0, 10)
+                Corner.Parent = Frame
+
+                local Stroke = Instance.new("UIStroke")
+                Stroke.Color = AccentColor or Color3.fromRGB(0, 210, 130)
+                Stroke.Thickness = 1.8
+                Stroke.Parent = Frame
+
+                local Title = Instance.new("TextLabel")
+                Title.Size = UDim2.new(1, -16, 0, 22)
+                Title.Position = UDim2.new(0, 8, 0, 6)
+                Title.BackgroundTransparency = 1
+                Title.Font = Enum.Font.GothamBold
+                Title.TextSize = 14
+                Title.TextColor3 = AccentColor or Color3.fromRGB(0, 255, 150)
+                Title.TextXAlignment = Enum.TextXAlignment.Center
+                Title.Text = tostring(TitleText)
+                Title.Parent = Frame
+
+                local Sub = Instance.new("TextLabel")
+                Sub.Size = UDim2.new(1, -16, 0, 24)
+                Sub.Position = UDim2.new(0, 8, 0, 29)
+                Sub.BackgroundTransparency = 1
+                Sub.Font = Enum.Font.GothamMedium
+                Sub.TextSize = 12
+                Sub.TextColor3 = Color3.fromRGB(225, 225, 225)
+                Sub.TextXAlignment = Enum.TextXAlignment.Center
+                Sub.Text = tostring(SubText)
+                Sub.Parent = Frame
+
+                TweenService:Create(
+                    Frame,
+                    TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+                    {Position = UDim2.new(0.5, -190, 0, 16)}
+                ):Play()
+
+                task.wait(Duration or 3)
+
+                if Frame and Frame.Parent then
+                    local Out = TweenService:Create(
+                        Frame,
+                        TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+                        {Position = UDim2.new(0.5, -190, 0, -75)}
+                    )
+                    Out:Play()
+                    Out.Completed:Wait()
+                    if ScreenGui then ScreenGui:Destroy() end
+                end
+            end)
+        end)
+    end
+
+    -- ==========================================
+    -- SETTINGS & STATE VARIABLES
+    -- ==========================================
+    local AutoTransferEnabled = false
+    local TransferDirection = "Inventory -> Bank"
+    local TransferMode = "All Matching"
+    local SortPriority = "Highest Level First"
+
+    local ProtectFavorites = true
+    local ProtectGearPresets = true
+    local AutoStopOnLimit = true
+
+    -- Batch & Space Limits
+    local MaxTransferCount = 10 -- 0 = Unlimited
+    local TransferCounter = 0
+    local EnableSpaceGuard = true
+    local MaxInventoryCap = 180
+
+    -- Level Filter (Gear & Skills)
+    local LevelFilterEnabled = false
+    local MinLevelFilter = 1
+    local MaxLevelFilter = 500
+
+    -- Anti-Bounce & Delays
+    local ScanDelay = 0.3
+    local SingleTransferDelay = 0.10
+    local UIDLockDuration = 3.0
+    local RecentlyTransferred = {}
+
+    -- Category Selection
+    local SelectedCategory = "Gear (Weapon + Armor + Necklace)"
+    local SelectedFilter = {kind = "gear_all"}
+
+    -- All 9 Rarities
+    local AllRaritiesEnabled = false
+    local RarityConfig = {
+        [1] = false, -- Common
+        [2] = false, -- Uncommon
+        [3] = false, -- Rare
+        [4] = false, -- Epic
+        [5] = false, -- Legendary
+        [6] = false, -- Mythic
+        [7] = false, -- Primordial
+        [8] = false, -- Unique
+        [9] = false, -- Nightmare
+    }
+
+    -- ==========================================
+    -- DYNAMIC CATEGORY LIST BUILDER
+    -- ==========================================
+    local function IsExcludedCategory(Data)
+        if type(Data) ~= "table" then return true end
+        local Cat = tostring(Data.Category or "")
+        -- Only exclude actual Cosmetic and Currency categories (Armor has Type="Shirt"/"Pants", so never exclude by Type!)
+        if Cat == "Cosmetic" or Cat == "Currency" or Cat == "Title" or Cat == "Emote" or Cat == "" then
+            return true
+        end
+        return false
+    end
+
+    local CategoryOptions = {
+        "All Bankable Items",
+        "Gear (Weapon + Armor + Necklace)",
+        "Weapon Only",
+        "Armor Only",
+        "Necklace Only",
+        "Skill Only",
+        "Gear + Skills",
+        "Pet Only",
+        "Pet Token Only",
+        "Refined Gem Only",
+    }
+
+    local FilterMap = {
+        ["All Bankable Items"] = {kind = "all_bankable"},
+        ["Gear (Weapon + Armor + Necklace)"] = {kind = "gear_all"},
+        ["Weapon Only"] = {kind = "category", category = "Weapon"},
+        ["Armor Only"] = {kind = "category", category = "Armor"},
+        ["Necklace Only"] = {kind = "category", category = "Necklace"},
+        ["Skill Only"] = {kind = "category", category = "Skill"},
+        ["Gear + Skills"] = {kind = "gear_and_skill"},
+        ["Pet Only"] = {kind = "category", category = "Pet"},
+        ["Pet Token Only"] = {kind = "category", category = "Pet Token"},
+        ["Refined Gem Only"] = {kind = "category", category = "Refined Gem"},
+    }
+
+    local KnownCategories = {
+        ["Weapon"] = true,
+        ["Armor"] = true,
+        ["Necklace"] = true,
+        ["Skill"] = true,
+        ["Pet"] = true,
+        ["Pet Token"] = true,
+        ["Refined Gem"] = true,
+    }
+
+    local DynamicCategories = {}
+    local ItemList = Items:GetItemList()
+
+    for _, Data in pairs(ItemList) do
+        if type(Data) == "table" and not IsExcludedCategory(Data) then
+            local Cat = Data.Category
+            if type(Cat) == "string" and not KnownCategories[Cat] then
+                DynamicCategories[Cat] = true
+            end
+        end
+    end
+
+    local SortedDynamic = {}
+    for Cat in pairs(DynamicCategories) do
+        table.insert(SortedDynamic, Cat)
+    end
+    table.sort(SortedDynamic)
+
+    for _, Cat in ipairs(SortedDynamic) do
+        local Label = Cat .. " Only"
+        FilterMap[Label] = {kind = "category", category = Cat}
+        table.insert(CategoryOptions, Label)
+    end
+
+    -- ==========================================
+    -- EXACT UID, INFO, LEVEL & PROTECTION HELPERS
+    -- ==========================================
+
+    local function GetItemUID(Item, FallbackKey)
+        -- 1. Direct Attribute "ItemUid" (Verified from Profile.Inventory dump: [Attrs: ItemUid=3301f9])
+        if typeof(Item) == "Instance" then
+            local AttrUid = Item:GetAttribute("ItemUid")
+                or Item:GetAttribute("Uid")
+                or Item:GetAttribute("UID")
+            if type(AttrUid) == "string" and #AttrUid > 0 then
+                return AttrUid
+            end
+        end
+
+        -- 2. Official Items:GetItemUid(Item)
+        local s1, uid1 = pcall(function()
+            return Items:GetItemUid(Item)
+        end)
+        if s1 and type(uid1) == "string" and #uid1 > 0 then
+            return uid1
+        end
+
+        -- 3. Table Record UID fields (For Items:GetTableItems("ItemBank"))
+        if type(Item) == "table" then
+            local TblUid = Item.ItemUid or Item.uid or Item.UID or Item.Uid
+            if type(TblUid) == "string" and #TblUid > 0 then
+                return TblUid
+            end
+        end
+
+        -- 4. Official Items:ItemRefForRemote(Item)
+        local s2, ref = pcall(function()
+            return Items:ItemRefForRemote(Item)
+        end)
+        if s2 and type(ref) == "string" and #ref > 0 then
+            return ref
+        end
+
+        -- 5. Fallback dictionary key if valid hex/string UID
+        if type(FallbackKey) == "string" and #FallbackKey > 0 then
+            return FallbackKey
+        end
+
+        return nil
+    end
+
+    local function GetItemDetails(Item, FallbackKey)
+        local UID = GetItemUID(Item, FallbackKey)
+        if not UID then return nil end
+
+        local ID = nil
+        pcall(function() ID = Items:GetItemId(Item) end)
+        if not ID then
+            if typeof(Item) == "Instance" then
+                ID = Item.Name
+            elseif type(Item) == "table" then
+                ID = Item.id or Item.Id or Item.ItemId or Item.itemId or Item.Name
+            end
+        end
+        if not ID then return nil end
+
+        local Data = nil
+        pcall(function() Data = Items:GetItemData(ID) end)
+        if type(Data) ~= "table" then return nil end
+
+        -- Rarity: Always prioritize Items:GetRarity(Item) (Fixes Unique Rarity=8 items without Rarity child)
+        local Rarity = nil
+        local sR, rVal = pcall(function() return Items:GetRarity(Item) end)
+        if sR and tonumber(rVal) then
+            Rarity = tonumber(rVal)
+        elseif typeof(Item) == "Instance" and Item:FindFirstChild("Rarity") then
+            Rarity = tonumber(Item.Rarity.Value)
+        elseif type(Item) == "table" and tonumber(Item.rarity or Item.Rarity) then
+            Rarity = tonumber(Item.rarity or Item.Rarity)
+        else
+            Rarity = tonumber(Data.Rarity) or 1
+        end
+
+        -- Level: Prioritize Items:GetLevel(Item)
+        local Level = 1
+        local sL, lVal = pcall(function() return Items:GetLevel(Item) end)
+        if sL and tonumber(lVal) then
+            Level = tonumber(lVal)
+        elseif typeof(Item) == "Instance" and Item:FindFirstChild("Level") then
+            Level = tonumber(Item.Level.Value) or 1
+        elseif type(Item) == "table" and tonumber(Item.level or Item.Level) then
+            Level = tonumber(Item.level or Item.Level)
+        end
+
+        -- Seasonal Level (For Skills)
+        local SeasonalLevel = 1
+        if Data.Category == "Skill" then
+            local sS, sVal = pcall(function() return Items:GetSeasonalLevel(Item) end)
+            if sS and tonumber(sVal) then
+                SeasonalLevel = tonumber(sVal)
+            end
+        end
+
+        return {
+            Item = Item,
+            UID = UID,
+            ID = ID,
+            Data = Data,
+            Rarity = Rarity,
+            Level = Level,
+            SeasonalLevel = SeasonalLevel,
+        }
+    end
+
+    local function IsItemProtected(Item)
+        -- 1. Check Favorite & Sealed
+        if ProtectFavorites then
+            local sFav, isFav = pcall(function()
+                return Items:ItemIsFavorited(Item)
+            end)
+            if sFav and isFav == true then
+                return true, "Favorite"
+            end
+
+            if typeof(Item) == "Instance" then
+                local FavObj = Item:FindFirstChild("Favorite")
+                if FavObj and FavObj.Value == true then
+                    return true, "Favorite"
+                end
+                if Item:FindFirstChild("Sealed") or Item:GetAttribute("Sealed") == true then
+                    return true, "Sealed"
+                end
+            elseif type(Item) == "table" then
+                if Item.favorite == true or Item.Favorite == true or Item.sealed == true or Item.Sealed == true then
+                    return true, "Favorite"
+                end
+            end
+        end
+
+        -- 2. Check Saved Gear Presets (GearPreset1, GearPreset2, GearPreset3 seen in Dump)
+        if ProtectGearPresets then
+            if typeof(Item) == "Instance" then
+                for _, Child in ipairs(Item:GetChildren()) do
+                    if string.find(Child.Name, "^GearPreset") then
+                        return true, "Preset"
+                    end
+                end
+            elseif type(Item) == "table" then
+                if Item.GearPreset1 or Item.GearPreset2 or Item.GearPreset3 or Item.presets then
+                    return true, "Preset"
+                end
+            end
+        end
+
+        return false, nil
+    end
+
+    -- ==========================================
+    -- FILTER MATCHING LOGIC
+    -- ==========================================
+
+    local function IsGearOrSkillCategory(Category)
+        return Category == "Weapon"
+            or Category == "Armor"
+            or Category == "Necklace"
+            or Category == "Skill"
+    end
+
+    local function MatchesCategoryFilter(Data)
+        if IsExcludedCategory(Data) then
+            return false
+        end
+
+        local Cat = Data.Category
+        local Kind = SelectedFilter.kind
+
+        if Kind == "all_bankable" then
+            return true
+        elseif Kind == "gear_all" then
+            return Cat == "Weapon" or Cat == "Armor" or Cat == "Necklace"
+        elseif Kind == "gear_and_skill" then
+            return IsGearOrSkillCategory(Cat)
+        elseif Kind == "category" then
+            return Cat == SelectedFilter.category
+                or Data.SortCategory == SelectedFilter.category
+        end
+
+        return false
+    end
+
+    local function PassesRarityAndLevel(Details)
+        -- 1. Rarity Check
+        if not AllRaritiesEnabled then
+            if RarityConfig[Details.Rarity] ~= true then
+                return false
+            end
+        end
+
+        -- 2. Level Range Check (Applies to Weapon, Armor, Necklace, Skill)
+        if LevelFilterEnabled and IsGearOrSkillCategory(Details.Data.Category) then
+            if Details.Level < MinLevelFilter or Details.Level > MaxLevelFilter then
+                return false
+            end
+        end
+
+        return true
+    end
+
+    -- ==========================================
+    -- STORAGE CONTAINERS (INVENTORY & ITEM BANK)
+    -- ==========================================
+
+    local function GetRawContainerItems(Direction)
+        local RawList = {}
+        local SeenUIDs = {}
+        local Profile = ProfileSystem:GetProfile(Player)
+
+        local function AddRawItem(Item, Key)
+            if not Item then return end
+            -- Ignore nested folders like Profile.Equipped.Right
+            if typeof(Item) == "Instance" and Item:IsA("Folder") then
+                return
+            end
+            local UID = GetItemUID(Item, Key)
+            if UID and not SeenUIDs[UID] then
+                SeenUIDs[UID] = true
+                table.insert(RawList, {Item = Item, Key = Key, UID = UID})
+            end
+        end
+
+        if Direction == "Inventory -> Bank" then
+            -- 1. Profile.Inventory (Weapons, Armor, Skills, Necklaces, Gems, Chests)
+            local InvFolder = (Profile and Profile:FindFirstChild("Inventory"))
+                or Items:GetPlayerItemFolder(Player, "Inventory")
+            if InvFolder then
+                for _, Child in ipairs(InvFolder:GetChildren()) do
+                    AddRawItem(Child, nil)
+                end
+            end
+
+            -- 2. Profile.Pets (Pets & Pet Tokens)
+            local PetsFolder = (Profile and Profile:FindFirstChild("Pets"))
+                or Items:GetPlayerItemFolder(Player, "Pets")
+            if PetsFolder then
+                for _, Child in ipairs(PetsFolder:GetChildren()) do
+                    AddRawItem(Child, nil)
+                end
+            end
+
+            -- 3. Also check Table Records for Inventory/Pets if any exist
+            for _, ContainerName in ipairs({"Inventory", "Pets"}) do
+                local sT, Tbl = pcall(function()
+                    return Items:GetTableItems(Player, ContainerName)
+                end)
+                if sT and type(Tbl) == "table" then
+                    for k, v in pairs(Tbl) do
+                        AddRawItem(v, k)
+                    end
+                end
+            end
+        else
+            -- BANK -> INVENTORY (Checks ALL Bank storage mechanisms)
+            -- 1. Items:GetTableItems(Player, "ItemBank")
+            local s1, BankTable = pcall(function()
+                return Items:GetTableItems(Player, "ItemBank")
+            end)
+            if s1 and type(BankTable) == "table" then
+                for k, v in pairs(BankTable) do
+                    AddRawItem(v, k)
+                end
+            end
+
+            -- 2. Items:GetRecordContainer(Player, "ItemBank")
+            local s2, RecContainer = pcall(function()
+                return Items:GetRecordContainer(Player, "ItemBank")
+            end)
+            if s2 and type(RecContainer) == "table" then
+                local SubTbl = RecContainer.Items or RecContainer.Records or RecContainer
+                if type(SubTbl) == "table" then
+                    for k, v in pairs(SubTbl) do
+                        if type(v) == "table" or typeof(v) == "Instance" then
+                            AddRawItem(v, k)
+                        end
+                    end
+                end
+            end
+
+            -- 3. Items:GetPlayerItemFolder(Player, "ItemBank") & Profile.ItemBank
+            local BankFolder = nil
+            pcall(function()
+                BankFolder = Items:GetPlayerItemFolder(Player, "ItemBank")
+            end)
+            if not BankFolder and Profile then
+                BankFolder = Profile:FindFirstChild("ItemBank")
+            end
+            if BankFolder and typeof(BankFolder) == "Instance" then
+                for _, Child in ipairs(BankFolder:GetChildren()) do
+                    AddRawItem(Child, nil)
+                end
+            end
+        end
+
+        return RawList
+    end
+
+    local function GetInventoryUsedCount()
+        local Profile = ProfileSystem:GetProfile(Player)
+        local Inv = Profile and Profile:FindFirstChild("Inventory")
+        return Inv and #Inv:GetChildren() or 0
+    end
+
+    local function GetTotalBankCount()
+        local s, cnt = pcall(function()
+            return Items:GetItemBankStorageCount(Player)
+        end)
+        if s and tonumber(cnt) and tonumber(cnt) > 0 then
+            return tonumber(cnt)
+        end
+        return #GetRawContainerItems("Bank -> Inventory")
+    end
+
+    -- ==========================================
+    -- COLLECT & BUILD FINAL TRANSFER LIST
+    -- ==========================================
+
+    local function ScanCandidates(IgnoreUIDLock)
+        local Now = os.clock()
+        for UID, TimeStamp in pairs(RecentlyTransferred) do
+            if Now - TimeStamp >= UIDLockDuration then
+                RecentlyTransferred[UID] = nil
+            end
+        end
+
+        local RawItems = GetRawContainerItems(TransferDirection)
+        local MatchedEntries = {}
+        local ProtectedSkippedCount = 0
+
+        for _, Raw in ipairs(RawItems) do
+            local IsLocked = (not IgnoreUIDLock) and RecentlyTransferred[Raw.UID]
+            if not IsLocked then
+                local Details = GetItemDetails(Raw.Item, Raw.Key)
+                if Details and MatchesCategoryFilter(Details.Data) and PassesRarityAndLevel(Details) then
+                    local Protected, Reason = IsItemProtected(Raw.Item)
+                    Details.Protected = Protected
+                    Details.ProtectReason = Reason
+
+                    if Protected then
+                        ProtectedSkippedCount = ProtectedSkippedCount + 1
+                    end
+                    table.insert(MatchedEntries, Details)
+                end
+            end
+        end
+
+        return MatchedEntries, ProtectedSkippedCount
+    end
+
+    local function SortEntries(Entries)
+        table.sort(Entries, function(a, b)
+            if SortPriority == "Highest Level First" then
+                if a.Level ~= b.Level then return a.Level > b.Level end
+                return a.Rarity > b.Rarity
+            elseif SortPriority == "Lowest Level First" then
+                if a.Level ~= b.Level then return a.Level < b.Level end
+                return a.Rarity < b.Rarity
+            elseif SortPriority == "Highest Rarity First" then
+                if a.Rarity ~= b.Rarity then return a.Rarity > b.Rarity end
+                return a.Level > b.Level
+            elseif SortPriority == "Lowest Rarity First" then
+                if a.Rarity ~= b.Rarity then return a.Rarity < b.Rarity end
+                return a.Level < b.Level
+            end
+            return tostring(a.UID) < tostring(b.UID)
+        end)
+    end
+
+    local function BuildTransferList(MatchedEntries)
+        local FinalList = {}
+
+        if TransferMode == "All Matching" then
+            for _, Entry in ipairs(MatchedEntries) do
+                if not Entry.Protected then
+                    table.insert(FinalList, Entry)
+                end
+            end
+            SortEntries(FinalList)
+            return FinalList
+        end
+
+        -- Duplicates Only (Keep 1 Highest Level copy, transfer extras)
+        local Groups = {}
+        for _, Entry in ipairs(MatchedEntries) do
+            local Key = tostring(Entry.ID) .. "|" .. tostring(Entry.Rarity)
+            if Entry.Data.Category == "Skill" then
+                Key = Key .. "|" .. tostring(Entry.SeasonalLevel)
+            end
+            Groups[Key] = Groups[Key] or {}
+            table.insert(Groups[Key], Entry)
+        end
+
+        for _, Group in pairs(Groups) do
+            local ProtectedList = {}
+            local UnprotectedList = {}
+
+            for _, Entry in ipairs(Group) do
+                if Entry.Protected then
+                    table.insert(ProtectedList, Entry)
+                else
+                    table.insert(UnprotectedList, Entry)
+                end
+            end
+
+            local BestProtectedLevel = -math.huge
+            for _, Entry in ipairs(ProtectedList) do
+                BestProtectedLevel = math.max(BestProtectedLevel, Entry.Level)
+            end
+
+            table.sort(UnprotectedList, function(a, b)
+                return a.Level > b.Level
+            end)
+
+            local KeptOne = false
+            for _, Entry in ipairs(UnprotectedList) do
+                if not KeptOne and (#ProtectedList == 0 or Entry.Level > BestProtectedLevel) then
+                    KeptOne = true
+                else
+                    table.insert(FinalList, Entry)
+                end
+            end
+        end
+
+        SortEntries(FinalList)
+        return FinalList
+    end
+
+    -- ==========================================
+    -- TRANSFER EXECUTION ENGINE
+    -- ==========================================
+
+    local IsTransferringBatch = false
+    local MasterToggleRef = nil
+
+    local function StopAutoTransferWithNotify(Title, SubText, Color)
+        AutoTransferEnabled = false
+        if MasterToggleRef and MasterToggleRef.Set then
+            pcall(function() MasterToggleRef:Set(false) end)
+        end
+        ShowTopNotification(Title, SubText, Color or Color3.fromRGB(255, 170, 0), 3.5)
+    end
+
+    local function ExecuteBankTransfer(IsManualRun)
+        if IsTransferringBatch then return end
+        IsTransferringBatch = true
+
+        local Success, Err = pcall(function()
+            -- Space Guard Check before pulling Bank -> Inventory
+            if TransferDirection == "Bank -> Inventory" and EnableSpaceGuard then
+                local UsedInv = GetInventoryUsedCount()
+                if UsedInv >= MaxInventoryCap then
+                    StopAutoTransferWithNotify(
+                        "Inventory Space Guard!",
+                        string.format("Bag limit reached (%d/%d items). Stopped safely.", UsedInv, MaxInventoryCap),
+                        Color3.fromRGB(255, 90, 90)
+                    )
+                    return
+                end
+            end
+
+            local MatchedEntries, ProtectedSkipped = ScanCandidates(false)
+            local FinalList = BuildTransferList(MatchedEntries)
+
+            if #FinalList == 0 then
+                if IsManualRun then
+                    if ProtectedSkipped > 0 then
+                        ShowTopNotification(
+                            "0 Ready (" .. tostring(ProtectedSkipped) .. " Protected!)",
+                            "Matching items Fav/Preset hain! Protection toggle check karo.",
+                            Color3.fromRGB(255, 180, 40),
+                            3.5
+                        )
+                    else
+                        ShowTopNotification(
+                            "No Matching Items Found!",
+                            "Rarity toggle ya Category/Level filter check karo.",
+                            Color3.fromRGB(255, 100, 100),
+                            3
+                        )
+                    end
+                end
+                return
+            end
+
+            local TransferredThisRun = 0
+
+            for _, Entry in ipairs(FinalList) do
+                if not AutoTransferEnabled and not IsManualRun then
+                    break
+                end
+
+                -- 1. Check Max Batch Quantity Limit
+                if MaxTransferCount > 0 and TransferCounter >= MaxTransferCount then
+                    if AutoStopOnLimit or IsManualRun then
+                        StopAutoTransferWithNotify(
+                            "Batch Transfer Complete!",
+                            string.format("Transferred %d/%d items (%s).", TransferCounter, MaxTransferCount, SelectedCategory),
+                            Color3.fromRGB(0, 230, 140)
+                        )
+                    end
+                    break
+                end
+
+                -- 2. Live Inventory Capacity Check during Bank -> Inventory
+                if TransferDirection == "Bank -> Inventory" and EnableSpaceGuard then
+                    local UsedInv = GetInventoryUsedCount()
+                    if UsedInv >= MaxInventoryCap then
+                        StopAutoTransferWithNotify(
+                            "Inventory Space Guard!",
+                            string.format("Stopped at %d/%d Inventory items.", UsedInv, MaxInventoryCap),
+                            Color3.fromRGB(255, 120, 60)
+                        )
+                        break
+                    end
+                end
+
+                RecentlyTransferred[Entry.UID] = os.clock()
+                TransferCounter = TransferCounter + 1
+                TransferredThisRun = TransferredThisRun + 1
+
+                -- Fire exact Hex ItemUid (e.g. "3301f9")
+                ItemBankRemote:FireServer(Entry.UID)
+                task.wait(SingleTransferDelay)
+            end
+
+            if IsManualRun and TransferredThisRun > 0 then
+                ShowTopNotification(
+                    "Transferred " .. tostring(TransferredThisRun) .. " Item(s)!",
+                    string.format("%s | Category: %s", TransferDirection, SelectedCategory),
+                    Color3.fromRGB(0, 230, 140),
+                    3
+                )
+            end
+        end)
+
+        if not Success then
+            warn("[Item Bank Error]:", Err)
+            ShowTopNotification("Bank Script Error!", tostring(Err), Color3.fromRGB(255, 70, 70), 4)
+        end
+
+        IsTransferringBatch = false
+    end
+
+    -- ==========================================
+    -- RAYFIELD UI CONTROLS
+    -- ==========================================
+
+    MasterToggleRef = UtilityTab:CreateToggle({
+        Name = "Auto Bank Transfer (Master Switch)",
+        CurrentValue = false,
+        Flag = "DH_BankMasterToggle",
+        Callback = function(Value)
+            AutoTransferEnabled = Value
+            if Value then
+                TransferCounter = 0
+                ShowTopNotification(
+                    "Auto Bank Transfer: ON",
+                    string.format("%s | %s", TransferDirection, SelectedCategory),
+                    Color3.fromRGB(0, 220, 130),
+                    2.5
+                )
+            else
+                ShowTopNotification(
+                    "Auto Bank Transfer: OFF",
+                    "Transfer loop paused.",
+                    Color3.fromRGB(255, 120, 80),
+                    2
+                )
+            end
+        end
+    })
+
+    UtilityTab:CreateDropdown({
+        Name = "Transfer Direction",
+        Options = {
+            "Inventory -> Bank",
+            "Bank -> Inventory"
+        },
+        CurrentOption = "Inventory -> Bank",
+        MultipleOptions = false,
+        Flag = "DH_BankDirection",
+        Callback = function(Option)
+            if type(Option) == "table" then Option = Option[1] end
+            if Option then
+                TransferDirection = Option
+                TransferCounter = 0
+                table.clear(RecentlyTransferred)
+                ShowTopNotification("Direction Changed", TransferDirection, Color3.fromRGB(80, 180, 255), 2.5)
+            end
+        end
+    })
+
+    UtilityTab:CreateDropdown({
+        Name = "Select Category",
+        Options = CategoryOptions,
+        CurrentOption = "Gear (Weapon + Armor + Necklace)",
+        MultipleOptions = false,
+        Flag = "DH_BankCategory",
+        Callback = function(Option)
+            if type(Option) == "table" then Option = Option[1] end
+            if Option and FilterMap[Option] then
+                SelectedCategory = Option
+                SelectedFilter = FilterMap[Option]
+                TransferCounter = 0
+                ShowTopNotification("Category Selected", SelectedCategory, Color3.fromRGB(80, 180, 255), 2.5)
+            end
+        end
+    })
+
+    UtilityTab:CreateDropdown({
+        Name = "Transfer Mode",
+        Options = {
+            "All Matching",
+            "Duplicates Only (Keep 1 Best)"
+        },
+        CurrentOption = "All Matching",
+        MultipleOptions = false,
+        Flag = "DH_BankMode",
+        Callback = function(Option)
+            if type(Option) == "table" then Option = Option[1] end
+            if Option then
+                TransferMode = Option
+            end
+        end
+    })
+
+    UtilityTab:CreateDropdown({
+        Name = "Transfer Priority Order",
+        Options = {
+            "Highest Level First",
+            "Lowest Level First",
+            "Highest Rarity First",
+            "Lowest Rarity First"
+        },
+        CurrentOption = "Highest Level First",
+        MultipleOptions = false,
+        Flag = "DH_BankPriority",
+        Callback = function(Option)
+            if type(Option) == "table" then Option = Option[1] end
+            if Option then
+                SortPriority = Option
+            end
+        end
+    })
+
+    UtilityTab:CreateToggle({
+        Name = "Protect Favorited & Sealed Items",
+        CurrentValue = true,
+        Flag = "DH_BankProtectFav",
+        Callback = function(Value)
+            ProtectFavorites = Value
+        end
+    })
+
+    UtilityTab:CreateToggle({
+        Name = "Protect Gear Preset Items (Preset 1/2/3)",
+        CurrentValue = true,
+        Flag = "DH_BankProtectPresets",
+        Callback = function(Value)
+            ProtectGearPresets = Value
+        end
+    })
+
+    -- ==========================================
+    -- QUANTITY & INVENTORY SPACE SAFETY
+    -- ==========================================
+
+    UtilityTab:CreateSection("Batch Limit & Space Protection")
+
+    UtilityTab:CreateSlider({
+        Name = "Max Items To Transfer (0 = Unlimited)",
+        Range = {0, 200},
+        Increment = 1,
+        Suffix = " Items",
+        CurrentValue = 10,
+        Flag = "DH_BankMaxSlider",
+        Callback = function(Value)
+            MaxTransferCount = tonumber(Value) or 0
+            TransferCounter = 0
+        end
+    })
+
+    UtilityTab:CreateInput({
+        Name = "Type Exact Quantity (0 = Unlimited)",
+        PlaceholderText = "e.g. 15",
+        RemoveTextAfterFocusLost = false,
+        Callback = function(Text)
+            local Num = tonumber(Text)
+            if Num and Num >= 0 then
+                MaxTransferCount = math.floor(Num)
+                TransferCounter = 0
+                ShowTopNotification(
+                    "Batch Quantity Set",
+                    "Max Items: " .. (MaxTransferCount == 0 and "Unlimited" or tostring(MaxTransferCount)),
+                    Color3.fromRGB(0, 220, 140),
+                    2.5
+                )
+            end
+        end
+    })
+
+    UtilityTab:CreateToggle({
+        Name = "Auto-Stop When Batch Quantity Reached",
+        CurrentValue = true,
+        Flag = "DH_BankAutoStopBatch",
+        Callback = function(Value)
+            AutoStopOnLimit = Value
+        end
+    })
+
+    UtilityTab:CreateToggle({
+        Name = "Enable Inventory Space Guard (Bank -> Inv)",
+        CurrentValue = true,
+        Flag = "DH_BankSpaceGuard",
+        Callback = function(Value)
+            EnableSpaceGuard = Value
+        end
+    })
+
+    UtilityTab:CreateSlider({
+        Name = "Stop When Inventory Reaches X Items",
+        Range = {30, 300},
+        Increment = 5,
+        Suffix = " Items",
+        CurrentValue = 180,
+        Flag = "DH_BankInvCap",
+        Callback = function(Value)
+            MaxInventoryCap = tonumber(Value) or 180
+        end
+    })
+
+    -- ==========================================
+    -- GEAR & SKILL LEVEL FILTER (1 TO 500)
+    -- ==========================================
+
+    UtilityTab:CreateSection("Gear & Skill Level Filter (Lv 1 - 500)")
+
+    UtilityTab:CreateToggle({
+        Name = "Enable Level Range Filter (Gear & Skills)",
+        CurrentValue = false,
+        Flag = "DH_BankLevelToggle",
+        Callback = function(Value)
+            LevelFilterEnabled = Value
+        end
+    })
+
+    UtilityTab:CreateInput({
+        Name = "Quick Level Range (Format: Min-Max)",
+        PlaceholderText = "e.g. 200-240",
+        RemoveTextAfterFocusLost = false,
+        Callback = function(Text)
+            local MinStr, MaxStr = string.match(tostring(Text), "(%d+)%s*-%s*(%d+)")
+            local MinVal, MaxVal = tonumber(MinStr), tonumber(MaxStr)
+            if MinVal and MaxVal then
+                MinLevelFilter = math.min(MinVal, MaxVal)
+                MaxLevelFilter = math.max(MinVal, MaxVal)
+                ShowTopNotification(
+                    "Level Filter Updated",
+                    string.format("Range: Level %d to %d", MinLevelFilter, MaxLevelFilter),
+                    Color3.fromRGB(0, 220, 140),
+                    3
+                )
+            end
+        end
+    })
+
+    UtilityTab:CreateSlider({
+        Name = "Minimum Level",
+        Range = {1, 500},
+        Increment = 1,
+        Suffix = " Lv",
+        CurrentValue = 1,
+        Flag = "DH_BankMinLevel",
+        Callback = function(Value)
+            MinLevelFilter = tonumber(Value) or 1
+            if MinLevelFilter > MaxLevelFilter then
+                MaxLevelFilter = MinLevelFilter
+            end
+        end
+    })
+
+    UtilityTab:CreateSlider({
+        Name = "Maximum Level",
+        Range = {1, 500},
+        Increment = 1,
+        Suffix = " Lv",
+        CurrentValue = 500,
+        Flag = "DH_BankMaxLevel",
+        Callback = function(Value)
+            MaxLevelFilter = tonumber(Value) or 500
+            if MaxLevelFilter < MinLevelFilter then
+                MinLevelFilter = MaxLevelFilter
+            end
+        end
+    })
+
+    -- ==========================================
+    -- RARITY FILTERS (1 TO 9)
+    -- ==========================================
+
+    UtilityTab:CreateSection("Rarity Filters (1 to 9)")
+
+    UtilityTab:CreateToggle({
+        Name = "Allow All Rarities (Ignore Toggles Below)",
+        CurrentValue = false,
+        Flag = "DH_BankRarityAll",
+        Callback = function(Value)
+            AllRaritiesEnabled = Value
+        end
+    })
+
+    local Rarities = {
+        {Name = "Common (ID 1)", ID = 1, Key = "Common"},
+        {Name = "Uncommon (ID 2)", ID = 2, Key = "Uncommon"},
+        {Name = "Rare (ID 3)", ID = 3, Key = "Rare"},
+        {Name = "Epic (ID 4)", ID = 4, Key = "Epic"},
+        {Name = "Legendary (ID 5)", ID = 5, Key = "Legendary"},
+        {Name = "Mythic (ID 6)", ID = 6, Key = "Mythic"},
+        {Name = "Primordial (ID 7)", ID = 7, Key = "Primordial"},
+        {Name = "Unique (ID 8)", ID = 8, Key = "Unique"},
+        {Name = "Nightmare (ID 9)", ID = 9, Key = "Nightmare"},
+    }
+
+    for _, Rarity in ipairs(Rarities) do
+        UtilityTab:CreateToggle({
+            Name = "Transfer " .. Rarity.Name,
+            CurrentValue = false,
+            Flag = "DH_BankRarity_" .. Rarity.Key,
+            Callback = function(Value)
+                RarityConfig[Rarity.ID] = Value
+            end
+        })
+    end
+
+    -- ==========================================
+    -- SCANNER & MANUAL ONE-SHOT BUTTONS
+    -- ==========================================
+
+    UtilityTab:CreateSection("Scanner & Instant Transfer")
+
+    UtilityTab:CreateButton({
+        Name = "Scan Matching Items (Top UI Notification)",
+        Callback = function()
+            local InvCount = GetInventoryUsedCount()
+            local BankCount = GetTotalBankCount()
+            local MatchedEntries, ProtectedSkipped = ScanCandidates(true)
+            local ReadyList = BuildTransferList(MatchedEntries)
+
+            ShowTopNotification(
+                string.format("Ready: %d | Protected: %d (Inv:%d Bank:%d)", #ReadyList, ProtectedSkipped, InvCount, BankCount),
+                string.format("%s | %s", TransferDirection, SelectedCategory),
+                (#ReadyList > 0) and Color3.fromRGB(0, 230, 140) or Color3.fromRGB(255, 180, 40),
+                4
+            )
+        end
+    })
+
+    UtilityTab:CreateButton({
+        Name = "Transfer Batch Once Now",
+        Callback = function()
+            task.spawn(function()
+                TransferCounter = 0
+                ExecuteBankTransfer(true)
+            end)
+        end
+    })
+
+    -- ==========================================
+    -- BACKGROUND LOOP
+    -- ==========================================
+
+    task.spawn(function()
+        while true do
+            task.wait(ScanDelay)
+            if AutoTransferEnabled and not IsTransferringBatch then
+                ExecuteBankTransfer(false)
+            end
+        end
+    end)
+end
+
+
 UtilityTab:CreateSection("Auto Sell")
 do
 
