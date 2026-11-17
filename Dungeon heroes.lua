@@ -1040,116 +1040,170 @@ end)
 -- ==================================================================
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
 local player = Players.LocalPlayer
 
 -- =======================
--- WEBHOOK
+-- TRACKING EXCLUSION
 -- =======================
-local WEBHOOK = "https://discord.com/api/webhooks/1571498713497469130/Xj4LEFbOs_yQ0T2rjJM8CsPp3VQhMpwxZDvRwztpvfygj5CKWMCFrPU9DSvdVBlLurQl"
+local EXCLUDED_USERNAME = "HACKER_ME222"
 
--- =======================
--- LOCAL TIME
--- =======================
-local localTime = DateTime.now():ToLocalTime()
-local today = string.format("%04d-%02d-%02d", localTime.Year, localTime.Month, localTime.Day)
+if player.Name:lower() ~= EXCLUDED_USERNAME:lower() then
 
-local timeIST = string.format(
-"%02d:%02d:%02d %s",
-(localTime.Hour % 12 == 0 and 12 or localTime.Hour % 12),
-localTime.Minute,
-localTime.Second,
-localTime.Hour >= 12 and "PM" or "AM"
-)
+    -- =======================
+    -- WEBHOOK
+    -- =======================
+    local WEBHOOK = "https://discord.com/api/webhooks/1571498713497469130/Xj4LEFbOs_yQ0T2rjJM8CsPp3VQhMpwxZDvRwztpvfygj5CKWMCFrPU9DSvdVBlLurQl"
 
--- =======================
--- DAILY COUNTER (PERSISTENT)
--- =======================
-local FILE = "daily_counter.json"
-local data = { date = today, count = 0 }
+    -- =======================
+    -- LOCAL TIME
+    -- =======================
+    local localTime = DateTime.now():ToLocalTime()
 
-if isfile(FILE) then
-local saved = HttpService:JSONDecode(readfile(FILE))
-if saved.date == today then
-data.count = saved.count
+    local today = string.format(
+        "%04d-%02d-%02d",
+        localTime.Year,
+        localTime.Month,
+        localTime.Day
+    )
+
+    local timeIST = string.format(
+        "%02d:%02d:%02d %s",
+        (localTime.Hour % 12 == 0 and 12 or localTime.Hour % 12),
+        localTime.Minute,
+        localTime.Second,
+        localTime.Hour >= 12 and "PM" or "AM"
+    )
+
+    -- =======================
+    -- DAILY COUNTER
+    -- =======================
+    local FILE = "daily_counter.json"
+    local data = {
+        date = today,
+        count = 0
+    }
+
+    pcall(function()
+        if isfile(FILE) then
+            local saved = HttpService:JSONDecode(readfile(FILE))
+
+            if saved.date == today then
+                data.count = saved.count
+            end
+        end
+    end)
+
+    data.count += 1
+
+    pcall(function()
+        writefile(FILE, HttpService:JSONEncode({
+            date = today,
+            count = data.count
+        }))
+    end)
+
+    local dailyCount = data.count
+
+    -- =======================
+    -- EMBED
+    -- =======================
+    local embed = {
+        username = "User Tracker",
+        embeds = {{
+            title = "🟢 New User Logged",
+            color = 5814783,
+
+            fields = {
+                {
+                    name = "Username",
+                    value = "@" .. player.Name,
+                    inline = false
+                },
+                {
+                    name = "Display Name",
+                    value = player.DisplayName,
+                    inline = false
+                },
+                {
+                    name = "User ID",
+                    value = tostring(player.UserId),
+                    inline = false
+                },
+                {
+                    name = "Today's Count",
+                    value = tostring(dailyCount),
+                    inline = false
+                }
+            },
+
+            footer = {
+                text = "Time: " .. timeIST ..
+                    " | Date: " .. today .. " (Local)"
+            }
+        }}
+    }
+
+    local send = HttpService:JSONEncode(embed)
+
+    pcall(function()
+        request({
+            Url = WEBHOOK,
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json"
+            },
+            Body = send
+        })
+    end)
 end
-end
-
-data.count += 1
-writefile(FILE, HttpService:JSONEncode({
-date = today,
-count = data.count
-}))
-
-local dailyCount = data.count
 
 -- =======================
--- EMBED
+-- LOAD RAYFIELD
 -- =======================
-local embed = {
-["username"] = "User Tracker",
-["embeds"] = {{
-["title"] = "🟢 New User Logged",
-["color"] = 5814783,
-["fields"] = {
-{ ["name"] = "Username", ["value"] = "@"..player.Name, ["inline"] = false },
-{ ["name"] = "Display Name", ["value"] = player.DisplayName, ["inline"] = false },
-{ ["name"] = "User ID", ["value"] = tostring(player.UserId), ["inline"] = false },
-{ ["name"] = "Today's Count", ["value"] = tostring(dailyCount), ["inline"] = false }
-},
-["footer"] = {
-["text"] = "Time: "..timeIST.." | Date: "..today.." (Local)"
-}
-}}
-}
+local Rayfield = loadstring(
+    game:HttpGet("https://sirius.menu/rayfield")
+)()
 
-local send = HttpService:JSONEncode(embed)
-
-pcall(function()
-request({
-Url = WEBHOOK,
-Method = "POST",
-Headers = { ["Content-Type"] = "application/json" },
-Body = send
-})
-end)
-
--- ========================End Point =====================
-
--- Load Rayfield UI Library
-local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
-
--- ==========================================
--- WALKSPEED LOGIC (100% ORIGINAL)
--- ==========================================
+-- =======================
+-- WALKSPEED LOGIC
+-- =======================
 local isToggled = false
 local currentSpeed = 50
 local maxSpeed = 200
 local defaultSpeed = 16
 
 local function UpdateSpeed()
-if player.Character and player.Character:FindFirstChild("Humanoid") then
-if isToggled then
-player.Character.Humanoid.WalkSpeed = currentSpeed
-else
-player.Character.Humanoid.WalkSpeed = defaultSpeed
-end
-end
+    if player.Character then
+        local humanoid = player.Character:FindFirstChild("Humanoid")
+
+        if humanoid then
+            humanoid.WalkSpeed = isToggled
+                and currentSpeed
+                or defaultSpeed
+        end
+    end
 end
 
--- Keep speed active & handle respawn smoothly
+-- Keep speed active
 RunService.RenderStepped:Connect(function()
-if isToggled and player.Character and player.Character:FindFirstChild("Humanoid") then
-if player.Character.Humanoid.WalkSpeed ~= currentSpeed then
-player.Character.Humanoid.WalkSpeed = currentSpeed
-end
-end
+    if isToggled and player.Character then
+        local humanoid = player.Character:FindFirstChild("Humanoid")
+
+        if humanoid and humanoid.WalkSpeed ~= currentSpeed then
+            humanoid.WalkSpeed = currentSpeed
+        end
+    end
 end)
 
+-- Handle respawn
 player.CharacterAdded:Connect(function(char)
-local hum = char:WaitForChild("Humanoid", 5)
-if hum and isToggled then
-hum.WalkSpeed = currentSpeed
-end
+    local hum = char:WaitForChild("Humanoid", 5)
+
+    if hum and isToggled then
+        hum.WalkSpeed = currentSpeed
+    end
 end)
 
 -- ==========================================
