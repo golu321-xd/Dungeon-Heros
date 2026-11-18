@@ -4177,823 +4177,1337 @@ do
     end)
 end
 
-
-UtilityTab:CreateSection("Auto Sell")
+UtilityTab:CreateSection("Ultimate Safe Auto Sell V4 (Inv + Bank)")
 do
+    --====================================================
+    -- DUNGEON HEROES | ULTIMATE ZERO-RISK AUTO SELL V4
+    -- New in V4:
+    -- 1. Sell Source Dropdown: Inventory Only | Bank Only (Auto-Bridge) | Both
+    -- 2. Double-Stage Bank Safety: Pre-Pull Scan + Post-Pull Live Instance Check
+    --    (Auto-returns item to Bank & blacklists UID if God-Roll/Gem detected!)
+    -- 3. UNIQUE RARITY (ID 8) Permanently Blocked & Removed from UI
+    -- 4. Cosmetics Force Duplicate-Only Mode + Exact Dye Color Grouping
+    -- 5. Upgraded Sleek Top UI Notification with Progress Timer Bar
+    --====================================================
 
--- Dungeon Heroes | Advanced Auto Sell
--- Title Duplicate Fix + Gear Detection Fix
--- Original working logic preserved
+    local Players = game:GetService("Players")
+    local RS = game:GetService("ReplicatedStorage")
+    local TweenService = game:GetService("TweenService")
+    local CoreGui = game:GetService("CoreGui")
 
-local Players = game:GetService("Players")
-local RS = game:GetService("ReplicatedStorage")
+    local Player = Players.LocalPlayer
 
-local Player = Players.LocalPlayer
+    local Items = require(RS.Systems.Items)
+    local ItemSelling = require(RS.Systems.ItemSelling)
+    local ProfileSystem = require(RS.Systems.Profile)
+    local ItemBankRemote = RS:WaitForChild("Remotes"):WaitForChild("ItemBankTransfer")
 
-local Items = require(RS.Systems.Items)
-local ItemSelling = require(RS.Systems.ItemSelling)
-local ProfileSystem = require(RS.Systems.Profile)
+    -- ==========================================
+    -- PRO TOP UI NOTIFICATION (SLEEK + TIMER BAR)
+    -- ==========================================
+    local function ShowTopNotification(TitleText, SubText, AccentColor, Duration)
+        task.spawn(function()
+            pcall(function()
+                local ShowTime = Duration or 3.2
+                local ThemeColor = AccentColor or Color3.fromRGB(0, 225, 140)
 
--- Settings
-local AutoSellEnabled = false
-local DuplicateSellEnabled = false
+                local ParentGui = (gethui and gethui())
+                    or CoreGui
+                    or Player:WaitForChild("PlayerGui")
 
-local ScanDelay = 0.1
-local SellCooldown = 1
-local LastSellTime = 0
+                local OldGui = ParentGui:FindFirstChild("DH_ProAutoSellNotify")
+                if OldGui then OldGui:Destroy() end
 
-local SelectedCategory = "Gear"
-local SelectedFilter = {kind = "gear"}
+                local ScreenGui = Instance.new("ScreenGui")
+                ScreenGui.Name = "DH_ProAutoSellNotify"
+                ScreenGui.IgnoreGuiInset = true
+                ScreenGui.DisplayOrder = 999999
+                ScreenGui.Parent = ParentGui
 
-local RarityConfig = {
-[1] = false,
-[2] = false,
-[3] = false,
-[4] = false,
-[5] = false,
-[6] = false,
-[9] = false,
-}
+                local MainFrame = Instance.new("Frame")
+                MainFrame.Size = UDim2.new(0, 410, 0, 66)
+                MainFrame.Position = UDim2.new(0.5, -205, 0, -85)
+                MainFrame.BackgroundColor3 = Color3.fromRGB(15, 17, 24)
+                MainFrame.BorderSizePixel = 0
+                MainFrame.ClipsDescendants = true
+                MainFrame.Parent = ScreenGui
 
--- ==========================================
--- TITLE DETECTION
--- ==========================================
+                local MainCorner = Instance.new("UICorner")
+                MainCorner.CornerRadius = UDim.new(0, 12)
+                MainCorner.Parent = MainFrame
 
-local function IsTitleData(Data, ID)
-return Data ~= nil
-and Data.Category == "Cosmetic"
-and Data.Type == "Title"
+                local MainStroke = Instance.new("UIStroke")
+                MainStroke.Color = ThemeColor
+                MainStroke.Thickness = 1.6
+                MainStroke.Transparency = 0.15
+                MainStroke.Parent = MainFrame
+
+                local BgGradient = Instance.new("UIGradient")
+                BgGradient.Color = ColorSequence.new({
+                    ColorSequenceKeypoint.new(0, Color3.fromRGB(24, 28, 38)),
+                    ColorSequenceKeypoint.new(1, Color3.fromRGB(14, 16, 22))
+                })
+                BgGradient.Rotation = 90
+                BgGradient.Parent = MainFrame
+
+                local SideBar = Instance.new("Frame")
+                SideBar.Size = UDim2.new(0, 5, 1, -16)
+                SideBar.Position = UDim2.new(0, 8, 0, 8)
+                SideBar.BackgroundColor3 = ThemeColor
+                SideBar.BorderSizePixel = 0
+                SideBar.Parent = MainFrame
+
+                local SideCorner = Instance.new("UICorner")
+                SideCorner.CornerRadius = UDim.new(1, 0)
+                SideCorner.Parent = SideBar
+
+                local Title = Instance.new("TextLabel")
+                Title.Size = UDim2.new(1, -34, 0, 22)
+                Title.Position = UDim2.new(0, 22, 0, 8)
+                Title.BackgroundTransparency = 1
+                Title.Font = Enum.Font.GothamBold
+                Title.TextSize = 14
+                Title.TextColor3 = ThemeColor
+                Title.TextXAlignment = Enum.TextXAlignment.Left
+                Title.TextTruncate = Enum.TextTruncate.AtEnd
+                Title.Text = tostring(TitleText)
+                Title.Parent = MainFrame
+
+                local Sub = Instance.new("TextLabel")
+                Sub.Size = UDim2.new(1, -34, 0, 20)
+                Sub.Position = UDim2.new(0, 22, 0, 31)
+                Sub.BackgroundTransparency = 1
+                Sub.Font = Enum.Font.GothamMedium
+                Sub.TextSize = 12
+                Sub.TextColor3 = Color3.fromRGB(220, 225, 235)
+                Sub.TextXAlignment = Enum.TextXAlignment.Left
+                Sub.TextTruncate = Enum.TextTruncate.AtEnd
+                Sub.Text = tostring(SubText)
+                Sub.Parent = MainFrame
+
+                local BarBg = Instance.new("Frame")
+                BarBg.Size = UDim2.new(1, 0, 0, 3)
+                BarBg.Position = UDim2.new(0, 0, 1, -3)
+                BarBg.BackgroundColor3 = Color3.fromRGB(35, 40, 52)
+                BarBg.BorderSizePixel = 0
+                BarBg.Parent = MainFrame
+
+                local BarFill = Instance.new("Frame")
+                BarFill.Size = UDim2.new(1, 0, 1, 0)
+                BarFill.BackgroundColor3 = ThemeColor
+                BarFill.BorderSizePixel = 0
+                BarFill.Parent = BarBg
+
+                TweenService:Create(
+                    MainFrame,
+                    TweenInfo.new(0.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+                    {Position = UDim2.new(0.5, -205, 0, 16)}
+                ):Play()
+
+                TweenService:Create(
+                    BarFill,
+                    TweenInfo.new(ShowTime, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
+                    {Size = UDim2.new(0, 0, 1, 0)}
+                ):Play()
+
+                task.wait(ShowTime)
+
+                if MainFrame and MainFrame.Parent then
+                    local OutTween = TweenService:Create(
+                        MainFrame,
+                        TweenInfo.new(0.24, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+                        {Position = UDim2.new(0.5, -205, 0, -85)}
+                    )
+                    OutTween:Play()
+                    OutTween.Completed:Wait()
+                    if ScreenGui then ScreenGui:Destroy() end
+                end
+            end)
+        end)
+    end
+
+    -- ==========================================
+    -- SETTINGS & SAFETY STATE
+    -- ==========================================
+    local AutoSellEnabled = false
+    local SellSource = "From Inventory Only" -- "From Inventory Only" | "From Bank Only (Auto-Bridge)" | "From Both (Inventory + Bank)"
+    local DuplicateSellEnabled = false
+
+    -- Bank Bridge Controls
+    local BankPullBatchSize = 5          -- Pulls max 5 items at a time so Inventory never overflows
+    local AutoReturnIfProtected = true   -- Sends item back to Bank if live inspection finds God-Roll/Gem
+    local SafeBagLimitForBridge = 190    -- Pauses Bank pull if Inventory already has >= 190 items
+    local BankProtectedUIDBlacklist = {} -- Permanent memory of Bank UIDs that triggered Post-Pull Shield
+    local RecentlyPulledUIDs = {}
+
+    -- Smart Protection Toggles (All ON by default)
+    local ProtectSocketedGems = true     -- Never sell Gear with a Gem attached
+    local ProtectGearPresets = true      -- Never sell Preset 1/2/3 items
+    local ProtectGodRolls = true         -- Never sell Gear with 4x/5x identical stats
+    local MinMatchingStatsToProtect = 4  -- 4 = 4x or 5x matching stats safe
+
+    -- Optional Max Sell Level Cap
+    local UseMaxSellLevelCap = false
+    local MaxSellLevel = 215
+
+    -- Timings
+    local ScanDelay = 0.25
+    local SellCooldown = 1.0
+    local LastSellTime = 0
+    local IsRunningCycle = false
+
+    local SelectedCategory = "Gear (Weapons + Armor Only)"
+    local SelectedFilter = {kind = "gear_weapon_armor", isCosmetic = false}
+
+    -- Rarity Configuration (UNIQUE ID 8 IS PERMANENTLY EXCLUDED & BLOCKED!)
+    local RarityConfig = {
+        [1] = false, -- Common
+        [2] = false, -- Uncommon
+        [3] = false, -- Rare
+        [4] = false, -- Epic
+        [5] = false, -- Legendary
+        [6] = false, -- Mythic
+        [7] = false, -- Primordial
+        -- [8] Unique is PERMANENTLY BLOCKED
+        [9] = false, -- Nightmare
+    }
+
+    -- ==========================================
+    -- DESCRIPTIVE CATEGORY DROPDOWN SETUP
+    -- ==========================================
+    local function IsTitleData(Data)
+        return type(Data) == "table"
+            and Data.Category == "Cosmetic"
+            and Data.Type == "Title"
+    end
+
+    local CategoryOptions = {
+        "Gear (Weapons + Armor Only)",
+        "Weapon Only",
+        "Armor Only",
+        "Necklace Only",
+        "Skill Only",
+        "Pet Only",
+        "Pet Token Only",
+        "Refined Gem Only",
+        "Cosmetic: Title (Dupes Only)",
+        "Cosmetic: Weapon Aura (Dupes Only)",
+        "Cosmetic: Body Aura (Dupes Only)",
+        "Cosmetic: Weapon Skin (Dupes Only)",
+        "Cosmetic: Shirt (Dupes Only)",
+        "Cosmetic: Pants (Dupes Only)",
+        "Cosmetic: All Types (Dupes Only)",
+    }
+
+    local FilterMap = {
+        ["Gear (Weapons + Armor Only)"] = {kind = "gear_weapon_armor", isCosmetic = false},
+        ["Weapon Only"] = {kind = "category", category = "Weapon", isCosmetic = false},
+        ["Armor Only"] = {kind = "category", category = "Armor", isCosmetic = false},
+        ["Necklace Only"] = {kind = "category", category = "Necklace", isCosmetic = false},
+        ["Skill Only"] = {kind = "category", category = "Skill", isCosmetic = false},
+        ["Pet Only"] = {kind = "category", category = "Pet", isCosmetic = false},
+        ["Pet Token Only"] = {kind = "category", category = "Pet Token", isCosmetic = false},
+        ["Refined Gem Only"] = {kind = "category", category = "Refined Gem", isCosmetic = false},
+        ["Cosmetic: Title (Dupes Only)"] = {kind = "title", isCosmetic = true},
+        ["Cosmetic: Weapon Aura (Dupes Only)"] = {kind = "cosmetic", cosmeticType = "WeaponAura", isCosmetic = true},
+        ["Cosmetic: Body Aura (Dupes Only)"] = {kind = "cosmetic", cosmeticType = "Aura", isCosmetic = true},
+        ["Cosmetic: Weapon Skin (Dupes Only)"] = {kind = "cosmetic", cosmeticType = "WeaponCosmetic", isCosmetic = true},
+        ["Cosmetic: Shirt (Dupes Only)"] = {kind = "cosmetic", cosmeticType = "ShirtCosmetic", isCosmetic = true},
+        ["Cosmetic: Pants (Dupes Only)"] = {kind = "cosmetic", cosmeticType = "PantsCosmetic", isCosmetic = true},
+        ["Cosmetic: All Types (Dupes Only)"] = {kind = "all_cosmetics", isCosmetic = true},
+    }
+
+    local KnownHandledCategories = {
+        ["Weapon"] = true, ["Armor"] = true, ["Necklace"] = true,
+        ["Skill"] = true, ["Pet"] = true, ["Pet Token"] = true,
+        ["Refined Gem"] = true, ["Cosmetic"] = true, ["Currency"] = true, ["Title"] = true,
+    }
+
+    local KnownCosmeticSubTypes = {
+        ["Title"] = true, ["WeaponAura"] = true, ["Aura"] = true,
+        ["WeaponCosmetic"] = true, ["ShirtCosmetic"] = true, ["PantsCosmetic"] = true,
+    }
+
+    local ItemList = Items:GetItemList()
+    for _, Data in pairs(ItemList) do
+        if type(Data) == "table" then
+            local Cat = Data.Category
+            if Cat == "Cosmetic" then
+                local SubType = tostring(Data.Type or "Other")
+                if not KnownCosmeticSubTypes[SubType] then
+                    KnownCosmeticSubTypes[SubType] = true
+                    local Label = "Cosmetic: " .. SubType .. " (Dupes Only)"
+                    FilterMap[Label] = {kind = "cosmetic", cosmeticType = SubType, isCosmetic = true}
+                    table.insert(CategoryOptions, Label)
+                end
+            elseif type(Cat) == "string" and Cat ~= "" and not KnownHandledCategories[Cat] then
+                KnownHandledCategories[Cat] = true
+                local Label = Cat .. " Only"
+                FilterMap[Label] = {kind = "category", category = Cat, isCosmetic = false}
+                table.insert(CategoryOptions, Label)
+            end
+        end
+    end
+
+    -- ==========================================
+    -- UID, ITEM INFO, DYE, LEVEL & RARITY READERS
+    -- ==========================================
+    local function GetItemUID(Item, FallbackKey)
+        if typeof(Item) == "Instance" then
+            local AttrUid = Item:GetAttribute("ItemUid")
+                or Item:GetAttribute("Uid")
+                or Item:GetAttribute("UID")
+            if type(AttrUid) == "string" and #AttrUid > 0 then
+                return AttrUid
+            end
+        end
+
+        local s1, uid1 = pcall(function() return Items:GetItemUid(Item) end)
+        if s1 and type(uid1) == "string" and #uid1 > 0 then
+            return uid1
+        end
+
+        if type(Item) == "table" then
+            local TblUid = Item.ItemUid or Item.uid or Item.UID or Item.Uid
+            if type(TblUid) == "string" and #TblUid > 0 then
+                return TblUid
+            end
+        end
+
+        local s2, ref = pcall(function() return Items:ItemRefForRemote(Item) end)
+        if s2 and type(ref) == "string" and #ref > 0 then
+            return ref
+        end
+
+        if type(FallbackKey) == "string" and #FallbackKey > 0 then
+            return FallbackKey
+        end
+
+        return nil
+    end
+
+    local function GetSafeInfo(Item, FallbackKey)
+        local Success, Result = pcall(function()
+            local ID = Items:GetItemId(Item)
+            if not ID and typeof(Item) == "Instance" then
+                ID = Item.Name
+            elseif not ID and type(Item) == "table" then
+                ID = Item.id or Item.Id or Item.ItemId or Item.itemId or Item.Name
+            end
+            if not ID then return nil end
+
+            local Data = Items:GetItemData(ID)
+            if type(Data) ~= "table" then return nil end
+
+            -- Prioritize Items:GetRarity(Item)
+            local Rarity = nil
+            local sR, rVal = pcall(function() return Items:GetRarity(Item) end)
+            if sR and tonumber(rVal) then
+                Rarity = tonumber(rVal)
+            elseif typeof(Item) == "Instance" and Item:FindFirstChild("Rarity") then
+                Rarity = tonumber(Item.Rarity.Value)
+            elseif type(Item) == "table" and tonumber(Item.rarity or Item.Rarity) then
+                Rarity = tonumber(Item.rarity or Item.Rarity)
+            elseif tonumber(Data.Rarity) then
+                Rarity = tonumber(Data.Rarity)
+            end
+
+            -- Never default unknown rarity to 1!
+            if not Rarity then return nil end
+
+            -- PERMANENT HARD BLOCK FOR UNIQUE RARITY (ID 8)
+            if Rarity == 8 or tonumber(Data.Rarity) == 8 then
+                return nil
+            end
+
+            return {
+                ID = ID,
+                UID = GetItemUID(Item, FallbackKey),
+                Data = Data,
+                Rarity = Rarity
+            }
+        end)
+
+        if not Success then return nil end
+        return Result
+    end
+
+    local function GetDye(Item)
+        if typeof(Item) == "Instance" then
+            local DyeObj = Item:FindFirstChild("Dye")
+            if DyeObj and DyeObj:IsA("ValueBase") and DyeObj.Value ~= nil and tostring(DyeObj.Value) ~= "" then
+                return tostring(DyeObj.Value)
+            end
+            local AttrDye = Item:GetAttribute("Dye") or Item:GetAttribute("dye")
+            if AttrDye ~= nil and tostring(AttrDye) ~= "" then
+                return tostring(AttrDye)
+            end
+            return "NONE"
+        elseif type(Item) == "table" then
+            local TblDye = Item.dye or Item.Dye or Item.color or Item.Color
+            if TblDye ~= nil and tostring(TblDye) ~= "" then
+                return tostring(TblDye)
+            end
+            return "NONE"
+        end
+        return "NONE"
+    end
+
+    local function GetItemLevel(Item)
+        local s, lvl = pcall(function() return Items:GetLevel(Item) end)
+        if s and tonumber(lvl) then
+            return tonumber(lvl)
+        end
+        if typeof(Item) == "Instance" and Item:FindFirstChild("Level") then
+            return tonumber(Item.Level.Value) or 1
+        elseif type(Item) == "table" and tonumber(Item.level or Item.Level) then
+            return tonumber(Item.level or Item.Level)
+        end
+        return 1
+    end
+
+    local function GetSeasonLevel(Item)
+        local s, lvl = pcall(function() return Items:GetSeasonalLevel(Item) end)
+        if s and tonumber(lvl) then
+            return tonumber(lvl)
+        end
+        return 1
+    end
+
+    local function GetCount(Item)
+        if typeof(Item) == "Instance" then
+            local Count = Item:FindFirstChild("Count")
+            if Count then
+                return math.max(1, tonumber(Count.Value) or 1)
+            end
+        elseif type(Item) == "table" then
+            return math.max(1, tonumber(Item.count or Item.Count) or 1)
+        end
+        return 1
+    end
+
+    -- ==========================================
+    -- 5-LAYER SMART PROTECTION CHECKS (INSTANCE + TABLE)
+    -- ==========================================
+    local function HasGodRollStats(Item)
+        if not ProtectGodRolls then return false end
+
+        if typeof(Item) == "Instance" then
+            local Stats = Item:FindFirstChild("Stats")
+            if not Stats or not Stats:IsA("Folder") then
+                return false
+            end
+
+            local StatCounts = {}
+            local MaxSameStat = 0
+            for _, StatChild in ipairs(Stats:GetChildren()) do
+                local StatName = StatChild.Name
+                StatCounts[StatName] = (StatCounts[StatName] or 0) + 1
+                if StatCounts[StatName] > MaxSameStat then
+                    MaxSameStat = StatCounts[StatName]
+                end
+            end
+            return MaxSameStat >= MinMatchingStatsToProtect
+
+        elseif type(Item) == "table" then
+            local StatsTbl = Item.stats or Item.Stats
+            if type(StatsTbl) == "table" then
+                local StatCounts = {}
+                local MaxSameStat = 0
+                for k, v in pairs(StatsTbl) do
+                    local StatName = (type(v) == "table" and (v.Name or v.stat or v[1])) or (type(v) == "string" and v) or tostring(k)
+                    StatCounts[StatName] = (StatCounts[StatName] or 0) + 1
+                    if StatCounts[StatName] > MaxSameStat then
+                        MaxSameStat = StatCounts[StatName]
+                    end
+                end
+                if MaxSameStat >= MinMatchingStatsToProtect then
+                    return true
+                end
+            end
+        end
+
+        return false
+    end
+
+    local function IsItemProtected(Item, Rarity, UID)
+        -- 0. Permanent Unique Rarity (ID 8) & Post-Pull Blacklist Shield
+        if Rarity == 8 then
+            return true, "UniqueRarityLock"
+        end
+        if UID and BankProtectedUIDBlacklist[UID] then
+            return true, "BlacklistedSafeUID"
+        end
+
+        -- 1. Official Favorite Check
+        local sFav, isFav = pcall(function()
+            return Items:ItemIsFavorited(Item)
+        end)
+        if not sFav or isFav == true then
+            return true, "Favorite"
+        end
+
+        if typeof(Item) == "Instance" then
+            -- 2. Instance Favorite & Sealed Check
+            local FavObj = Item:FindFirstChild("Favorite")
+            if FavObj and FavObj.Value == true then
+                return true, "Favorite"
+            end
+            if Item:FindFirstChild("Sealed") or Item:GetAttribute("Sealed") == true then
+                return true, "Sealed"
+            end
+
+            -- 3. Socketed Gem Protection
+            if ProtectSocketedGems then
+                local GemObj = Item:FindFirstChild("Gem")
+                if GemObj and (not GemObj:IsA("StringValue") or #GemObj.Value > 0) then
+                    return true, "SocketedGem"
+                end
+            end
+
+            -- 4. Saved Gear Preset Protection (GearPreset1, GearPreset2, GearPreset3)
+            if ProtectGearPresets then
+                for _, Child in ipairs(Item:GetChildren()) do
+                    if string.find(Child.Name, "^GearPreset") then
+                        return true, "GearPreset"
+                    end
+                end
+            end
+
+            -- 5. God-Roll Stat Protection (4x / 5x Same Stat)
+            if HasGodRollStats(Item) then
+                return true, "GodRollStats"
+            end
+
+        elseif type(Item) == "table" then
+            -- Table-level checks for Bank items before pulling
+            if Item.favorite == true or Item.Favorite == true or Item.sealed == true or Item.Sealed == true then
+                return true, "Favorite"
+            end
+            if ProtectSocketedGems and (Item.gem or Item.Gem) and tostring(Item.gem or Item.Gem) ~= "" then
+                return true, "SocketedGem"
+            end
+            if ProtectGearPresets and (Item.GearPreset1 or Item.GearPreset2 or Item.GearPreset3 or Item.presets or Item.Presets) then
+                return true, "GearPreset"
+            end
+            if HasGodRollStats(Item) then
+                return true, "GodRollStats"
+            end
+        end
+
+        return false, nil
+    end
+
+    -- ==========================================
+    -- CATEGORY & LEVEL/RARITY FILTERING
+    -- ==========================================
+    local function IsLeveledEquipment(Data)
+        local Cat = Data.Category
+        return Cat == "Weapon"
+            or Cat == "Armor"
+            or Cat == "Necklace"
+            or Cat == "Skill"
+    end
+
+    local function MatchesCategory(Data)
+        local Kind = SelectedFilter.kind
+
+        -- Strictly Weapons + Armor ONLY (Necklace is excluded here!)
+        if Kind == "gear_weapon_armor" then
+            return Data.Category == "Weapon" or Data.Category == "Armor"
+        elseif Kind == "title" then
+            return IsTitleData(Data)
+        elseif Kind == "cosmetic" then
+            return Data.Category == "Cosmetic"
+                and Data.Type == SelectedFilter.cosmeticType
+                and not IsTitleData(Data)
+        elseif Kind == "all_cosmetics" then
+            return Data.Category == "Cosmetic"
+        elseif Kind == "category" then
+            return Data.Category == SelectedFilter.category
+                or Data.SortCategory == SelectedFilter.category
+        end
+
+        return false
+    end
+
+    local function IsRarityAndLevelAllowed(Rarity, Level, Data)
+        if Rarity == 8 then
+            return false
+        end
+        if RarityConfig[Rarity] ~= true then
+            return false
+        end
+        if UseMaxSellLevelCap and IsLeveledEquipment(Data) then
+            if Level > MaxSellLevel then
+                return false
+            end
+        end
+        return true
+    end
+
+    -- ==========================================
+    -- COLLECT CANDIDATES (INVENTORY VS BANK)
+    -- ==========================================
+    local function BuildCandidateEntry(Item, FallbackKey)
+        local Info = GetSafeInfo(Item, FallbackKey)
+        if not Info then return nil end
+
+        local Data = Info.Data
+        local Rarity = Info.Rarity
+        local Level = GetItemLevel(Item)
+
+        local AllowUntradeable = (Data.Category == "Weapon" or Data.Category == "Armor" or Data.Category == "Necklace" or IsTitleData(Data))
+        if not AllowUntradeable then
+            local sU, isUntradeable = pcall(function()
+                return Items:ItemIsUntradeable(Data)
+            end)
+            if sU and isUntradeable then
+                return nil
+            end
+        end
+
+        if not MatchesCategory(Data) then
+            return nil
+        end
+
+        if not IsRarityAndLevelAllowed(Rarity, Level, Data) then
+            return nil
+        end
+
+        local Protected, ProtectReason = IsItemProtected(Item, Rarity, Info.UID)
+
+        return {
+            Item = Item,
+            UID = Info.UID,
+            ID = Info.ID,
+            Data = Data,
+            Rarity = Rarity,
+            Level = Level,
+            SeasonalLevel = (Data.Category == "Skill") and GetSeasonLevel(Item) or 1,
+            Count = GetCount(Item),
+            Protected = Protected,
+            ProtectReason = ProtectReason,
+            IsTitle = IsTitleData(Data),
+            Dye = (Data.Category == "Cosmetic") and GetDye(Item) or "NONE",
+            Type = Data.Type or "Other"
+        }
+    end
+
+    local function CollectInventoryCandidates()
+        local Collected = {}
+        local Seen = {}
+        local ProtectedSkipped = 0
+
+        local function Add(Item, Key)
+            if not Item or Seen[Item] then return end
+            Seen[Item] = true
+            local Entry = BuildCandidateEntry(Item, Key)
+            if Entry then
+                if Entry.Protected then
+                    ProtectedSkipped = ProtectedSkipped + 1
+                end
+                table.insert(Collected, Entry)
+            end
+        end
+
+        local Profile = ProfileSystem:GetProfile(Player)
+
+        if not SelectedFilter.isCosmetic then
+            local Inventory = (Profile and Profile:FindFirstChild("Inventory"))
+                or Items:GetPlayerItemFolder(Player, "Inventory")
+            if Inventory then
+                for _, Item in ipairs(Inventory:GetChildren()) do
+                    Add(Item, nil)
+                end
+            end
+        end
+
+        if SelectedFilter.kind == "category" and (SelectedFilter.category == "Pet" or SelectedFilter.category == "Pet Token") then
+            local Pets = (Profile and Profile:FindFirstChild("Pets"))
+                or Items:GetPlayerItemFolder(Player, "Pets")
+            if Pets then
+                for _, Item in ipairs(Pets:GetChildren()) do
+                    Add(Item, nil)
+                end
+            end
+        end
+
+        if SelectedFilter.isCosmetic then
+            local Inventory = (Profile and Profile:FindFirstChild("Inventory"))
+                or Items:GetPlayerItemFolder(Player, "Inventory")
+            if Inventory then
+                for _, Item in ipairs(Inventory:GetChildren()) do
+                    Add(Item, nil)
+                end
+            end
+
+            local Success, Cosmetics = pcall(function()
+                return Items:GetTableItems(Player, "Cosmetics")
+            end)
+            if Success and type(Cosmetics) == "table" then
+                for k, Item in pairs(Cosmetics) do
+                    Add(Item, k)
+                end
+            end
+        end
+
+        return Collected, ProtectedSkipped
+    end
+
+    local function CollectBankCandidates()
+        -- Cosmetics cannot be in the Bank; return empty if Cosmetic is selected
+        if SelectedFilter.isCosmetic then
+            return {}, 0
+        end
+
+        local Collected = {}
+        local SeenUIDs = {}
+        local ProtectedSkipped = 0
+        local Now = os.clock()
+
+        for uid, t in pairs(RecentlyPulledUIDs) do
+            if Now - t > 4.0 then
+                RecentlyPulledUIDs[uid] = nil
+            end
+        end
+
+        local function AddBankItem(Item, Key)
+            if not Item then return end
+            if typeof(Item) == "Instance" and Item:IsA("Folder") then return end
+
+            local UID = GetItemUID(Item, Key)
+            if not UID or SeenUIDs[UID] or RecentlyPulledUIDs[UID] then
+                return
+            end
+            SeenUIDs[UID] = true
+
+            local Entry = BuildCandidateEntry(Item, UID)
+            if Entry then
+                if Entry.Protected then
+                    ProtectedSkipped = ProtectedSkipped + 1
+                end
+                table.insert(Collected, Entry)
+            end
+        end
+
+        -- 1. Items:GetTableItems(Player, "ItemBank")
+        local s1, BankTable = pcall(function()
+            return Items:GetTableItems(Player, "ItemBank")
+        end)
+        if s1 and type(BankTable) == "table" then
+            for k, v in pairs(BankTable) do
+                AddBankItem(v, k)
+            end
+        end
+
+        -- 2. Items:GetRecordContainer(Player, "ItemBank")
+        local s2, RecContainer = pcall(function()
+            return Items:GetRecordContainer(Player, "ItemBank")
+        end)
+        if s2 and type(RecContainer) == "table" then
+            local SubTbl = RecContainer.Items or RecContainer.Records or RecContainer
+            if type(SubTbl) == "table" then
+                for k, v in pairs(SubTbl) do
+                    if type(v) == "table" or typeof(v) == "Instance" then
+                        AddBankItem(v, k)
+                    end
+                end
+            end
+        end
+
+        -- 3. Profile.ItemBank / Items:GetPlayerItemFolder(Player, "ItemBank")
+        local Profile = ProfileSystem:GetProfile(Player)
+        local BankFolder = nil
+        pcall(function() BankFolder = Items:GetPlayerItemFolder(Player, "ItemBank") end)
+        if not BankFolder and Profile then
+            BankFolder = Profile:FindFirstChild("ItemBank")
+        end
+        if BankFolder and typeof(BankFolder) == "Instance" then
+            for _, Child in ipairs(BankFolder:GetChildren()) do
+                AddBankItem(Child, nil)
+            end
+        end
+
+        return Collected, ProtectedSkipped
+    end
+
+    -- ==========================================
+    -- GROUPING & SELL LIST BUILDERS
+    -- ==========================================
+    local function GetGroupKey(Entry)
+        local BaseKey = tostring(Entry.ID) .. "|R:" .. tostring(Entry.Rarity)
+        if Entry.IsTitle then
+            return BaseKey .. "|TITLE"
+        elseif Entry.Data.Category == "Skill" then
+            return BaseKey .. "|SKILL|S:" .. tostring(Entry.SeasonalLevel)
+        elseif Entry.Data.Category == "Cosmetic" then
+            return BaseKey .. "|COS:" .. tostring(Entry.Type) .. "|DYE:" .. tostring(Entry.Dye)
+        end
+        return BaseKey
+    end
+
+    local function BuildSellEntries(Collected, UseDuplicateLogic)
+        local TargetEntries = {}
+        local MetaTable = {}
+
+        if not UseDuplicateLogic then
+            for _, Entry in ipairs(Collected) do
+                if not Entry.Protected then
+                    table.insert(TargetEntries, Entry)
+                end
+            end
+            return TargetEntries, MetaTable
+        end
+
+        -- Duplicate Logic:
+        -- * For Leveled Equipment (Skill/Weapon/Armor/Necklace): Keeps 1 Highest-Level copy, sells lower-level copies
+        -- * For Cosmetics/Titles/Pets/Tokens: Keeps 1 copy per exact Dye/Rarity group, sells extras
+        local Groups = {}
+        for _, Entry in ipairs(Collected) do
+            local Key = GetGroupKey(Entry)
+            Groups[Key] = Groups[Key] or {}
+            table.insert(Groups[Key], Entry)
+        end
+
+        for _, Group in pairs(Groups) do
+            local ProtectedEntries = {}
+            local UnprotectedEntries = {}
+
+            for _, Entry in ipairs(Group) do
+                if Entry.Protected then
+                    table.insert(ProtectedEntries, Entry)
+                else
+                    table.insert(UnprotectedEntries, Entry)
+                end
+            end
+
+            if IsLeveledEquipment(Group[1].Data) then
+                local HighestProtectedLevel = -math.huge
+                for _, Entry in ipairs(ProtectedEntries) do
+                    HighestProtectedLevel = math.max(HighestProtectedLevel, Entry.Level)
+                end
+
+                table.sort(UnprotectedEntries, function(a, b)
+                    return a.Level > b.Level
+                end)
+
+                local KeptOne = false
+                for _, Entry in ipairs(UnprotectedEntries) do
+                    local ShouldKeep = false
+                    if not KeptOne and (#ProtectedEntries == 0 or Entry.Level > HighestProtectedLevel) then
+                        ShouldKeep = true
+                        KeptOne = true
+                    end
+
+                    if not ShouldKeep then
+                        table.insert(TargetEntries, Entry)
+                    end
+                end
+            else
+                local ProtectedCopies = 0
+                for _, Entry in ipairs(ProtectedEntries) do
+                    ProtectedCopies = ProtectedCopies + Entry.Count
+                end
+
+                local RemainingKeep = (ProtectedCopies > 0) and 0 or 1
+
+                for _, Entry in ipairs(UnprotectedEntries) do
+                    local KeepAmount = math.min(Entry.Count, RemainingKeep)
+                    RemainingKeep = RemainingKeep - KeepAmount
+                    local SellAmount = Entry.Count - KeepAmount
+
+                    if SellAmount > 0 then
+                        Entry.SellAmount = SellAmount
+                        table.insert(TargetEntries, Entry)
+                        if SellAmount < Entry.Count then
+                            table.insert(MetaTable, {Entry.Item, SellAmount})
+                        end
+                    end
+                end
+            end
+        end
+
+        return TargetEntries, MetaTable
+    end
+
+    -- ==========================================
+    -- SMART BANK-TO-SELL AUTO-BRIDGE ENGINE
+    -- ==========================================
+    local function GetInventoryUsedCount()
+        local Profile = ProfileSystem:GetProfile(Player)
+        local Inv = Profile and Profile:FindFirstChild("Inventory")
+        return Inv and #Inv:GetChildren() or 0
+    end
+
+    local function FindLiveInventoryInstanceByUID(TargetUID)
+        local Profile = ProfileSystem:GetProfile(Player)
+        if not Profile then return nil end
+
+        local Inv = Profile:FindFirstChild("Inventory")
+        if Inv then
+            for _, Child in ipairs(Inv:GetChildren()) do
+                if GetItemUID(Child, nil) == TargetUID then
+                    return Child
+                end
+            end
+        end
+
+        local Pets = Profile:FindFirstChild("Pets")
+        if Pets then
+            for _, Child in ipairs(Pets:GetChildren()) do
+                if GetItemUID(Child, nil) == TargetUID then
+                    return Child
+                end
+            end
+        end
+
+        return nil
+    end
+
+    local function ExecuteBankBridgeSell(BankTargetEntries, ProtectedSkippedCount)
+        if #BankTargetEntries == 0 then return false end
+
+        -- Bag capacity check before pulling from Bank
+        local CurrentBag = GetInventoryUsedCount()
+        if CurrentBag >= SafeBagLimitForBridge then
+            ShowTopNotification(
+                "Bank Bridge Paused (Bag Full!)",
+                string.format("Inventory has %d/%d items. Clear space first!", CurrentBag, SafeBagLimitForBridge),
+                Color3.fromRGB(255, 95, 95),
+                3.5
+            )
+            return false
+        end
+
+        -- Step 1: Pull a safe micro-batch (e.g. max 5 items) from Bank to Inventory
+        local BatchUIDs = {}
+        local BatchEntriesByUID = {}
+        local PullLimit = math.min(#BankTargetEntries, BankPullBatchSize)
+
+        for i = 1, PullLimit do
+            local Entry = BankTargetEntries[i]
+            if Entry and Entry.UID and not BankProtectedUIDBlacklist[Entry.UID] then
+                table.insert(BatchUIDs, Entry.UID)
+                BatchEntriesByUID[Entry.UID] = Entry
+                RecentlyPulledUIDs[Entry.UID] = os.clock()
+                ItemBankRemote:FireServer(Entry.UID)
+                task.wait(0.08)
+            end
+        end
+
+        if #BatchUIDs == 0 then return false end
+
+        -- Step 2: Wait up to 1.5s for the pulled items to materialize in Profile.Inventory / Profile.Pets
+        local FoundInstances = {}
+        local StartWait = os.clock()
+
+        while os.clock() - StartWait < 1.5 do
+            local AllFound = true
+            for _, UID in ipairs(BatchUIDs) do
+                if not FoundInstances[UID] then
+                    local LiveInst = FindLiveInventoryInstanceByUID(UID)
+                    if LiveInst then
+                        FoundInstances[UID] = LiveInst
+                    else
+                        AllFound = false
+                    end
+                end
+            end
+            if AllFound then break end
+            task.wait(0.1)
+        end
+
+        -- Step 3: POST-PULL SECOND SAFETY VERIFICATION ON LIVE INSTANCES!
+        local VerifiedSellInstances = {}
+        local VerifiedMetaTable = {}
+        local RescuedCount = 0
+
+        for _, UID in ipairs(BatchUIDs) do
+            local LiveInst = FoundInstances[UID]
+            if LiveInst and LiveInst.Parent then
+                local LiveInfo = GetSafeInfo(LiveInst, UID)
+                local LiveLevel = GetItemLevel(LiveInst)
+
+                local StillValid = LiveInfo ~= nil
+                    and LiveInfo.Rarity ~= 8
+                    and MatchesCategory(LiveInfo.Data)
+                    and IsRarityAndLevelAllowed(LiveInfo.Rarity, LiveLevel, LiveInfo.Data)
+
+                local LiveProtected, LiveReason = true, "Unverified"
+                if StillValid then
+                    LiveProtected, LiveReason = IsItemProtected(LiveInst, LiveInfo.Rarity, UID)
+                end
+
+                if not StillValid or LiveProtected then
+                    -- EMERGENCY RESCUE: The live Instance has a God-Roll (4x/5x stat), Gem, or Favorite!
+                    BankProtectedUIDBlacklist[UID] = true
+                    RescuedCount = RescuedCount + 1
+
+                    if AutoReturnIfProtected then
+                        -- Send it straight back to the Bank!
+                        task.spawn(function()
+                            task.wait(0.15)
+                            ItemBankRemote:FireServer(UID)
+                        end)
+                    end
+                else
+                    -- Passed both Pre-Pull and Post-Pull checks -> 100% Safe to Sell!
+                    table.insert(VerifiedSellInstances, LiveInst)
+                    local OrigEntry = BatchEntriesByUID[UID]
+                    local LiveCount = GetCount(LiveInst)
+                    if OrigEntry and OrigEntry.SellAmount and OrigEntry.SellAmount < LiveCount then
+                        table.insert(VerifiedMetaTable, {LiveInst, OrigEntry.SellAmount})
+                    end
+                end
+            end
+        end
+
+        if RescuedCount > 0 then
+            ShowTopNotification(
+                string.format("Post-Pull Shield Rescued %d Item(s)!", RescuedCount),
+                "God-Roll / Gem / Protected item returned to Bank safely!",
+                Color3.fromRGB(0, 220, 255),
+                3.5
+            )
+        end
+
+        -- Step 4: Sell ONLY the verified live Instances
+        if #VerifiedSellInstances > 0 then
+            LastSellTime = os.clock()
+            ShowTopNotification(
+                string.format("Bank Bridge Sold %d Item(s)!", #VerifiedSellInstances),
+                string.format("%s | Remaining in Bank Queue: %d", SelectedCategory, math.max(0, #BankTargetEntries - #BatchUIDs)),
+                Color3.fromRGB(255, 130, 55),
+                2.8
+            )
+            ItemSelling:SellItem(Player, VerifiedSellInstances, VerifiedMetaTable)
+            task.wait(0.35)
+            return true
+        end
+
+        return false
+    end
+
+    -- ==========================================
+    -- MASTER EXECUTION CYCLE
+    -- ==========================================
+    local DupToggleRef = nil
+
+    local function RunAutoSell(IsManualPreview)
+        if IsRunningCycle and not IsManualPreview then return end
+        IsRunningCycle = true
+
+        local Success, Err = pcall(function()
+            local ForceDupForCosmetics = (SelectedFilter.isCosmetic == true)
+            local EffectiveDuplicateMode = DuplicateSellEnabled or ForceDupForCosmetics
+
+            -- 1. Preview Scan Mode
+            if IsManualPreview then
+                local InvCollected, InvProtected = CollectInventoryCandidates()
+                local InvTargets = BuildSellEntries(InvCollected, EffectiveDuplicateMode)
+
+                local BankCollected, BankProtected = CollectBankCandidates()
+                local BankTargets = BuildSellEntries(BankCollected, EffectiveDuplicateMode)
+
+                local ModeLabel = ForceDupForCosmetics and "Forced Dupes" or (DuplicateSellEnabled and "Dupes Only" or "Normal")
+                ShowTopNotification(
+                    string.format("Inv Ready: %d (Safe:%d) | Bank Ready: %d (Safe:%d)", #InvTargets, InvProtected, #BankTargets, BankProtected),
+                    string.format("Source: %s | %s (%s)", SellSource, SelectedCategory, ModeLabel),
+                    (#InvTargets + #BankTargets > 0) and Color3.fromRGB(255, 175, 45) or Color3.fromRGB(0, 225, 140),
+                    4.5
+                )
+                return
+            end
+
+            if not AutoSellEnabled then return end
+            if os.clock() - LastSellTime < SellCooldown then return end
+
+            -- 2. Sell From Inventory (If Source is "From Inventory Only" or "From Both" or Cosmetic)
+            local ShouldCheckInventory = (SellSource == "From Inventory Only")
+                or (SellSource == "From Both (Inventory + Bank)")
+                or SelectedFilter.isCosmetic
+
+            if ShouldCheckInventory then
+                local InvCollected, InvProtected = CollectInventoryCandidates()
+                local InvTargets, InvMeta = BuildSellEntries(InvCollected, EffectiveDuplicateMode)
+
+                if #InvTargets > 0 then
+                    local SellInstances = {}
+                    for _, Entry in ipairs(InvTargets) do
+                        table.insert(SellInstances, Entry.Item)
+                    end
+
+                    LastSellTime = os.clock()
+                    ShowTopNotification(
+                        string.format("Inventory Sold %d Item(s)!", #SellInstances),
+                        string.format("%s | Protected Skipped: %d", SelectedCategory, InvProtected),
+                        Color3.fromRGB(255, 115, 65),
+                        2.8
+                    )
+                    ItemSelling:SellItem(Player, SellInstances, InvMeta)
+                    return
+                end
+            end
+
+            -- 3. Sell From Bank via Smart Auto-Bridge (If Source is "From Bank Only" or "From Both")
+            local ShouldCheckBank = (SellSource == "From Bank Only (Auto-Bridge)")
+                or (SellSource == "From Both (Inventory + Bank)")
+
+            if ShouldCheckBank and not SelectedFilter.isCosmetic then
+                local BankCollected, BankProtected = CollectBankCandidates()
+                local BankTargets = BuildSellEntries(BankCollected, EffectiveDuplicateMode)
+
+                if #BankTargets > 0 then
+                    ExecuteBankBridgeSell(BankTargets, BankProtected)
+                end
+            end
+        end)
+
+        if not Success then
+            warn("[Auto Sell V4 Error]:", Err)
+        end
+
+        IsRunningCycle = false
+    end
+
+    -- ==========================================
+    -- RAYFIELD UI: MASTER, SOURCE & CATEGORY
+    -- ==========================================
+    UtilityTab:CreateToggle({
+        Name = "Auto Sell (Master Switch)",
+        CurrentValue = false,
+        Flag = "V4_AutoSellMaster",
+        Callback = function(Value)
+            AutoSellEnabled = Value
+            ShowTopNotification(
+                "Auto Sell V4: " .. (Value and "ACTIVE" or "STOPPED"),
+                string.format("%s | %s", SellSource, SelectedCategory),
+                Value and Color3.fromRGB(0, 230, 145) or Color3.fromRGB(255, 100, 90),
+                2.5
+            )
+        end
+    })
+
+    UtilityTab:CreateDropdown({
+        Name = "Select Sell Source (Where To Sell From)",
+        Options = {
+            "From Inventory Only",
+            "From Bank Only (Auto-Bridge)",
+            "From Both (Inventory + Bank)"
+        },
+        CurrentOption = "From Inventory Only",
+        MultipleOptions = false,
+        Flag = "V4_AutoSellSource",
+        Callback = function(Option)
+            if type(Option) == "table" then Option = Option[1] end
+            if not Option then return end
+            SellSource = Option
+            ShowTopNotification(
+                "Sell Source Updated",
+                "Source: " .. SellSource,
+                Color3.fromRGB(80, 200, 255),
+                2.8
+            )
+        end
+    })
+
+    DupToggleRef = UtilityTab:CreateToggle({
+        Name = "Duplicate Sell Mode (Keep 1 Best/Unique)",
+        CurrentValue = false,
+        Flag = "V4_DuplicateSell",
+        Callback = function(Value)
+            if SelectedFilter.isCosmetic and not Value then
+                DuplicateSellEnabled = true
+                if DupToggleRef and DupToggleRef.Set then
+                    pcall(function() DupToggleRef:Set(true) end)
+                end
+                ShowTopNotification(
+                    "Cosmetic Safety Lock Active!",
+                    "Cosmetics & Titles sirf Duplicate Mode me hi sell hote hain.",
+                    Color3.fromRGB(255, 180, 40),
+                    3.2
+                )
+                return
+            end
+            DuplicateSellEnabled = Value
+        end
+    })
+
+    UtilityTab:CreateDropdown({
+        Name = "Select Category To Sell",
+        Options = CategoryOptions,
+        CurrentOption = "Gear (Weapons + Armor Only)",
+        MultipleOptions = false,
+        Flag = "V4_AutoSellCategory",
+        Callback = function(Option)
+            if type(Option) == "table" then Option = Option[1] end
+            if not Option or not FilterMap[Option] then return end
+
+            SelectedCategory = Option
+            SelectedFilter = FilterMap[Option]
+
+            if SelectedFilter.isCosmetic then
+                DuplicateSellEnabled = true
+                if DupToggleRef and DupToggleRef.Set then
+                    pcall(function() DupToggleRef:Set(true) end)
+                end
+                ShowTopNotification(
+                    "Cosmetic Selected (Auto-Dupe ON)",
+                    SelectedCategory .. " | Har Dye ka 1 piece safe rahega!",
+                    Color3.fromRGB(0, 220, 255),
+                    3.2
+                )
+            else
+                ShowTopNotification(
+                    "Category Changed",
+                    "Selected: " .. SelectedCategory,
+                    Color3.fromRGB(90, 185, 255),
+                    2.5
+                )
+            end
+        end
+    })
+
+    -- ==========================================
+    -- RAYFIELD UI: BANK AUTO-BRIDGE CONTROLS
+    -- ==========================================
+    UtilityTab:CreateSection("Bank Auto-Bridge Safety Settings")
+
+    UtilityTab:CreateSlider({
+        Name = "Bank Pull Micro-Batch Size (Safe Pull)",
+        Range = {1, 15},
+        Increment = 1,
+        Suffix = " Items",
+        CurrentValue = 5,
+        Flag = "V4_BankPullBatchSize",
+        Callback = function(Value)
+            BankPullBatchSize = tonumber(Value) or 5
+        end
+    })
+
+    UtilityTab:CreateToggle({
+        Name = "Auto-Return To Bank If Post-Check Protected",
+        CurrentValue = true,
+        Flag = "V4_AutoReturnBank",
+        Callback = function(Value)
+            AutoReturnIfProtected = Value
+        end
+    })
+
+    -- ==========================================
+    -- RAYFIELD UI: SMART PROTECTION SHIELDS
+    -- ==========================================
+    UtilityTab:CreateSection("Smart Anti-Loss Protection Shields")
+
+    UtilityTab:CreateToggle({
+        Name = "Protect Gear With Socketed Gems",
+        CurrentValue = true,
+        Flag = "V4_ProtectGems",
+        Callback = function(Value)
+            ProtectSocketedGems = Value
+        end
+    })
+
+    UtilityTab:CreateToggle({
+        Name = "Protect Saved Gear Presets (Preset 1/2/3)",
+        CurrentValue = true,
+        Flag = "V4_ProtectPresets",
+        Callback = function(Value)
+            ProtectGearPresets = Value
+        end
+    })
+
+    UtilityTab:CreateToggle({
+        Name = "Protect God-Roll Gear (4x / 5x Same Stat)",
+        CurrentValue = true,
+        Flag = "V4_ProtectGodRolls",
+        Callback = function(Value)
+            ProtectGodRolls = Value
+        end
+    })
+
+    UtilityTab:CreateSlider({
+        Name = "Same-Stat Count for God-Roll Shield",
+        Range = {3, 5},
+        Increment = 1,
+        Suffix = "x Same Stat",
+        CurrentValue = 4,
+        Flag = "V4_GodRollCount",
+        Callback = function(Value)
+            MinMatchingStatsToProtect = tonumber(Value) or 4
+        end
+    })
+
+    UtilityTab:CreateToggle({
+        Name = "Enable Max Level Cap For Selling",
+        CurrentValue = false,
+        Flag = "V4_UseMaxLevelCap",
+        Callback = function(Value)
+            UseMaxSellLevelCap = Value
+        end
+    })
+
+    UtilityTab:CreateSlider({
+        Name = "Only Sell Gear/Skills At or Below Level",
+        Range = {1, 500},
+        Increment = 1,
+        Suffix = " Lv",
+        CurrentValue = 215,
+        Flag = "V4_MaxSellLevel",
+        Callback = function(Value)
+            MaxSellLevel = tonumber(Value) or 215
+        end
+    })
+
+    UtilityTab:CreateButton({
+        Name = "Preview Matching Sell Count (Inv + Bank Scan)",
+        Callback = function()
+            RunAutoSell(true)
+        end
+    })
+
+    -- ==========================================
+    -- RAYFIELD UI: RARITIES (UNIQUE ID 8 BLOCKED)
+    -- ==========================================
+    UtilityTab:CreateSection("Sell Rarity Settings (Unique ID 8 Blocked)")
+
+    local Rarities = {
+        {Name = "Common (ID 1)", ID = 1},
+        {Name = "Uncommon (ID 2)", ID = 2},
+        {Name = "Rare (ID 3)", ID = 3},
+        {Name = "Epic (ID 4)", ID = 4},
+        {Name = "Legendary (ID 5)", ID = 5},
+        {Name = "Mythic (ID 6)", ID = 6},
+        {Name = "Primordial (ID 7)", ID = 7},
+        -- Unique (ID 8) is PERMANENTLY OMITTED and HARD-BLOCKED!
+        {Name = "Nightmare (ID 9)", ID = 9},
+    }
+
+    for _, Rarity in ipairs(Rarities) do
+        UtilityTab:CreateToggle({
+            Name = "Sell " .. Rarity.Name,
+            CurrentValue = false,
+            Flag = "V4_SellRarity_" .. tostring(Rarity.ID),
+            Callback = function(Value)
+                RarityConfig[Rarity.ID] = Value
+            end
+        })
+    end
+
+    -- ==========================================
+    -- BACKGROUND LOOP
+    -- ==========================================
+    task.spawn(function()
+        while true do
+            task.wait(ScanDelay)
+            if AutoSellEnabled and not IsRunningCycle then
+                RunAutoSell(false)
+            end
+        end
+    end)
 end
 
--- ==========================================
--- DYNAMIC CATEGORY OPTIONS
--- ==========================================
-
-local ItemList = Items:GetItemList()
-
-local CategoryOptions = {"Gear", "Title"}
-
-local FilterMap = {
-["Gear"] = {kind = "gear"},
-["Title"] = {kind = "title"}
-}
-
-local CosmeticTypes = {}
-
-for ID, Data in pairs(ItemList) do
-
-if type(Data) ~= "table" then  
-    continue  
-end  
-
-local Category = Data.Category  
-
-if Category == "Weapon" or Category == "Armor" then  
-    continue  
-end  
-
-if Category == "Cosmetic" then  
-
-    local Type = Data.Type or "Other"  
-
-    if Type ~= "Title" then  
-        CosmeticTypes[Type] = true  
-    end  
-
-elseif type(Category) == "string" then  
-
-    if Category ~= "Title" then  
-        FilterMap[Category] = {  
-            kind = "category",  
-            category = Category  
-        }  
-    end  
-end
-
-end
-
-local CosmeticTypeNames = {
-Title = "Title",
-Aura = "Aura",
-WeaponCosmetic = "Weapon Cosmetic",
-ShirtCosmetic = "Shirt",
-PantsCosmetic = "Pants",
-}
-
-for Type in pairs(CosmeticTypes) do
-
-local Label = "Cosmetic: " ..  
-    (CosmeticTypeNames[Type] or Type)  
-
-FilterMap[Label] = {  
-    kind = "cosmetic",  
-    cosmeticType = Type  
-}  
-
-table.insert(CategoryOptions, Label)
-
-end
-
-for Category in pairs(FilterMap) do
-
-if Category ~= "Gear"  
-and Category ~= "Title"  
-and not string.find(Category, "Cosmetic: ", 1, true) then  
-
-    table.insert(CategoryOptions, Category)  
-end
-
-end
-
-table.sort(CategoryOptions, function(a, b)
-
-if a == "Gear" then return true end  
-if b == "Gear" then return false end  
-
-if a == "Title" then return true end  
-if b == "Title" then return false end  
-
-return a < b
-
-end)
-
--- ==========================================
--- RAYFIELD WINDOW
--- ==========================================
-
-UtilityTab:CreateToggle({
-Name = "Auto Sell",
-CurrentValue = false,
-Flag = "AutoSellMaster",
-
-Callback = function(Value)  
-    AutoSellEnabled = Value  
-    print("Auto Sell:", Value)  
-end
-
-})
-
-UtilityTab:CreateToggle({
-Name = "Duplicate Sell",
-CurrentValue = false,
-Flag = "DuplicateSell",
-
-Callback = function(Value)  
-    DuplicateSellEnabled = Value  
-    print("Duplicate Sell:", Value)  
-end
-
-})
-
-UtilityTab:CreateDropdown({
-Name = "Select Category",
-Options = CategoryOptions,
-CurrentOption = "Gear",
-MultipleOptions = false,
-Flag = "AutoSellCategory",
-
-Callback = function(Option)  
-
-    if type(Option) == "table" then  
-        Option = Option[1]  
-    end  
-
-    if not Option or not FilterMap[Option] then  
-        return  
-    end  
-
-    SelectedCategory = Option  
-    SelectedFilter = FilterMap[Option]  
-
-    print("Category:", Option)  
-end
-
-})
-
--- ==========================================
--- RARITY TOGGLES
--- ==========================================
-
-UtilityTab:CreateSection("Rarity Settings")
-
-local Rarities = {
-{Name = "Common", ID = 1},
-{Name = "Uncommon", ID = 2},
-{Name = "Rare", ID = 3},
-{Name = "Epic", ID = 4},
-{Name = "Legendary", ID = 5},
-{Name = "Mythic", ID = 6},
-{Name = "Nightmare", ID = 9},
-}
-
-for _, Rarity in ipairs(Rarities) do
-
-UtilityTab:CreateToggle({  
-    Name = "Sell " .. Rarity.Name,  
-    CurrentValue = false,  
-    Flag = "Rarity_" .. Rarity.Name,  
-
-    Callback = function(Value)  
-        RarityConfig[Rarity.ID] = Value  
-    end  
-})
-
-end
-
--- ==========================================
--- ITEM INFORMATION
--- ==========================================
-
-local function GetInfo(Item)
-
-local Success, Result = pcall(function()  
-
-    local ID = Items:GetItemId(Item)  
-    if not ID then return nil end  
-
-    local Data = Items:GetItemData(ID)  
-    if not Data then return nil end  
-
-    return {  
-        ID = ID,  
-        Data = Data,  
-        Rarity = Items:GetRarity(Item)  
-    }  
-end)  
-
-if not Success then  
-    return nil  
-end  
-
-return Result
-
-end
-
--- ==========================================
--- FAVORITE / SEALED PROTECTION
--- ==========================================
-
-local function IsProtected(Item)
-
-local Success, Favorite = pcall(function()  
-    return Items:ItemIsFavorited(Item)  
-end)  
-
-if not Success or Favorite then  
-    return true  
-end  
-
-if typeof(Item) == "Instance" then  
-
-    if Item:FindFirstChild("Sealed") then  
-        return true  
-    end  
-
-elseif typeof(Item) == "table" then  
-
-    if Item.sealed == true then  
-        return true  
-    end  
-end  
-
-return false
-
-end
-
--- ==========================================
--- DYE IDENTIFICATION
--- ==========================================
-
-local function GetDye(Item)
-
-if typeof(Item) == "Instance" then  
-
-    local Dye = Item:FindFirstChild("Dye")  
-
-    if Dye and Dye:IsA("StringValue") then  
-        return Dye.Value  
-    end  
-
-    return ""  
-end  
-
-if typeof(Item) == "table" then  
-    return Item.dye or ""  
-end  
-
-return ""
-
-end
-
--- ==========================================
--- LEVEL IDENTIFICATION
--- ==========================================
-
-local function GetSkillLevel(Item)
-
-local Success, Level = pcall(function()  
-    return Items:GetLevel(Item)  
-end)  
-
-if Success then  
-    return tonumber(Level) or 1  
-end  
-
-return 1
-
-end
-
-local function GetSeasonLevel(Item)
-
-local Success, Level = pcall(function()  
-    return Items:GetSeasonalLevel(Item)  
-end)  
-
-if Success then  
-    return tonumber(Level) or 1  
-end  
-
-return 1
-
-end
-
-local function GetCount(Item)
-
-if typeof(Item) == "Instance" then  
-
-    local Count = Item:FindFirstChild("Count")  
-
-    if Count then  
-        return math.max(1, tonumber(Count.Value) or 1)  
-    end  
-
-elseif typeof(Item) == "table" then  
-
-    return math.max(1, tonumber(Item.count) or 1)  
-end  
-
-return 1
-
-end
-
--- ==========================================
--- CATEGORY MATCHING
--- ==========================================
-
-local function IsGear(Data)
-
-return Data.Category == "Weapon"  
-    or Data.Category == "Armor"
-
-end
-
-local function MatchesCategory(Data, ID)
-
-if SelectedFilter.kind == "gear" then  
-    return IsGear(Data)  
-end  
-
--- FIXED TITLE MATCHING  
-if SelectedFilter.kind == "title" then  
-    return IsTitleData(Data, ID)  
-end  
-
-if SelectedFilter.kind == "cosmetic" then  
-
-    return Data.Category == "Cosmetic"  
-        and Data.Type == SelectedFilter.cosmeticType  
-        and not IsTitleData(Data, ID)  
-end  
-
-if SelectedFilter.kind == "category" then  
-
-    return Data.Category == SelectedFilter.category  
-        or Data.SortCategory == SelectedFilter.category  
-end  
-
-return false
-
-end
-
--- ==========================================
--- COLLECT ITEMS
--- ==========================================
-
-local function CollectItems()
-
-local Collected = {}  
-local Seen = {}  
-
--- ======================================  
--- GEAR COLLECTION  
--- Original working Stats Folder logic  
--- ======================================  
-
-if SelectedFilter.kind == "gear" then  
-
-    local Profile = ProfileSystem:GetProfile(Player)  
-    if not Profile then  
-        return Collected  
-    end  
-
-    local Inventory = Profile:FindFirstChild("Inventory")  
-    if not Inventory then  
-        return Collected  
-    end  
-
-    for _, Item in ipairs(Inventory:GetChildren()) do  
-
-        local Stats = Item:FindFirstChild("Stats")  
-        local IsGearItem = Stats and Stats:IsA("Folder")  
-
-        if IsGearItem then  
-
-            -- Favorite Protection  
-            local IsFavorite = false  
-
-            local Success, Result = pcall(function()  
-                return Items:ItemIsFavorited(Item)  
-            end)  
-
-            if Success and Result then  
-                IsFavorite = true  
-            end  
-
-            local Favorite = Item:FindFirstChild("Favorite")  
-
-            if Favorite and Favorite.Value == true then  
-                IsFavorite = true  
-            end  
-
-            -- Sealed Protection  
-            if Item:FindFirstChild("Sealed") then  
-                IsFavorite = true  
-            end  
-
-            -- Rarity Check  
-            local RarityValue = Item:FindFirstChild("Rarity")  
-            local RarityID = RarityValue and RarityValue.Value or 1  
-
-            local ShouldSell = RarityConfig[RarityID] == true  
-
-            if not IsFavorite and ShouldSell then  
-
-                table.insert(Collected, {  
-                    Item = Item,  
-                    Protected = false,  
-                    Rarity = RarityID,  
-                    Count = 1,  
-                    IsTitle = false  
-                })  
-            end  
-        end  
-    end  
-
-    return Collected  
-end  
-
--- ======================================  
--- ORIGINAL COLLECTION LOGIC  
--- Other categories unchanged  
--- ======================================  
-
-local function AddItem(Item)  
-
-    if not Item or Seen[Item] then  
-        return  
-    end  
-
-    Seen[Item] = true  
-
-    local Info = GetInfo(Item)  
-    if not Info then return end  
-
-    local Data = Info.Data  
-
-    if Items:ItemIsUntradeable(Data)  
-    and not IsTitleData(Data, Info.ID) then  
-        return  
-    end  
-
-    if not MatchesCategory(Data, Info.ID) then  
-        return  
-    end  
-
-    if RarityConfig[Info.Rarity] ~= true then  
-        return  
-    end  
-
-    local Entry = {  
-        Item = Item,  
-        ID = Info.ID,  
-        Data = Data,  
-        Rarity = Info.Rarity,  
-        Count = GetCount(Item),  
-        Protected = IsProtected(Item),  
-        IsTitle = IsTitleData(Data, Info.ID),  
-    }  
-
-    if Data.Category == "Skill" then  
-        Entry.Level = GetSkillLevel(Item)  
-        Entry.SeasonalLevel = GetSeasonLevel(Item)  
-    end  
-
-    if Data.Category == "Cosmetic" then  
-        Entry.Dye = GetDye(Item)  
-        Entry.Type = Data.Type or "Other"  
-    end  
-
-    table.insert(Collected, Entry)  
-end  
-
--- Inventory  
-local Inventory = Items:GetPlayerItemFolder(  
-    Player, "Inventory"  
-)  
-
-if Inventory then  
-    for _, Item in ipairs(Inventory:GetChildren()) do  
-        AddItem(Item)  
-    end  
-end  
-
--- Pets  
-local Pets = Items:GetPlayerItemFolder(  
-    Player, "Pets"  
-)  
-
-if Pets then  
-    for _, Item in ipairs(Pets:GetChildren()) do  
-        AddItem(Item)  
-    end  
-end  
-
--- Cosmetics records  
-local Success, Cosmetics = pcall(function()  
-    return Items:GetTableItems(Player, "Cosmetics")  
-end)  
-
-if Success and type(Cosmetics) == "table" then  
-
-    for _, Item in pairs(Cosmetics) do  
-        AddItem(Item)  
-    end  
-end  
-
-return Collected
-
-end
-
--- ==========================================
--- DUPLICATE GROUP KEY
--- ==========================================
-
-local function GetGroupKey(Entry)
-
-local BaseKey =  
-    tostring(Entry.ID)  
-    .. "|" .. tostring(Entry.Rarity)  
-
--- FIXED TITLE GROUPING  
-if Entry.IsTitle then  
-    return BaseKey .. "|TITLE"  
-end  
-
-if Entry.Data.Category == "Skill" then  
-
-    return BaseKey  
-        .. "|Skill|"  
-        .. tostring(Entry.SeasonalLevel)  
-end  
-
-if Entry.Data.Category == "Cosmetic" then  
-
-    return BaseKey  
-        .. "|"  
-        .. tostring(Entry.Type)  
-        .. "|"  
-        .. tostring(Entry.Dye)  
-end  
-
-return BaseKey
-
-end
-
--- ==========================================
--- NORMAL SELL
--- ==========================================
-
-local function GetNormalSellList(Collected)
-
-local SellList = {}  
-
-for _, Entry in ipairs(Collected) do  
-
-    if not Entry.Protected then  
-        table.insert(SellList, Entry.Item)  
-    end  
-end  
-
-return SellList, {}
-
-end
-
--- ==========================================
--- DUPLICATE SELL
--- ==========================================
-
-local function GetDuplicateSellList(Collected)
-
-local Groups = {}  
-
-for _, Entry in ipairs(Collected) do  
-
-    local Key = GetGroupKey(Entry)  
-
-    Groups[Key] = Groups[Key] or {}  
-
-    table.insert(Groups[Key], Entry)  
-end  
-
-local SellList = {}  
-local MetaTable = {}  
-
-for _, Group in pairs(Groups) do  
-
-    local ProtectedEntries = {}  
-    local UnprotectedEntries = {}  
-
-    for _, Entry in ipairs(Group) do  
-
-        if Entry.Protected then  
-            table.insert(ProtectedEntries, Entry)  
-        else  
-            table.insert(UnprotectedEntries, Entry)  
-        end  
-    end  
-
-    local IsSkillGroup =  
-        Group[1].Data.Category == "Skill"  
-
-    if IsSkillGroup then  
-
-        local HighestProtectedLevel = -math.huge  
-
-        for _, Entry in ipairs(ProtectedEntries) do  
-
-            HighestProtectedLevel = math.max(  
-                HighestProtectedLevel,  
-                Entry.Level  
-            )  
-        end  
-
-        table.sort(  
-            UnprotectedEntries,  
-            function(a, b)  
-                return a.Level > b.Level  
-            end  
-        )  
-
-        local KeepOne = false  
-
-        for _, Entry in ipairs(UnprotectedEntries) do  
-
-            local ShouldKeep = false  
-
-            if not KeepOne  
-            and Entry.Level > HighestProtectedLevel then  
-
-                ShouldKeep = true  
-                KeepOne = true  
-            end  
-
-            if not ShouldKeep then  
-                table.insert(SellList, Entry.Item)  
-            end  
-        end  
-
-    else  
-
-        local ProtectedCopies = 0  
-
-        for _, Entry in ipairs(ProtectedEntries) do  
-            ProtectedCopies =  
-                ProtectedCopies + Entry.Count  
-        end  
-
-        local RemainingKeep = ProtectedCopies > 0 and 0 or 1  
-
-        for _, Entry in ipairs(UnprotectedEntries) do  
-
-            local KeepAmount = math.min(  
-                Entry.Count,  
-                RemainingKeep  
-            )  
-
-            RemainingKeep = RemainingKeep - KeepAmount  
-
-            local SellAmount = Entry.Count - KeepAmount  
-
-            if SellAmount > 0 then  
-
-                table.insert(SellList, Entry.Item)  
-
-                if SellAmount < Entry.Count then  
-
-                    table.insert(MetaTable, {  
-                        Entry.Item,  
-                        SellAmount  
-                    })  
-                end  
-            end  
-        end  
-    end  
-end  
-
-return SellList, MetaTable
-
-end
-
--- ==========================================
--- EXECUTION
--- ==========================================
-
-local function RunAutoSell()
-
-if not AutoSellEnabled then  
-    return  
-end  
-
-local Collected = CollectItems()  
-
-if #Collected == 0 then  
-    return  
-end  
-
-local SellList  
-local MetaTable  
-
-if DuplicateSellEnabled  
-and SelectedCategory ~= "Gear" then  
-
-    SellList, MetaTable =  
-        GetDuplicateSellList(Collected)  
-
-else  
-
-    SellList, MetaTable =  
-        GetNormalSellList(Collected)  
-end  
-
-if #SellList == 0 then  
-    return  
-end  
-
-if os.clock() - LastSellTime < SellCooldown then  
-    return  
-end  
-
-LastSellTime = os.clock()  
-
-print(  
-    "[Auto Sell]",  
-    SelectedCategory,  
-    "Count:",  
-    #SellList,  
-    "Duplicate:",  
-    DuplicateSellEnabled  
-)  
-
-ItemSelling:SellItem(  
-    Player,  
-    SellList,  
-    MetaTable  
-)
-
-end
-
--- ==========================================
--- MAIN LOOP
--- ==========================================
-
-task.spawn(function()
-
-while true do  
-
-    task.wait(ScanDelay)  
-
-    if AutoSellEnabled then  
-
-        local Success, Error = pcall(RunAutoSell)  
-
-        if not Success then  
-            warn("[Auto Sell Error]", Error)  
-        end  
-    end  
-end
-
-end)
-end
 
 ChestTab:CreateSection("Auto chest open")
 
