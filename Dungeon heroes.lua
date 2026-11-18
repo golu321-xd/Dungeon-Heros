@@ -2848,6 +2848,252 @@ Player.CharacterAdded:Connect(function()
     end
 end)
 
+do
+--====================================================
+-- DUNGEON HEROES | 1-TOGGLE AUTO SKILL AURA (SLOTS 1-5)
+-- Dynamically Reads Slots 1-4 + Slot 5 (Mastery Ultimate)
+-- Works With All 180 Skills | No UI Notifications
+--====================================================
+
+local SkillAuraEnabled = false
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LocalPlayer = Players.LocalPlayer
+
+local Remotes = ReplicatedStorage:WaitForChild("Remotes")
+local UseSkillRemote = Remotes:WaitForChild("UseSkill")
+local PlayerSkillAttackRemote = Remotes:WaitForChild("PlayerSkillAttack")
+local InterruptSkillRemote = Remotes:WaitForChild("InterruptSkill")
+local UseUltimateRemote = Remotes:FindFirstChild("Masteries/UseUltimate")
+
+local ProfileSystem = require(ReplicatedStorage.Systems.Profile)
+local Items = require(ReplicatedStorage.Systems.Items)
+local SkillsSystem = require(ReplicatedStorage.Systems.Skills)
+local MasteriesSystem = require(ReplicatedStorage.Systems.Masteries)
+
+-- Uses your existing CONFIG table if present, otherwise defaults
+local SKILL_AURA_CONFIG = CONFIG or {
+    KillRange = 200,
+    AttackSpeed = 0.15
+}
+
+-- ==========================================
+-- LIVE AUTO-DETECTION FOR SLOTS 1-4 & SLOT 5 (ULTIMATE)
+-- ==========================================
+local function GetAllActiveSkills()
+    local ActiveSkills = {}
+    local Seen = {}
+
+    local function AddSkill(SkillId, IsUlt)
+        if type(SkillId) == "string" and #SkillId > 0 and not Seen[SkillId] then
+            Seen[SkillId] = true
+            table.insert(ActiveSkills, {
+                Name = SkillId,
+                IsUltimate = IsUlt == true
+            })
+        end
+    end
+
+    -- 1. SLOTS 1 TO 4: Official Skills:GetSkillInActiveSlot(LocalPlayer, slot)
+    for Slot = 1, 4 do
+        local Ok, SkillName = pcall(function()
+            return SkillsSystem:GetSkillInActiveSlot(LocalPlayer, Slot)
+        end)
+        if Ok and type(SkillName) == "string" and #SkillName > 0 then
+            AddSkill(SkillName, false)
+        end
+    end
+
+    -- 2. SLOTS 1 TO 4 FALLBACK: Read Profile.Equipped.Skill1..4 -> Items:GetItemData().Skill
+    local Profile = nil
+    pcall(function()
+        Profile = ProfileSystem:GetProfile(LocalPlayer)
+    end)
+
+    if Profile and Profile:FindFirstChild("Equipped") then
+        for Slot = 1, 4 do
+            local SlotFolder = Profile.Equipped:FindFirstChild("Skill" .. tostring(Slot))
+            if SlotFolder then
+                for _, Child in ipairs(SlotFolder:GetChildren()) do
+                    local OkData, ItemData = pcall(function()
+                        return Items:GetItemData(Child.Name)
+                    end)
+                    if OkData and type(ItemData) == "table" and type(ItemData.Skill) == "string" then
+                        AddSkill(ItemData.Skill, false)
+                    end
+                end
+            end
+        end
+    end
+
+    -- 3. SLOT 5 (MASTERY ULTIMATE): Read Masteries:GetEquippedUltimate(LocalPlayer).abilityId
+    local UltAdded = false
+    local OkUlt, UltTable = pcall(function()
+        return MasteriesSystem:GetEquippedUltimate(LocalPlayer)
+    end)
+
+    if OkUlt and type(UltTable) == "table" and type(UltTable.abilityId) == "string" and #UltTable.abilityId > 0 then
+        AddSkill(UltTable.abilityId, true)
+        UltAdded = true
+    end
+
+    -- Fallback for Slot 5 via ActiveMastery string (e.g. "Guardian" -> "GuardianUltimate")
+    if not UltAdded and Profile and Profile:FindFirstChild("Masteries") then
+        local ActiveMastery = Profile.Masteries:FindFirstChild("ActiveMastery")
+        if ActiveMastery and ActiveMastery:IsA("StringValue") and #ActiveMastery.Value > 0 then
+            AddSkill(ActiveMastery.Value .. "Ultimate", true)
+        end
+    end
+
+    return ActiveSkills
+end
+
+-- ==========================================
+-- GET EXACT HIT COUNT FOR ANY SKILL
+-- ==========================================
+local function GetSkillHitsCount(SkillName)
+    -- 1. Try Skills:GetSkillHitTable(LocalPlayer, SkillName) (Handles Necklace-Modified Hits)
+    local OkHitTbl, HitTable = pcall(function()
+        return SkillsSystem:GetSkillHitTable(LocalPlayer, SkillName)
+    end)
+    if OkHitTbl and type(HitTable) == "table" and #HitTable > 0 then
+        return #HitTable
+    end
+
+    -- 2. Fallback to Skills:GetSkillData(SkillName).Hits
+    local OkData, SkillData = pcall(function()
+        return SkillsSystem:GetSkillData(SkillName)
+    end)
+    if OkData and type(SkillData) == "table" and type(SkillData.Hits) == "table" and #SkillData.Hits > 0 then
+        return #SkillData.Hits
+    end
+
+    return 1
+end
+
+-- ==========================================
+-- COLLECT TARGET MOBS IN RANGE
+-- ==========================================
+local function GetTargetsInRange()
+    local Character = LocalPlayer.Character
+    local HRP = Character and Character:FindFirstChild("HumanoidRootPart")
+    local MobsFolder = workspace:FindFirstChild("Mobs")
+
+    if not HRP or not MobsFolder then
+        return {}
+    end
+
+    local Range = (CONFIG and CONFIG.KillRange) or SKILL_AURA_CONFIG.KillRange or 200
+    local RealMobs = {}
+    local DummyMobs = {}
+
+    for _, Mob in ipairs(MobsFolder:GetChildren()) do
+        local MobHRP = Mob:FindFirstChild("HumanoidRootPart")
+        local HP = Mob:GetAttribute("HP")
+
+        if MobHRP
+            and HP ~= "0"
+            and HP ~= 0
+            and not Mob:GetAttribute("Owner")
+            and (MobHRP.Position - HRP.Position).Magnitude <= Range then
+
+            if Mob.Name == "TargetDummy" then
+                table.insert(DummyMobs, Mob)
+            else
+                table.insert(RealMobs, Mob)
+            end
+        end
+    end
+
+    -- Prioritize real dungeon mobs; fallback to TargetDummy in lobby for testing
+    local BaseMobs = (#RealMobs > 0) and RealMobs or DummyMobs
+    if #BaseMobs == 0 then
+        return {}
+    end
+
+    -- Build multi-target hit table (matches game's remote structure)
+    local TargetTable = {}
+    for _, Mob in ipairs(BaseMobs) do
+        for _ = 1, 4 do
+            table.insert(TargetTable, Mob)
+        end
+    end
+
+    return TargetTable
+end
+
+-- ==========================================
+-- MAIN SKILL AURA LOOP
+-- ==========================================
+local function StartSkillAura()
+    task.spawn(function()
+        while SkillAuraEnabled do
+            task.wait()
+
+            local EquippedSkills = GetAllActiveSkills()
+            local InitialTargets = GetTargetsInRange()
+
+            if #EquippedSkills > 0 and #InitialTargets > 0 then
+                for _, SkillEntry in ipairs(EquippedSkills) do
+                    if not SkillAuraEnabled then break end
+
+                    local Targets = GetTargetsInRange()
+                    if #Targets == 0 then break end
+
+                    local SkillName = SkillEntry.Name
+                    local HitCount = GetSkillHitsCount(SkillName)
+
+                    -- 1. If Slot 5 (Ultimate), trigger Ultimate remote + UseSkill remote
+                    if SkillEntry.IsUltimate and UseUltimateRemote then
+                        pcall(function()
+                            UseUltimateRemote:FireServer()
+                        end)
+                    end
+
+                    -- 2. Activate Skill on Server (Opens RegisterSkillUseForHits window)
+                    UseSkillRemote:FireServer(SkillName, 1)
+                    task.wait(0.04)
+
+                    -- 3. Fire PlayerSkillAttack for every hit index in the skill's Hits table
+                    for HitIndex = 1, HitCount do
+                        if not SkillAuraEnabled then break end
+                        PlayerSkillAttackRemote:FireServer(Targets, SkillName, HitIndex)
+                        if HitCount > 1 then
+                            task.wait(0.02)
+                        end
+                    end
+
+                    -- 4. Clear server "busy" cast state so the next skill slot can fire immediately
+                    task.wait(0.03)
+                    InterruptSkillRemote:FireServer()
+
+                    local Speed = (CONFIG and CONFIG.AttackSpeed) or SKILL_AURA_CONFIG.AttackSpeed or 0.15
+                    task.wait(Speed)
+                end
+            else
+                task.wait(0.1)
+            end
+        end
+    end)
+end
+
+-- ==========================================
+-- SINGLE TOGGLE ON MAINTAB
+-- ==========================================
+UtilityTab:CreateToggle({
+    Name = "Skill Aura",
+    CurrentValue = false,
+    Flag = "SkillAura",
+    Callback = function(Value)
+        SkillAuraEnabled = Value
+        if Value then
+            StartSkillAura()
+        end
+    end
+})
+end
+
 
 UtilityTab:CreateSection("Auto Booster")
 
