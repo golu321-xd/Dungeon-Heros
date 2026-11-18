@@ -3459,12 +3459,11 @@ end)
 UtilityTab:CreateSection("Ultimate Item Bank Manager")
 do
     --====================================================
-    -- DUNGEON HEROES | ULTIMATE ITEM BANK MANAGER (FIXED)
-    -- Verified against Live Profile & Items Module Dump:
-    -- * Uses Items:GetItemUid(Item) & Item:GetAttribute("ItemUid")
-    -- * Reads both Instance Folders & Items:GetTableItems("ItemBank")
-    -- * Custom 3-Second Top UI Notification (No Rayfield Notify)
-    -- * Level Range (1-500), Rarities (1-9), Batch & Space Guard
+    -- DUNGEON HEROES | ULTIMATE ITEM BANK MANAGER (PRO V3)
+    -- * Multi-Category Dropdown Support (MultipleOptions = true)
+    -- * Compact Glassmorphism Top UI + Tap-To-Dismiss
+    -- * Transfer & Scan Notifications Only (Zero UI Spam)
+    -- * Unique Flags on Every Toggle, Dropdown, Slider & Input
     --====================================================
 
     local Players = game:GetService("Players")
@@ -3479,80 +3478,172 @@ do
     local ItemBankRemote = RS:WaitForChild("Remotes"):WaitForChild("ItemBankTransfer")
 
     -- ==========================================
-    -- CUSTOM 3-SECOND TOP UI NOTIFICATION
+    -- COMPACT GLASSMORPHISM UI (TAP TO DISMISS)
     -- ==========================================
     local function ShowTopNotification(TitleText, SubText, AccentColor, Duration)
         task.spawn(function()
             pcall(function()
+                local ShowTime = Duration or 3.0
+                local ThemeColor = AccentColor or Color3.fromRGB(0, 230, 155)
+
                 local ParentGui = (gethui and gethui())
                     or CoreGui
                     or Player:WaitForChild("PlayerGui")
 
-                local OldGui = ParentGui:FindFirstChild("DH_BankTopNotify")
+                local OldGui = ParentGui:FindFirstChild("DH_BankGlassNotify")
                 if OldGui then OldGui:Destroy() end
 
                 local ScreenGui = Instance.new("ScreenGui")
-                ScreenGui.Name = "DH_BankTopNotify"
+                ScreenGui.Name = "DH_BankGlassNotify"
                 ScreenGui.IgnoreGuiInset = true
                 ScreenGui.DisplayOrder = 999999
                 ScreenGui.Parent = ParentGui
 
-                local Frame = Instance.new("Frame")
-                Frame.Size = UDim2.new(0, 380, 0, 60)
-                Frame.Position = UDim2.new(0.5, -190, 0, -75)
-                Frame.BackgroundColor3 = Color3.fromRGB(18, 20, 26)
-                Frame.BorderSizePixel = 0
-                Frame.Parent = ScreenGui
+                -- Compact Frosted Glass Card
+                local Card = Instance.new("Frame")
+                Card.Size = UDim2.new(0, 300, 0, 48)
+                Card.Position = UDim2.new(0.5, -150, 0, -65)
+                Card.BackgroundColor3 = Color3.fromRGB(16, 20, 30)
+                Card.BackgroundTransparency = 0.18
+                Card.BorderSizePixel = 0
+                Card.ClipsDescendants = true
+                Card.Parent = ScreenGui
 
-                local Corner = Instance.new("UICorner")
-                Corner.CornerRadius = UDim.new(0, 10)
-                Corner.Parent = Frame
+                local CardCorner = Instance.new("UICorner")
+                CardCorner.CornerRadius = UDim.new(0, 14)
+                CardCorner.Parent = Card
 
-                local Stroke = Instance.new("UIStroke")
-                Stroke.Color = AccentColor or Color3.fromRGB(0, 210, 130)
-                Stroke.Thickness = 1.8
-                Stroke.Parent = Frame
+                -- Glass Sheen Gradient
+                local GlassGradient = Instance.new("UIGradient")
+                GlassGradient.Color = ColorSequence.new({
+                    ColorSequenceKeypoint.new(0, Color3.fromRGB(45, 52, 72)),
+                    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(22, 26, 38)),
+                    ColorSequenceKeypoint.new(1, Color3.fromRGB(14, 17, 26))
+                })
+                GlassGradient.Transparency = NumberSequence.new({
+                    NumberSequenceKeypoint.new(0, 0.12),
+                    NumberSequenceKeypoint.new(1, 0.25)
+                })
+                GlassGradient.Rotation = 125
+                GlassGradient.Parent = Card
 
+                -- Frosted Glass Border Stroke
+                local GlassStroke = Instance.new("UIStroke")
+                GlassStroke.Color = ThemeColor
+                GlassStroke.Thickness = 1.2
+                GlassStroke.Transparency = 0.32
+                GlassStroke.Parent = Card
+
+                local StrokeGradient = Instance.new("UIGradient")
+                StrokeGradient.Color = ColorSequence.new({
+                    ColorSequenceKeypoint.new(0, ThemeColor),
+                    ColorSequenceKeypoint.new(0.6, Color3.fromRGB(180, 195, 225)),
+                    ColorSequenceKeypoint.new(1, ThemeColor)
+                })
+                StrokeGradient.Rotation = 45
+                StrokeGradient.Parent = GlassStroke
+
+                -- Left Glowing Pill Indicator
+                local AccentPill = Instance.new("Frame")
+                AccentPill.Size = UDim2.new(0, 4, 0, 26)
+                AccentPill.Position = UDim2.new(0, 9, 0.5, -13)
+                AccentPill.BackgroundColor3 = ThemeColor
+                AccentPill.BorderSizePixel = 0
+                AccentPill.Parent = Card
+
+                local PillCorner = Instance.new("UICorner")
+                PillCorner.CornerRadius = UDim.new(1, 0)
+                PillCorner.Parent = AccentPill
+
+                -- Compact Title Label
                 local Title = Instance.new("TextLabel")
-                Title.Size = UDim2.new(1, -16, 0, 22)
-                Title.Position = UDim2.new(0, 8, 0, 6)
+                Title.Size = UDim2.new(1, -28, 0, 17)
+                Title.Position = UDim2.new(0, 20, 0, 6)
                 Title.BackgroundTransparency = 1
                 Title.Font = Enum.Font.GothamBold
-                Title.TextSize = 14
-                Title.TextColor3 = AccentColor or Color3.fromRGB(0, 255, 150)
-                Title.TextXAlignment = Enum.TextXAlignment.Center
+                Title.TextSize = 12
+                Title.TextColor3 = ThemeColor
+                Title.TextXAlignment = Enum.TextXAlignment.Left
+                Title.TextTruncate = Enum.TextTruncate.AtEnd
                 Title.Text = tostring(TitleText)
-                Title.Parent = Frame
+                Title.Parent = Card
 
+                -- Compact Detail Label
                 local Sub = Instance.new("TextLabel")
-                Sub.Size = UDim2.new(1, -16, 0, 24)
-                Sub.Position = UDim2.new(0, 8, 0, 29)
+                Sub.Size = UDim2.new(1, -28, 0, 15)
+                Sub.Position = UDim2.new(0, 20, 0, 24)
                 Sub.BackgroundTransparency = 1
                 Sub.Font = Enum.Font.GothamMedium
-                Sub.TextSize = 12
-                Sub.TextColor3 = Color3.fromRGB(225, 225, 225)
-                Sub.TextXAlignment = Enum.TextXAlignment.Center
+                Sub.TextSize = 11
+                Sub.TextColor3 = Color3.fromRGB(220, 228, 242)
+                Sub.TextXAlignment = Enum.TextXAlignment.Left
+                Sub.TextTruncate = Enum.TextTruncate.AtEnd
                 Sub.Text = tostring(SubText)
-                Sub.Parent = Frame
+                Sub.Parent = Card
 
+                -- Slim Bottom Timer Bar
+                local BarBg = Instance.new("Frame")
+                BarBg.Size = UDim2.new(1, 0, 0, 2)
+                BarBg.Position = UDim2.new(0, 0, 1, -2)
+                BarBg.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+                BarBg.BackgroundTransparency = 0.85
+                BarBg.BorderSizePixel = 0
+                BarBg.Parent = Card
+
+                local BarFill = Instance.new("Frame")
+                BarFill.Size = UDim2.new(1, 0, 1, 0)
+                BarFill.BackgroundColor3 = ThemeColor
+                BarFill.BorderSizePixel = 0
+                BarFill.Parent = BarBg
+
+                -- Full-Card Invisible Button for Instant Tap-to-Dismiss
+                local DismissBtn = Instance.new("TextButton")
+                DismissBtn.Size = UDim2.new(1, 0, 1, 0)
+                DismissBtn.BackgroundTransparency = 1
+                DismissBtn.Text = ""
+                DismissBtn.ZIndex = 10
+                DismissBtn.Parent = Card
+
+                local Dismissed = false
+                local function DismissNow()
+                    if Dismissed then return end
+                    Dismissed = true
+
+                    if Card and Card.Parent then
+                        local Out = TweenService:Create(
+                            Card,
+                            TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+                            {
+                                Position = UDim2.new(0.5, -150, 0, -65),
+                                BackgroundTransparency = 1
+                            }
+                        )
+                        Out:Play()
+                        Out.Completed:Wait()
+                    end
+                    if ScreenGui and ScreenGui.Parent then
+                        ScreenGui:Destroy()
+                    end
+                end
+
+                DismissBtn.Activated:Connect(DismissNow)
+                DismissBtn.MouseButton1Click:Connect(DismissNow)
+
+                -- Slide In Animation
                 TweenService:Create(
-                    Frame,
-                    TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-                    {Position = UDim2.new(0.5, -190, 0, 16)}
+                    Card,
+                    TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+                    {Position = UDim2.new(0.5, -150, 0, 14)}
                 ):Play()
 
-                task.wait(Duration or 3)
+                TweenService:Create(
+                    BarFill,
+                    TweenInfo.new(ShowTime, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
+                    {Size = UDim2.new(0, 0, 1, 0)}
+                ):Play()
 
-                if Frame and Frame.Parent then
-                    local Out = TweenService:Create(
-                        Frame,
-                        TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-                        {Position = UDim2.new(0.5, -190, 0, -75)}
-                    )
-                    Out:Play()
-                    Out.Completed:Wait()
-                    if ScreenGui then ScreenGui:Destroy() end
-                end
+                task.wait(ShowTime)
+                DismissNow()
             end)
         end)
     end
@@ -3586,9 +3677,8 @@ do
     local UIDLockDuration = 3.0
     local RecentlyTransferred = {}
 
-    -- Category Selection
-    local SelectedCategory = "Gear (Weapon + Armor + Necklace)"
-    local SelectedFilter = {kind = "gear_all"}
+    -- Multi-Category State
+    local SelectedCategoriesList = {"Gear (Weapon + Armor + Necklace)"}
 
     -- All 9 Rarities
     local AllRaritiesEnabled = false
@@ -3610,7 +3700,6 @@ do
     local function IsExcludedCategory(Data)
         if type(Data) ~= "table" then return true end
         local Cat = tostring(Data.Category or "")
-        -- Only exclude actual Cosmetic and Currency categories (Armor has Type="Shirt"/"Pants", so never exclude by Type!)
         if Cat == "Cosmetic" or Cat == "Currency" or Cat == "Title" or Cat == "Emote" or Cat == "" then
             return true
         end
@@ -3677,12 +3766,23 @@ do
         table.insert(CategoryOptions, Label)
     end
 
+    local function GetCategorySummaryText()
+        local Count = #SelectedCategoriesList
+        if Count == 0 then
+            return "No Category"
+        elseif Count == 1 then
+            return SelectedCategoriesList[1]
+        elseif Count == 2 then
+            return SelectedCategoriesList[1] .. " + " .. SelectedCategoriesList[2]
+        else
+            return string.format("%s +%d more", SelectedCategoriesList[1], Count - 1)
+        end
+    end
+
     -- ==========================================
     -- EXACT UID, INFO, LEVEL & PROTECTION HELPERS
     -- ==========================================
-
     local function GetItemUID(Item, FallbackKey)
-        -- 1. Direct Attribute "ItemUid" (Verified from Profile.Inventory dump: [Attrs: ItemUid=3301f9])
         if typeof(Item) == "Instance" then
             local AttrUid = Item:GetAttribute("ItemUid")
                 or Item:GetAttribute("Uid")
@@ -3692,7 +3792,6 @@ do
             end
         end
 
-        -- 2. Official Items:GetItemUid(Item)
         local s1, uid1 = pcall(function()
             return Items:GetItemUid(Item)
         end)
@@ -3700,7 +3799,6 @@ do
             return uid1
         end
 
-        -- 3. Table Record UID fields (For Items:GetTableItems("ItemBank"))
         if type(Item) == "table" then
             local TblUid = Item.ItemUid or Item.uid or Item.UID or Item.Uid
             if type(TblUid) == "string" and #TblUid > 0 then
@@ -3708,7 +3806,6 @@ do
             end
         end
 
-        -- 4. Official Items:ItemRefForRemote(Item)
         local s2, ref = pcall(function()
             return Items:ItemRefForRemote(Item)
         end)
@@ -3716,7 +3813,6 @@ do
             return ref
         end
 
-        -- 5. Fallback dictionary key if valid hex/string UID
         if type(FallbackKey) == "string" and #FallbackKey > 0 then
             return FallbackKey
         end
@@ -3743,7 +3839,6 @@ do
         pcall(function() Data = Items:GetItemData(ID) end)
         if type(Data) ~= "table" then return nil end
 
-        -- Rarity: Always prioritize Items:GetRarity(Item) (Fixes Unique Rarity=8 items without Rarity child)
         local Rarity = nil
         local sR, rVal = pcall(function() return Items:GetRarity(Item) end)
         if sR and tonumber(rVal) then
@@ -3756,7 +3851,6 @@ do
             Rarity = tonumber(Data.Rarity) or 1
         end
 
-        -- Level: Prioritize Items:GetLevel(Item)
         local Level = 1
         local sL, lVal = pcall(function() return Items:GetLevel(Item) end)
         if sL and tonumber(lVal) then
@@ -3767,7 +3861,6 @@ do
             Level = tonumber(Item.level or Item.Level)
         end
 
-        -- Seasonal Level (For Skills)
         local SeasonalLevel = 1
         if Data.Category == "Skill" then
             local sS, sVal = pcall(function() return Items:GetSeasonalLevel(Item) end)
@@ -3788,7 +3881,6 @@ do
     end
 
     local function IsItemProtected(Item)
-        -- 1. Check Favorite & Sealed
         if ProtectFavorites then
             local sFav, isFav = pcall(function()
                 return Items:ItemIsFavorited(Item)
@@ -3812,7 +3904,6 @@ do
             end
         end
 
-        -- 2. Check Saved Gear Presets (GearPreset1, GearPreset2, GearPreset3 seen in Dump)
         if ProtectGearPresets then
             if typeof(Item) == "Instance" then
                 for _, Child in ipairs(Item:GetChildren()) do
@@ -3831,9 +3922,8 @@ do
     end
 
     -- ==========================================
-    -- FILTER MATCHING LOGIC
+    -- MULTI-CATEGORY FILTER MATCHING LOGIC
     -- ==========================================
-
     local function IsGearOrSkillCategory(Category)
         return Category == "Weapon"
             or Category == "Armor"
@@ -3841,13 +3931,11 @@ do
             or Category == "Skill"
     end
 
-    local function MatchesCategoryFilter(Data)
-        if IsExcludedCategory(Data) then
-            return false
-        end
+    local function MatchesSingleFilterRule(Data, FilterRule)
+        if not FilterRule then return false end
 
         local Cat = Data.Category
-        local Kind = SelectedFilter.kind
+        local Kind = FilterRule.kind
 
         if Kind == "all_bankable" then
             return true
@@ -3856,22 +3944,35 @@ do
         elseif Kind == "gear_and_skill" then
             return IsGearOrSkillCategory(Cat)
         elseif Kind == "category" then
-            return Cat == SelectedFilter.category
-                or Data.SortCategory == SelectedFilter.category
+            return Cat == FilterRule.category
+                or Data.SortCategory == FilterRule.category
+        end
+
+        return false
+    end
+
+    local function MatchesCategoryFilter(Data)
+        if IsExcludedCategory(Data) then
+            return false
+        end
+
+        for _, OptionName in ipairs(SelectedCategoriesList) do
+            local Rule = FilterMap[OptionName]
+            if MatchesSingleFilterRule(Data, Rule) then
+                return true
+            end
         end
 
         return false
     end
 
     local function PassesRarityAndLevel(Details)
-        -- 1. Rarity Check
         if not AllRaritiesEnabled then
             if RarityConfig[Details.Rarity] ~= true then
                 return false
             end
         end
 
-        -- 2. Level Range Check (Applies to Weapon, Armor, Necklace, Skill)
         if LevelFilterEnabled and IsGearOrSkillCategory(Details.Data.Category) then
             if Details.Level < MinLevelFilter or Details.Level > MaxLevelFilter then
                 return false
@@ -3884,7 +3985,6 @@ do
     -- ==========================================
     -- STORAGE CONTAINERS (INVENTORY & ITEM BANK)
     -- ==========================================
-
     local function GetRawContainerItems(Direction)
         local RawList = {}
         local SeenUIDs = {}
@@ -3892,7 +3992,6 @@ do
 
         local function AddRawItem(Item, Key)
             if not Item then return end
-            -- Ignore nested folders like Profile.Equipped.Right
             if typeof(Item) == "Instance" and Item:IsA("Folder") then
                 return
             end
@@ -3904,7 +4003,6 @@ do
         end
 
         if Direction == "Inventory -> Bank" then
-            -- 1. Profile.Inventory (Weapons, Armor, Skills, Necklaces, Gems, Chests)
             local InvFolder = (Profile and Profile:FindFirstChild("Inventory"))
                 or Items:GetPlayerItemFolder(Player, "Inventory")
             if InvFolder then
@@ -3913,7 +4011,6 @@ do
                 end
             end
 
-            -- 2. Profile.Pets (Pets & Pet Tokens)
             local PetsFolder = (Profile and Profile:FindFirstChild("Pets"))
                 or Items:GetPlayerItemFolder(Player, "Pets")
             if PetsFolder then
@@ -3922,7 +4019,6 @@ do
                 end
             end
 
-            -- 3. Also check Table Records for Inventory/Pets if any exist
             for _, ContainerName in ipairs({"Inventory", "Pets"}) do
                 local sT, Tbl = pcall(function()
                     return Items:GetTableItems(Player, ContainerName)
@@ -3934,8 +4030,6 @@ do
                 end
             end
         else
-            -- BANK -> INVENTORY (Checks ALL Bank storage mechanisms)
-            -- 1. Items:GetTableItems(Player, "ItemBank")
             local s1, BankTable = pcall(function()
                 return Items:GetTableItems(Player, "ItemBank")
             end)
@@ -3945,7 +4039,6 @@ do
                 end
             end
 
-            -- 2. Items:GetRecordContainer(Player, "ItemBank")
             local s2, RecContainer = pcall(function()
                 return Items:GetRecordContainer(Player, "ItemBank")
             end)
@@ -3960,7 +4053,6 @@ do
                 end
             end
 
-            -- 3. Items:GetPlayerItemFolder(Player, "ItemBank") & Profile.ItemBank
             local BankFolder = nil
             pcall(function()
                 BankFolder = Items:GetPlayerItemFolder(Player, "ItemBank")
@@ -3997,7 +4089,6 @@ do
     -- ==========================================
     -- COLLECT & BUILD FINAL TRANSFER LIST
     -- ==========================================
-
     local function ScanCandidates(IgnoreUIDLock)
         local Now = os.clock()
         for UID, TimeStamp in pairs(RecentlyTransferred) do
@@ -4062,7 +4153,6 @@ do
             return FinalList
         end
 
-        -- Duplicates Only (Keep 1 Highest Level copy, transfer extras)
         local Groups = {}
         for _, Entry in ipairs(MatchedEntries) do
             local Key = tostring(Entry.ID) .. "|" .. tostring(Entry.Rarity)
@@ -4111,7 +4201,6 @@ do
     -- ==========================================
     -- TRANSFER EXECUTION ENGINE
     -- ==========================================
-
     local IsTransferringBatch = false
     local MasterToggleRef = nil
 
@@ -4120,7 +4209,7 @@ do
         if MasterToggleRef and MasterToggleRef.Set then
             pcall(function() MasterToggleRef:Set(false) end)
         end
-        ShowTopNotification(Title, SubText, Color or Color3.fromRGB(255, 170, 0), 3.5)
+        ShowTopNotification(Title, SubText, Color or Color3.fromRGB(255, 175, 50), 3.0)
     end
 
     local function ExecuteBankTransfer(IsManualRun)
@@ -4128,14 +4217,13 @@ do
         IsTransferringBatch = true
 
         local Success, Err = pcall(function()
-            -- Space Guard Check before pulling Bank -> Inventory
             if TransferDirection == "Bank -> Inventory" and EnableSpaceGuard then
                 local UsedInv = GetInventoryUsedCount()
                 if UsedInv >= MaxInventoryCap then
                     StopAutoTransferWithNotify(
-                        "Inventory Space Guard!",
-                        string.format("Bag limit reached (%d/%d items). Stopped safely.", UsedInv, MaxInventoryCap),
-                        Color3.fromRGB(255, 90, 90)
+                        "Space Guard Active",
+                        string.format("Inventory full (%d/%d items)", UsedInv, MaxInventoryCap),
+                        Color3.fromRGB(255, 95, 95)
                     )
                     return
                 end
@@ -4148,17 +4236,17 @@ do
                 if IsManualRun then
                     if ProtectedSkipped > 0 then
                         ShowTopNotification(
-                            "0 Ready (" .. tostring(ProtectedSkipped) .. " Protected!)",
-                            "Matching items Fav/Preset hain! Protection toggle check karo.",
-                            Color3.fromRGB(255, 180, 40),
-                            3.5
+                            string.format("0 Ready (%d Protected)", ProtectedSkipped),
+                            "Matched items Fav/Preset me locked hain",
+                            Color3.fromRGB(255, 180, 50),
+                            3.0
                         )
                     else
                         ShowTopNotification(
-                            "No Matching Items Found!",
-                            "Rarity toggle ya Category/Level filter check karo.",
+                            "No Matching Items",
+                            "Category, Rarity ya Level filter check karo",
                             Color3.fromRGB(255, 100, 100),
-                            3
+                            3.0
                         )
                     end
                 end
@@ -4166,32 +4254,31 @@ do
             end
 
             local TransferredThisRun = 0
+            local SummaryText = GetCategorySummaryText()
 
             for _, Entry in ipairs(FinalList) do
                 if not AutoTransferEnabled and not IsManualRun then
                     break
                 end
 
-                -- 1. Check Max Batch Quantity Limit
                 if MaxTransferCount > 0 and TransferCounter >= MaxTransferCount then
                     if AutoStopOnLimit or IsManualRun then
                         StopAutoTransferWithNotify(
-                            "Batch Transfer Complete!",
-                            string.format("Transferred %d/%d items (%s).", TransferCounter, MaxTransferCount, SelectedCategory),
-                            Color3.fromRGB(0, 230, 140)
+                            string.format("Batch Done (%d/%d)", TransferCounter, MaxTransferCount),
+                            string.format("%s | %s", TransferDirection, SummaryText),
+                            Color3.fromRGB(0, 235, 155)
                         )
                     end
                     break
                 end
 
-                -- 2. Live Inventory Capacity Check during Bank -> Inventory
                 if TransferDirection == "Bank -> Inventory" and EnableSpaceGuard then
                     local UsedInv = GetInventoryUsedCount()
                     if UsedInv >= MaxInventoryCap then
                         StopAutoTransferWithNotify(
-                            "Inventory Space Guard!",
-                            string.format("Stopped at %d/%d Inventory items.", UsedInv, MaxInventoryCap),
-                            Color3.fromRGB(255, 120, 60)
+                            "Space Guard Stopped",
+                            string.format("Reached %d/%d bag limit", UsedInv, MaxInventoryCap),
+                            Color3.fromRGB(255, 125, 65)
                         )
                         break
                     end
@@ -4201,33 +4288,31 @@ do
                 TransferCounter = TransferCounter + 1
                 TransferredThisRun = TransferredThisRun + 1
 
-                -- Fire exact Hex ItemUid (e.g. "3301f9")
                 ItemBankRemote:FireServer(Entry.UID)
                 task.wait(SingleTransferDelay)
             end
 
-            if IsManualRun and TransferredThisRun > 0 then
+            if TransferredThisRun > 0 and (IsManualRun or not (MaxTransferCount > 0 and TransferCounter >= MaxTransferCount and AutoStopOnLimit)) then
                 ShowTopNotification(
-                    "Transferred " .. tostring(TransferredThisRun) .. " Item(s)!",
-                    string.format("%s | Category: %s", TransferDirection, SelectedCategory),
-                    Color3.fromRGB(0, 230, 140),
-                    3
+                    string.format("Moved %d Item(s)", TransferredThisRun),
+                    string.format("%s | %s", TransferDirection, SummaryText),
+                    Color3.fromRGB(0, 235, 155),
+                    3.0
                 )
             end
         end)
 
         if not Success then
             warn("[Item Bank Error]:", Err)
-            ShowTopNotification("Bank Script Error!", tostring(Err), Color3.fromRGB(255, 70, 70), 4)
+            ShowTopNotification("Transfer Error", tostring(Err), Color3.fromRGB(255, 80, 80), 3.0)
         end
 
         IsTransferringBatch = false
     end
 
     -- ==========================================
-    -- RAYFIELD UI CONTROLS
+    -- RAYFIELD UI CONTROLS (ALL WITH FLAGS)
     -- ==========================================
-
     MasterToggleRef = UtilityTab:CreateToggle({
         Name = "Auto Bank Transfer (Master Switch)",
         CurrentValue = false,
@@ -4236,19 +4321,6 @@ do
             AutoTransferEnabled = Value
             if Value then
                 TransferCounter = 0
-                ShowTopNotification(
-                    "Auto Bank Transfer: ON",
-                    string.format("%s | %s", TransferDirection, SelectedCategory),
-                    Color3.fromRGB(0, 220, 130),
-                    2.5
-                )
-            else
-                ShowTopNotification(
-                    "Auto Bank Transfer: OFF",
-                    "Transfer loop paused.",
-                    Color3.fromRGB(255, 120, 80),
-                    2
-                )
             end
         end
     })
@@ -4268,25 +4340,30 @@ do
                 TransferDirection = Option
                 TransferCounter = 0
                 table.clear(RecentlyTransferred)
-                ShowTopNotification("Direction Changed", TransferDirection, Color3.fromRGB(80, 180, 255), 2.5)
             end
         end
     })
 
     UtilityTab:CreateDropdown({
-        Name = "Select Category",
+        Name = "Select Categories (Multi-Select)",
         Options = CategoryOptions,
-        CurrentOption = "Gear (Weapon + Armor + Necklace)",
-        MultipleOptions = false,
-        Flag = "DH_BankCategory",
-        Callback = function(Option)
-            if type(Option) == "table" then Option = Option[1] end
-            if Option and FilterMap[Option] then
-                SelectedCategory = Option
-                SelectedFilter = FilterMap[Option]
-                TransferCounter = 0
-                ShowTopNotification("Category Selected", SelectedCategory, Color3.fromRGB(80, 180, 255), 2.5)
+        CurrentOption = {"Gear (Weapon + Armor + Necklace)"},
+        MultipleOptions = true,
+        Flag = "DH_BankCategoriesMulti",
+        Callback = function(Options)
+            local NewSelected = {}
+            if type(Options) == "table" then
+                for _, Opt in pairs(Options) do
+                    if type(Opt) == "string" and FilterMap[Opt] then
+                        table.insert(NewSelected, Opt)
+                    end
+                end
+            elseif type(Options) == "string" and FilterMap[Options] then
+                table.insert(NewSelected, Options)
             end
+
+            SelectedCategoriesList = NewSelected
+            TransferCounter = 0
         end
     })
 
@@ -4347,7 +4424,6 @@ do
     -- ==========================================
     -- QUANTITY & INVENTORY SPACE SAFETY
     -- ==========================================
-
     UtilityTab:CreateSection("Batch Limit & Space Protection")
 
     UtilityTab:CreateSlider({
@@ -4367,17 +4443,12 @@ do
         Name = "Type Exact Quantity (0 = Unlimited)",
         PlaceholderText = "e.g. 15",
         RemoveTextAfterFocusLost = false,
+        Flag = "DH_BankExactQtyInput",
         Callback = function(Text)
             local Num = tonumber(Text)
             if Num and Num >= 0 then
                 MaxTransferCount = math.floor(Num)
                 TransferCounter = 0
-                ShowTopNotification(
-                    "Batch Quantity Set",
-                    "Max Items: " .. (MaxTransferCount == 0 and "Unlimited" or tostring(MaxTransferCount)),
-                    Color3.fromRGB(0, 220, 140),
-                    2.5
-                )
             end
         end
     })
@@ -4415,7 +4486,6 @@ do
     -- ==========================================
     -- GEAR & SKILL LEVEL FILTER (1 TO 500)
     -- ==========================================
-
     UtilityTab:CreateSection("Gear & Skill Level Filter (Lv 1 - 500)")
 
     UtilityTab:CreateToggle({
@@ -4431,18 +4501,13 @@ do
         Name = "Quick Level Range (Format: Min-Max)",
         PlaceholderText = "e.g. 200-240",
         RemoveTextAfterFocusLost = false,
+        Flag = "DH_BankQuickLevelInput",
         Callback = function(Text)
             local MinStr, MaxStr = string.match(tostring(Text), "(%d+)%s*-%s*(%d+)")
             local MinVal, MaxVal = tonumber(MinStr), tonumber(MaxStr)
             if MinVal and MaxVal then
                 MinLevelFilter = math.min(MinVal, MaxVal)
                 MaxLevelFilter = math.max(MinVal, MaxVal)
-                ShowTopNotification(
-                    "Level Filter Updated",
-                    string.format("Range: Level %d to %d", MinLevelFilter, MaxLevelFilter),
-                    Color3.fromRGB(0, 220, 140),
-                    3
-                )
             end
         end
     })
@@ -4480,7 +4545,6 @@ do
     -- ==========================================
     -- RARITY FILTERS (1 TO 9)
     -- ==========================================
-
     UtilityTab:CreateSection("Rarity Filters (1 to 9)")
 
     UtilityTab:CreateToggle({
@@ -4518,11 +4582,10 @@ do
     -- ==========================================
     -- SCANNER & MANUAL ONE-SHOT BUTTONS
     -- ==========================================
-
     UtilityTab:CreateSection("Scanner & Instant Transfer")
 
     UtilityTab:CreateButton({
-        Name = "Scan Matching Items (Top UI Notification)",
+        Name = "Scan Matching Items",
         Callback = function()
             local InvCount = GetInventoryUsedCount()
             local BankCount = GetTotalBankCount()
@@ -4530,10 +4593,10 @@ do
             local ReadyList = BuildTransferList(MatchedEntries)
 
             ShowTopNotification(
-                string.format("Ready: %d | Protected: %d (Inv:%d Bank:%d)", #ReadyList, ProtectedSkipped, InvCount, BankCount),
-                string.format("%s | %s", TransferDirection, SelectedCategory),
-                (#ReadyList > 0) and Color3.fromRGB(0, 230, 140) or Color3.fromRGB(255, 180, 40),
-                4
+                string.format("Ready: %d | Safe: %d (Bag:%d Bank:%d)", #ReadyList, ProtectedSkipped, InvCount, BankCount),
+                string.format("%s | %s", TransferDirection, GetCategorySummaryText()),
+                (#ReadyList > 0) and Color3.fromRGB(0, 235, 155) or Color3.fromRGB(255, 180, 50),
+                3.0
             )
         end
     })
@@ -4551,7 +4614,6 @@ do
     -- ==========================================
     -- BACKGROUND LOOP
     -- ==========================================
-
     task.spawn(function()
         while true do
             task.wait(ScanDelay)
@@ -4561,7 +4623,7 @@ do
         end
     end)
 end
-
+    
 UtilityTab:CreateSection("Ultimate Safe Auto Sell V4 (Inv + Bank)")
 do
     --====================================================
