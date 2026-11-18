@@ -2005,8 +2005,8 @@ end,
 
 --====================================================
 -- DUNGEON HEROES | BLOCK LAGGY INCOMING REMOTES
--- Blocks: DoEffect, StatusAdded, DamageNumber,
---         PlaySFX, StatusChanged, StatusRemoved
+-- Blocks: DoEffect, StatusAdded, DamageNumber, PlaySFX,
+--         StatusChanged, StatusRemoved, HitboxIndicator, HitEffect
 -- Single Toggle | Restores on Toggle Off
 --====================================================
 
@@ -2020,7 +2020,9 @@ do
         "DamageNumber",
         "PlaySFX",
         "StatusChanged",
-        "StatusRemoved"
+        "StatusRemoved",
+        "HitboxIndicator",
+        "HitEffect"
     }
 
     local BlockUnusualCalls = false
@@ -2060,7 +2062,7 @@ do
             end
             table.clear(DisabledConnections)
 
-            -- 2. Also sweep live OnClientEvent connections to ensure full unlock
+            -- 2. Sweep live OnClientEvent connections to ensure full unlock
             for _, RemoteName in ipairs(TargetRemoteNames) do
                 local Remote = Remotes:FindFirstChild(RemoteName)
                 if Remote and Remote:IsA("RemoteEvent") then
@@ -2098,6 +2100,7 @@ do
         end
     })
 end
+
 
 
 MainTab:CreateSection("Combat")
