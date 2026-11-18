@@ -2003,6 +2003,103 @@ end
 end,
 })
 
+--====================================================
+-- DUNGEON HEROES | BLOCK LAGGY INCOMING REMOTES
+-- Blocks: DoEffect, StatusAdded, DamageNumber,
+--         PlaySFX, StatusChanged, StatusRemoved
+-- Single Toggle | Restores on Toggle Off
+--====================================================
+
+do
+    local RS = game:GetService("ReplicatedStorage")
+    local Remotes = RS:WaitForChild("Remotes")
+
+    local TargetRemoteNames = {
+        "DoEffect",
+        "StatusAdded",
+        "DamageNumber",
+        "PlaySFX",
+        "StatusChanged",
+        "StatusRemoved"
+    }
+
+    local BlockUnusualCalls = false
+    local DisabledConnections = {}
+
+    local function SetIncomingRemotesBlocked(ShouldBlock)
+        if not getconnections then
+            warn("Executor does not support getconnections!")
+            return
+        end
+
+        if ShouldBlock then
+            for _, RemoteName in ipairs(TargetRemoteNames) do
+                local Remote = Remotes:FindFirstChild(RemoteName)
+                if Remote and Remote:IsA("RemoteEvent") then
+                    local ok, conns = pcall(getconnections, Remote.OnClientEvent)
+                    if ok and type(conns) == "table" then
+                        for _, conn in ipairs(conns) do
+                            pcall(function()
+                                if conn.Disable then
+                                    conn:Disable()
+                                    DisabledConnections[conn] = true
+                                end
+                            end)
+                        end
+                    end
+                end
+            end
+        else
+            -- 1. Enable all stored connections
+            for conn in pairs(DisabledConnections) do
+                pcall(function()
+                    if conn.Enable then
+                        conn:Enable()
+                    end
+                end)
+            end
+            table.clear(DisabledConnections)
+
+            -- 2. Also sweep live OnClientEvent connections to ensure full unlock
+            for _, RemoteName in ipairs(TargetRemoteNames) do
+                local Remote = Remotes:FindFirstChild(RemoteName)
+                if Remote and Remote:IsA("RemoteEvent") then
+                    local ok, conns = pcall(getconnections, Remote.OnClientEvent)
+                    if ok and type(conns) == "table" then
+                        for _, conn in ipairs(conns) do
+                            pcall(function()
+                                if conn.Enable then
+                                    conn:Enable()
+                                end
+                            end)
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- Background guard: catches any newly created connections while toggle is ON
+    task.spawn(function()
+        while task.wait(1) do
+            if BlockUnusualCalls then
+                SetIncomingRemotesBlocked(true)
+            end
+        end
+    end)
+
+    MiscellaneousTab:CreateToggle({
+        Name = "Disable unusual call ( recommend to on)",
+        CurrentValue = false,
+        Flag = "DisableUnusualCallToggle",
+        Callback = function(Value)
+            BlockUnusualCalls = Value
+            SetIncomingRemotesBlocked(Value)
+        end
+    })
+end
+
+
 MainTab:CreateSection("Combat")
 
 local CONFIG = {
