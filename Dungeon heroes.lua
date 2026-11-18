@@ -2494,11 +2494,10 @@ end,
 
 UtilityTab:CreateSection("Tween Mobs")
 
-
 --========================================================
--- DUNGEON HEROES | AUTO MOBS + PET LOCK V3
--- Full Dungeon Scan | Movable Platform Release
--- TargetDummy Ignored | Pet Follow Only With Valid Mob
+-- DUNGEON HEROES | AUTO MOBS + PET LOCK + AUTO NOCLIP V4
+-- High-Speed Stable (200-1000+) | Zero Velocity Anti-Fling
+-- Auto NoClip on Toggle | Upright Lock | Movable Platform
 --========================================================
 
 local Players = game:GetService("Players")
@@ -2509,7 +2508,6 @@ local Player = Players.LocalPlayer
 -- CONFIGURATION
 local FloatHeight = 30
 local MoveSpeed = 250
-local UpdateRate = 0.03
 
 local PetOffset = Vector3.new(3, 2, 0)
 
@@ -2517,12 +2515,15 @@ local PlatformSize = Vector3.new(7, 1, 7)
 local PlatformOffset = 3.5
 
 local AutoMobs = false
+local IsMovingToMob = false
 local RunId = 0
 
 local MovementConnection = nil
+local NoClipConnection = nil
 local SupportPlatform = nil
+local OriginalCollideStates = {}
 
--- CHARACTER
+-- CHARACTER HELPERS
 local function GetCharacter()
     return Player.Character
 end
@@ -2530,6 +2531,37 @@ end
 local function GetHRP()
     local Character = GetCharacter()
     return Character and Character:FindFirstChild("HumanoidRootPart")
+end
+
+-- AUTO NOCLIP MANAGEMENT
+local function ApplyNoClipStep()
+    local Character = GetCharacter()
+    if not Character then return end
+
+    for _, Part in ipairs(Character:GetDescendants()) do
+        if Part:IsA("BasePart") then
+            if OriginalCollideStates[Part] == nil then
+                OriginalCollideStates[Part] = Part.CanCollide
+            end
+            Part.CanCollide = false
+        end
+    end
+end
+
+local function RestoreCharacterCollision()
+    local Character = GetCharacter()
+    if Character then
+        for _, Part in ipairs(Character:GetDescendants()) do
+            if Part:IsA("BasePart") then
+                if OriginalCollideStates[Part] ~= nil then
+                    Part.CanCollide = OriginalCollideStates[Part]
+                elseif Part.Name == "HumanoidRootPart" or Part.Name == "Torso" or Part.Name == "UpperTorso" or Part.Name == "LowerTorso" then
+                    Part.CanCollide = true
+                end
+            end
+        end
+    end
+    table.clear(OriginalCollideStates)
 end
 
 -- EQUIPPED PET
@@ -2563,7 +2595,7 @@ local function GetPetRoot(Pet)
     return nil
 end
 
--- PET FOLLOW
+-- PET FOLLOW (ZERO VELOCITY STABILIZED)
 local function LockPetToPlayer(Root)
     local Pet = GetMyPet()
     if not Pet or not Pet.Parent then return end
@@ -2571,35 +2603,34 @@ local function LockPetToPlayer(Root)
     local PetRoot = GetPetRoot(Pet)
     if not PetRoot then return end
 
-    local TargetPosition =
-        Root.CFrame:PointToWorldSpace(PetOffset)
-
+    local TargetPosition = Root.CFrame:PointToWorldSpace(PetOffset)
     local Difference = TargetPosition - PetRoot.Position
 
     if Pet:IsA("Model") then
         Pet:PivotTo(Pet:GetPivot() + Difference)
-
     elseif Pet:IsA("BasePart") then
-        Pet.CFrame =
-            CFrame.new(TargetPosition) * Pet.CFrame.Rotation
+        Pet.CFrame = CFrame.new(TargetPosition) * Pet.CFrame.Rotation
     end
+
+    PetRoot.AssemblyLinearVelocity = Vector3.zero
+    PetRoot.AssemblyAngularVelocity = Vector3.zero
 end
 
--- CREATE PLATFORM
+-- CREATE OR UPDATE PLATFORM
 local function CreatePlatform(Root)
     if SupportPlatform and SupportPlatform.Parent then
         SupportPlatform.Anchored = true
         SupportPlatform.CanCollide = true
+        SupportPlatform.AssemblyLinearVelocity = Vector3.zero
+        SupportPlatform.AssemblyAngularVelocity = Vector3.zero
 
         SupportPlatform.CFrame = CFrame.new(
             Root.Position - Vector3.new(0, PlatformOffset, 0)
         )
-
         return
     end
 
     local Platform = Instance.new("Part")
-
     Platform.Name = "AutoMobs_SupportPlatform"
     Platform.Size = PlatformSize
     Platform.Anchored = true
@@ -2620,7 +2651,6 @@ local function CreatePlatform(Root)
 end
 
 -- RELEASE PLATFORM
--- Platform remains under player but becomes movable
 local function ReleasePlatform()
     if SupportPlatform and SupportPlatform.Parent then
         SupportPlatform.Anchored = false
@@ -2640,27 +2670,16 @@ local function GetNearestMob()
     local ShortestDistance = math.huge
 
     for _, Mob in ipairs(MobsFolder:GetChildren()) do
-
         local Owner = Mob:GetAttribute("Owner")
         local HP = Mob:GetAttribute("HP")
 
         -- Ignore TargetDummy and owned pets
-        if Mob.Name ~= "TargetDummy"
-            and (Owner == nil or Owner == "")
-        then
-
-            local MobRoot =
-                Mob:FindFirstChild("HumanoidRootPart")
-                or Mob.PrimaryPart
-
-            local ValidHP = HP == nil
-                or (tonumber(HP) ~= nil and tonumber(HP) > 0)
+        if Mob.Name ~= "TargetDummy" and (Owner == nil or Owner == "") then
+            local MobRoot = Mob:FindFirstChild("HumanoidRootPart") or Mob.PrimaryPart
+            local ValidHP = (HP == nil) or (tonumber(HP) ~= nil and tonumber(HP) > 0)
 
             if MobRoot and ValidHP then
-
-                local Distance =
-                    (MobRoot.Position - Root.Position).Magnitude
-
+                local Distance = (MobRoot.Position - Root.Position).Magnitude
                 if Distance < ShortestDistance then
                     ShortestDistance = Distance
                     NearestMob = Mob
@@ -2672,9 +2691,10 @@ local function GetNearestMob()
     return NearestMob
 end
 
--- STOP
+-- STOP AUTO MOBS + DISABLE NOCLIP
 local function StopAutoMobs()
     AutoMobs = false
+    IsMovingToMob = false
     RunId += 1
 
     if MovementConnection then
@@ -2682,51 +2702,66 @@ local function StopAutoMobs()
         MovementConnection = nil
     end
 
-    -- Do not destroy platform; release it for normal movement
+    if NoClipConnection then
+        NoClipConnection:Disconnect()
+        NoClipConnection = nil
+    end
+
+    RestoreCharacterCollision()
+
+    local Root = GetHRP()
+    if Root then
+        Root.AssemblyLinearVelocity = Vector3.zero
+        Root.AssemblyAngularVelocity = Vector3.zero
+    end
+
     ReleasePlatform()
 end
 
--- START
+-- START AUTO MOBS + ENABLE AUTO NOCLIP
 local function StartAutoMobs()
     StopAutoMobs()
 
     RunId += 1
     local CurrentRun = RunId
 
-    local Root = GetHRP()
-    if not Root then return end
-
     AutoMobs = true
 
-    local Elapsed = 0
-
-    MovementConnection = RunService.Heartbeat:Connect(function(DeltaTime)
-
+    -- 1. Stepped Connection for Instant Auto-NoClip (Prevents wall/pillar collision at 200-1000+ speed)
+    NoClipConnection = RunService.Stepped:Connect(function()
         if not AutoMobs or RunId ~= CurrentRun then
             return
         end
 
-        Elapsed += DeltaTime
+        if IsMovingToMob then
+            ApplyNoClipStep()
+        end
+    end)
 
-        if Elapsed < UpdateRate then
+    -- 2. Heartbeat Connection for Smooth High-Speed CFrame Movement & Velocity Lock
+    MovementConnection = RunService.Heartbeat:Connect(function(DeltaTime)
+        if not AutoMobs or RunId ~= CurrentRun then
             return
         end
 
-        local StepTime = math.min(Elapsed, 0.1)
-        Elapsed = 0
+        local StepTime = math.clamp(DeltaTime, 0.001, 0.1)
 
         pcall(function()
-
             local Character = GetCharacter()
-
-            local Root = Character
-                and Character:FindFirstChild("HumanoidRootPart")
-
-            local Humanoid = Character
-                and Character:FindFirstChildOfClass("Humanoid")
+            local Root = Character and Character:FindFirstChild("HumanoidRootPart")
+            local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
 
             if not Root or not Humanoid or Humanoid.Health <= 0 then
+                IsMovingToMob = false
                 return
+            end
+
+            -- Prevent tripping / ragdoll / falling states at high speeds
+            if Humanoid.PlatformStand then
+                Humanoid.PlatformStand = false
+            end
+            if Humanoid.Sit then
+                Humanoid.Sit = false
             end
 
             -- SEARCH ENTIRE DUNGEON
@@ -2734,52 +2769,51 @@ local function StartAutoMobs()
 
             -- NO VALID MOB ANYWHERE
             if not Mob then
-                -- Stop pet follow and movement.
-                -- Keep platform, but make it movable.
+                if IsMovingToMob then
+                    IsMovingToMob = false
+                    RestoreCharacterCollision()
+                    Root.AssemblyLinearVelocity = Vector3.zero
+                    Root.AssemblyAngularVelocity = Vector3.zero
+                end
                 ReleasePlatform()
                 return
             end
 
-            -- VALID MOB FOUND
-            local MobRoot =
-                Mob:FindFirstChild("HumanoidRootPart")
-                or Mob.PrimaryPart
-
+            local MobRoot = Mob:FindFirstChild("HumanoidRootPart") or Mob.PrimaryPart
             if not MobRoot then
+                IsMovingToMob = false
                 ReleasePlatform()
                 return
             end
+
+            -- Active Mob Target Found -> Enable NoClip & Anti-Fling Physics Lock
+            IsMovingToMob = true
+
+            -- Kill all physics forces so character never flings or breaks joints
+            Root.AssemblyLinearVelocity = Vector3.zero
+            Root.AssemblyAngularVelocity = Vector3.zero
 
             -- CREATE OR RE-ANCHOR PLATFORM
             CreatePlatform(Root)
 
-            -- MOVE ABOVE MOB
-            local TargetPosition =
-                MobRoot.Position
-                + Vector3.new(0, FloatHeight, 0)
-
-            -- SMOOTH MOVEMENT
-            local Difference =
-                TargetPosition - Root.Position
-
+            -- TARGET POSITION ABOVE MOB
+            local TargetPosition = MobRoot.Position + Vector3.new(0, FloatHeight, 0)
+            local Difference = TargetPosition - Root.Position
             local Distance = Difference.Magnitude
 
-            if Distance > 0.1 then
+            -- Keep character strictly upright (prevents tilting/spinning after bumping obstacles)
+            local _, CurrentYaw, _ = Root.CFrame:ToEulerAnglesYXZ()
+            local UprightRotation = CFrame.Angles(0, CurrentYaw, 0)
 
-                local Step = math.min(
-                    MoveSpeed * StepTime,
-                    Distance
-                )
-
-                local NewPosition =
-                    Root.Position + Difference.Unit * Step
-
-                Root.CFrame =
-                    CFrame.new(NewPosition)
-                    * Root.CFrame.Rotation
+            if Distance > 0.05 then
+                local Step = math.min(MoveSpeed * StepTime, Distance)
+                local NewPosition = Root.Position + (Difference.Unit * Step)
+                Root.CFrame = CFrame.new(NewPosition) * UprightRotation
+            else
+                Root.CFrame = CFrame.new(TargetPosition) * UprightRotation
             end
 
-            -- PLATFORM UNDER PLAYER
+            -- PLATFORM LOCKED UNDER PLAYER
             if SupportPlatform and SupportPlatform.Parent then
                 SupportPlatform.CFrame = CFrame.new(
                     Root.Position - Vector3.new(0, PlatformOffset, 0)
@@ -2788,7 +2822,6 @@ local function StartAutoMobs()
 
             -- PET FOLLOWS ONLY WHEN VALID MOB EXISTS
             LockPetToPlayer(Root)
-
         end)
     end)
 end
@@ -2838,16 +2871,22 @@ UtilityTab:CreateSlider({
 
 -- RESPAWN CLEANUP
 Player.CharacterAdded:Connect(function()
-    if AutoMobs then
-        StopAutoMobs()
-    end
+    table.clear(OriginalCollideStates)
 
     if SupportPlatform then
         SupportPlatform:Destroy()
         SupportPlatform = nil
     end
-end)
 
+    -- If toggle is still ON after respawn, automatically re-attach after character loads
+    if AutoMobs then
+        task.wait(0.5)
+        if AutoMobs then
+            StartAutoMobs()
+        end
+    end
+end)
+                    
 do
 --====================================================
 -- DUNGEON HEROES | 1-TOGGLE AUTO SKILL AURA (SLOTS 1-5)
