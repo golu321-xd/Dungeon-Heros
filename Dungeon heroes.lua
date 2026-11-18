@@ -6713,586 +6713,857 @@ end
 
 })
 
+
+-- ================ Auto Dungeon Start ========================
+-- ================ Auto Dungeon Start ========================
+-- ================ Auto Dungeon Start ========================
+-- ================ Auto Dungeon Start ========================
+
 do
--- Dungeon Heroes | Auto Entry V6
--- Solo Queue + Auto Start Dungeon
+    --====================================================
+    -- DUNGEON HEROES | AUTO ENTRY V7 (ULTIMATE EDITION)
+    -- 1. Preserves In-Game Saved Modifiers (Profile.DungeonModifierConfigs)
+    -- 2. Player Limit Slider (1 to 8 Players, Default = 1)
+    -- 3. Filters Out Expired Events (Shows Only Currently Active Events)
+    -- 4. Smart Auto-Start (Verifies workspace DungeonStarted attribute)
+    -- 5. Pro Top UI Notifications (No Rayfield:Notify)
+    --====================================================
 
-local RS = game:GetService("ReplicatedStorage")
-local Players = game:GetService("Players")
+    local RS = game:GetService("ReplicatedStorage")
+    local Players = game:GetService("Players")
+    local TweenService = game:GetService("TweenService")
+    local CoreGui = game:GetService("CoreGui")
 
-local Player = Players.LocalPlayer
-local Remotes = RS:WaitForChild("Remotes")
+    local Player = Players.LocalPlayer
+    local Remotes = RS:WaitForChild("Remotes")
 
-local SetSettings = Remotes:WaitForChild("Parties/SetSettings")
-local SaveModifiers = Remotes:WaitForChild("SaveDungeonModifierConfig")
-local TriggerStartDungeon = Remotes:WaitForChild("TriggerStartDungeon")
+    local SetSettings = Remotes:WaitForChild("Parties/SetSettings")
+    local SaveModifiers = Remotes:WaitForChild("SaveDungeonModifierConfig")
+    local TriggerStartDungeon = Remotes:WaitForChild("TriggerStartDungeon")
 
-local Dungeons = require(RS.Systems.Dungeons)
-local Locations = require(RS.Systems.Locations)
+    local Dungeons = require(RS.Systems.Dungeons)
+    local Locations = require(RS.Systems.Locations)
+    local ProfileSystem = require(RS.Systems.Profile)
 
-local Floors = Locations:GetFloorData()
-local Difficulties = Dungeons:GetAllDifficulties()
+    local EventsSystem = nil
+    pcall(function()
+        if RS.Systems:FindFirstChild("Events") then
+            EventsSystem = require(RS.Systems.Events)
+        end
+    end)
 
-local Category = "All"
-local SelectedDungeon
-local SelectedDifficulty
+    local Floors = Locations:GetFloorData()
+    local Difficulties = Dungeons:GetAllDifficulties()
 
-local DungeonOptions = {}
-local DifficultyOptions = {}
-local DungeonNameToKey = {}
+    -- ==========================================
+    -- PRO TOP UI NOTIFICATION (NO RAYFIELD NOTIFY)
+    -- ==========================================
+    local function ShowTopNotification(TitleText, SubText, AccentColor, Duration)
+        task.spawn(function()
+            pcall(function()
+                local ShowTime = Duration or 3.2
+                local ThemeColor = AccentColor or Color3.fromRGB(0, 225, 140)
 
-local AutoStartDungeon = true
-local StartFired = false
-local Entering = false
+                local ParentGui = (gethui and gethui())
+                    or CoreGui
+                    or Player:WaitForChild("PlayerGui")
 
-local function GetValue(value)
-return type(value) == "table" and value[1] or value
+                local OldGui = ParentGui:FindFirstChild("DH_AutoEntryTopNotify")
+                if OldGui then OldGui:Destroy() end
+
+                local ScreenGui = Instance.new("ScreenGui")
+                ScreenGui.Name = "DH_AutoEntryTopNotify"
+                ScreenGui.IgnoreGuiInset = true
+                ScreenGui.DisplayOrder = 999999
+                ScreenGui.Parent = ParentGui
+
+                local MainFrame = Instance.new("Frame")
+                MainFrame.Size = UDim2.new(0, 400, 0, 66)
+                MainFrame.Position = UDim2.new(0.5, -200, 0, -85)
+                MainFrame.BackgroundColor3 = Color3.fromRGB(15, 17, 24)
+                MainFrame.BorderSizePixel = 0
+                MainFrame.ClipsDescendants = true
+                MainFrame.Parent = ScreenGui
+
+                local MainCorner = Instance.new("UICorner")
+                MainCorner.CornerRadius = UDim.new(0, 12)
+                MainCorner.Parent = MainFrame
+
+                local MainStroke = Instance.new("UIStroke")
+                MainStroke.Color = ThemeColor
+                MainStroke.Thickness = 1.6
+                MainStroke.Transparency = 0.15
+                MainStroke.Parent = MainFrame
+
+                local SideBar = Instance.new("Frame")
+                SideBar.Size = UDim2.new(0, 5, 1, -16)
+                SideBar.Position = UDim2.new(0, 8, 0, 8)
+                SideBar.BackgroundColor3 = ThemeColor
+                SideBar.BorderSizePixel = 0
+                SideBar.Parent = MainFrame
+
+                local SideCorner = Instance.new("UICorner")
+                SideCorner.CornerRadius = UDim.new(1, 0)
+                SideCorner.Parent = SideBar
+
+                local Title = Instance.new("TextLabel")
+                Title.Size = UDim2.new(1, -34, 0, 22)
+                Title.Position = UDim2.new(0, 22, 0, 8)
+                Title.BackgroundTransparency = 1
+                Title.Font = Enum.Font.GothamBold
+                Title.TextSize = 14
+                Title.TextColor3 = ThemeColor
+                Title.TextXAlignment = Enum.TextXAlignment.Left
+                Title.TextTruncate = Enum.TextTruncate.AtEnd
+                Title.Text = tostring(TitleText)
+                Title.Parent = MainFrame
+
+                local Sub = Instance.new("TextLabel")
+                Sub.Size = UDim2.new(1, -34, 0, 20)
+                Sub.Position = UDim2.new(0, 22, 0, 31)
+                Sub.BackgroundTransparency = 1
+                Sub.Font = Enum.Font.GothamMedium
+                Sub.TextSize = 12
+                Sub.TextColor3 = Color3.fromRGB(220, 225, 235)
+                Sub.TextXAlignment = Enum.TextXAlignment.Left
+                Sub.TextTruncate = Enum.TextTruncate.AtEnd
+                Sub.Text = tostring(SubText)
+                Sub.Parent = MainFrame
+
+                local BarBg = Instance.new("Frame")
+                BarBg.Size = UDim2.new(1, 0, 0, 3)
+                BarBg.Position = UDim2.new(0, 0, 1, -3)
+                BarBg.BackgroundColor3 = Color3.fromRGB(35, 40, 52)
+                BarBg.BorderSizePixel = 0
+                BarBg.Parent = MainFrame
+
+                local BarFill = Instance.new("Frame")
+                BarFill.Size = UDim2.new(1, 0, 1, 0)
+                BarFill.BackgroundColor3 = ThemeColor
+                BarFill.BorderSizePixel = 0
+                BarFill.Parent = BarBg
+
+                TweenService:Create(
+                    MainFrame,
+                    TweenInfo.new(0.30, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+                    {Position = UDim2.new(0.5, -200, 0, 16)}
+                ):Play()
+
+                TweenService:Create(
+                    BarFill,
+                    TweenInfo.new(ShowTime, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
+                    {Size = UDim2.new(0, 0, 1, 0)}
+                ):Play()
+
+                task.wait(ShowTime)
+
+                if MainFrame and MainFrame.Parent then
+                    local OutTween = TweenService:Create(
+                        MainFrame,
+                        TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+                        {Position = UDim2.new(0.5, -200, 0, -85)}
+                    )
+                    OutTween:Play()
+                    OutTween.Completed:Wait()
+                    if ScreenGui then ScreenGui:Destroy() end
+                end
+            end)
+        end)
+    end
+
+    -- ==========================================
+    -- STATE & SETTINGS
+    -- ==========================================
+    local Category = "All"
+    local SelectedDungeon = nil
+    local SelectedDifficulty = nil
+
+    local MaxPartyPlayers = 1       -- Slider controlled (Default = 1)
+    local IsPrivateParty = true     -- Private / Solo Queue
+    local AutoEnterFromLobby = false
+    local AutoStartDungeon = true
+    local Entering = false
+
+    local DungeonOptions = {}
+    local DifficultyOptions = {}
+    local DungeonNameToKey = {}
+
+    local DungeonDropdown
+    local DifficultyDropdown
+
+    local function GetValue(value)
+        return type(value) == "table" and value[1] or value
+    end
+
+    -- ==========================================
+    -- READ PLAYER'S IN-GAME SAVED MODIFIERS
+    -- (From Profile.DungeonModifierConfigs)
+    -- ==========================================
+    local function GetSavedInGameModifiers(dungeonKey)
+        if not dungeonKey then return nil end
+
+        local Profile = nil
+        pcall(function()
+            Profile = ProfileSystem:GetProfile(Player)
+        end)
+        if not Profile then return nil end
+
+        local ModConfigs = Profile:FindFirstChild("DungeonModifierConfigs")
+        local DungeonConfig = ModConfigs and ModConfigs:FindFirstChild(dungeonKey)
+        if not DungeonConfig then
+            return nil -- No custom config folder -> server keeps default in-game state
+        end
+
+        local IsEnabled = DungeonConfig:GetAttribute("ModifiersEnabled") == true
+        local IsRoulette = DungeonConfig:GetAttribute("RouletteEnabled") == true
+        local EnabledMap = {}
+
+        local EnabledFolder = DungeonConfig:FindFirstChild("EnabledModifiers")
+        if EnabledFolder then
+            for _, ModVal in ipairs(EnabledFolder:GetChildren()) do
+                if ModVal:IsA("BoolValue") and ModVal.Value == true then
+                    EnabledMap[ModVal.Name] = true
+                end
+            end
+        end
+
+        return {
+            enabled = IsEnabled,
+            enabledModifiers = EnabledMap,
+            roulette = IsRoulette
+        }
+    end
+
+    -- ==========================================
+    -- CHECK IF DUNGEON / EVENT IS CURRENTLY ACTIVE
+    -- ==========================================
+    local function HasAnyAvailableDifficulty(dungeonKey, data)
+        -- Gauntlet or special modes without standard DifficultyLevels table
+        if data.IsGauntlet and type(data.DifficultyLevels) ~= "table" then
+            return true
+        end
+
+        local levels = data and data.DifficultyLevels
+        if type(levels) ~= "table" then
+            return false
+        end
+
+        for index in pairs(levels) do
+            if type(index) == "number" and Difficulties[index] then
+                local ok, available = pcall(function()
+                    return Dungeons:IsDungeonDifficultyAvailable(dungeonKey, index)
+                end)
+                if ok and available == true then
+                    return true
+                end
+            end
+        end
+
+        return false
+    end
+
+    local function IsEventCurrentlyActive(dungeonKey, data)
+        -- 1. Reject disabled / hidden / unreleased floors
+        if data.Disabled == true
+            or data.IsDisabled == true
+            or data.Hidden == true
+            or data.InDevelopment == true
+            or data.Unreleased == true
+            or data.IsActive == false then
+            return false
+        end
+
+        -- 2. Check Locations:IsFloorAvailable if supported
+        if type(Locations.IsFloorAvailable) == "function" then
+            local ok1, avail1 = pcall(function()
+                return Locations:IsFloorAvailable(dungeonKey)
+            end)
+            if ok1 and type(avail1) == "boolean" and avail1 == false then
+                return false
+            end
+
+            local ok2, avail2 = pcall(function()
+                return Locations:IsFloorAvailable(Player, dungeonKey)
+            end)
+            if ok2 and type(avail2) == "boolean" and avail2 == false then
+                return false
+            end
+        end
+
+        -- 3. Check EventsSystem if floor specifies an Event ID / Name
+        local EventTag = data.Event or data.EventId or data.EventName or data.ActiveEvent
+        if EventTag and EventsSystem then
+            local Checked = false
+            local IsLive = false
+
+            for _, FnName in ipairs({"IsEventActive", "IsActive", "GetEventData"}) do
+                if type(EventsSystem[FnName]) == "function" then
+                    local okE, resE = pcall(function()
+                        return EventsSystem[FnName](EventsSystem, EventTag)
+                    end)
+                    if okE and resE ~= nil then
+                        Checked = true
+                        IsLive = (resE ~= false and resE ~= nil)
+                        break
+                    end
+                end
+            end
+
+            if Checked and not IsLive then
+                return false
+            end
+        end
+
+        -- 4. If it's an Event Dungeon, also verify against Profile.EventData if EventTag is present
+        if data.IsEventDungeon == true and type(EventTag) == "string" and #EventTag > 0 then
+            local Profile = nil
+            pcall(function() Profile = ProfileSystem:GetProfile(Player) end)
+            local EventDataFolder = Profile and Profile:FindFirstChild("EventData")
+            if EventDataFolder and #EventDataFolder:GetChildren() > 0 then
+                if not EventDataFolder:FindFirstChild(EventTag) then
+                    return false
+                end
+            end
+        end
+
+        -- 5. Must have at least 1 currently playable difficulty on the server!
+        if not HasAnyAvailableDifficulty(dungeonKey, data) then
+            return false
+        end
+
+        return true
+    end
+
+    local function MatchesCategory(dungeonKey, data)
+        -- Always filter out expired/unavailable events & locked dungeons
+        if data.IsEventDungeon == true or Category == "Events" then
+            if not IsEventCurrentlyActive(dungeonKey, data) then
+                return false
+            end
+        else
+            if data.Disabled == true or data.Hidden == true or data.InDevelopment == true then
+                return false
+            end
+        end
+
+        if Category == "All" then
+            return true
+        elseif Category == "Raids" then
+            return data.IsRaid == true
+        elseif Category == "Events" then
+            return data.IsEventDungeon == true
+        elseif Category == "Special" then
+            return data.SpecialDungeon == true or data.IsGauntlet == true
+        elseif Category == "Normal" then
+            return data.IsDungeon == true
+                and data.IsRaid ~= true
+                and data.IsEventDungeon ~= true
+                and data.SpecialDungeon ~= true
+                and data.IsGauntlet ~= true
+        end
+
+        return false
+    end
+
+    -- ==========================================
+    -- REFRESH DUNGEONS & DIFFICULTIES
+    -- ==========================================
+    local function RefreshDifficulties()
+        table.clear(DifficultyOptions)
+        SelectedDifficulty = nil
+
+        local data = SelectedDungeon and Floors[SelectedDungeon]
+        local levels = data and data.DifficultyLevels
+
+        if type(levels) == "table" then
+            local indexes = {}
+            for index in pairs(levels) do
+                if type(index) == "number" then
+                    table.insert(indexes, index)
+                end
+            end
+            table.sort(indexes)
+
+            for _, index in ipairs(indexes) do
+                local name = Difficulties[index]
+                local ok, available = pcall(function()
+                    return Dungeons:IsDungeonDifficultyAvailable(SelectedDungeon, index)
+                end)
+
+                if name and ok and available then
+                    table.insert(DifficultyOptions, name)
+                end
+            end
+        end
+
+        -- Auto-select highest available difficulty by default for convenience
+        if #DifficultyOptions > 0 then
+            SelectedDifficulty = DifficultyOptions[#DifficultyOptions]
+            DifficultyDropdown:Refresh(DifficultyOptions, SelectedDifficulty)
+        else
+            DifficultyDropdown:Refresh({})
+        end
+    end
+
+    local function RefreshDungeons()
+        table.clear(DungeonOptions)
+        table.clear(DungeonNameToKey)
+
+        local entries = {}
+        local titleCounts = {}
+
+        for name, data in pairs(Floors) do
+            if type(data) == "table"
+                and (data.IsDungeon or data.IsRaid or data.IsEventDungeon or data.SpecialDungeon or data.IsGauntlet)
+                and MatchesCategory(name, data) then
+
+                local displayName = data.Title or name
+                titleCounts[displayName] = (titleCounts[displayName] or 0) + 1
+
+                table.insert(entries, {
+                    Name = name,
+                    Title = displayName,
+                    Data = data
+                })
+            end
+        end
+
+        table.sort(entries, function(a, b)
+            local da = a.Data
+            local db = b.Data
+
+            if da.IsRaid and db.IsRaid then
+                local orderA = da.DungeonSelectZIndex or da.LayoutOrder or da.RequiredLevel or 999999
+                local orderB = db.DungeonSelectZIndex or db.LayoutOrder or db.RequiredLevel or 999999
+                if orderA ~= orderB then
+                    return orderA < orderB
+                end
+            else
+                local levelA = da.RequiredLevel or 999999
+                local levelB = db.RequiredLevel or 999999
+                if levelA ~= levelB then
+                    return levelA < levelB
+                end
+            end
+
+            return a.Title < b.Title
+        end)
+
+        for _, entry in ipairs(entries) do
+            local displayName = entry.Title
+            if titleCounts[displayName] > 1 then
+                displayName = displayName .. " (" .. entry.Name .. ")"
+            end
+
+            table.insert(DungeonOptions, displayName)
+            DungeonNameToKey[displayName] = entry.Name
+        end
+
+        SelectedDungeon = nil
+        SelectedDifficulty = nil
+
+        DungeonDropdown:Refresh(DungeonOptions)
+        DifficultyDropdown:Refresh({})
+    end
+
+    -- ==========================================
+    -- QUEUE & ENTER EXECUTION (PRESERVES MODIFIERS)
+    -- ==========================================
+    local function EnterSelectedDungeon()
+        if Entering then return end
+
+        if not SelectedDungeon or not SelectedDifficulty then
+            ShowTopNotification(
+                "Selection Missing!",
+                "Pehle Dungeon aur Difficulty select karo.",
+                Color3.fromRGB(255, 175, 40),
+                3.0
+            )
+            return
+        end
+
+        local difficultyIndex = table.find(Difficulties, SelectedDifficulty)
+        if not difficultyIndex then
+            ShowTopNotification(
+                "Invalid Difficulty!",
+                "Difficulty index match nahi hua.",
+                Color3.fromRGB(255, 90, 90),
+                3.0
+            )
+            return
+        end
+
+        Entering = true
+
+        local SavedModifiers = GetSavedInGameModifiers(SelectedDungeon)
+
+        local success, err = pcall(function()
+            -- 1. Submit Party Settings with Slider Player Count (MaxPartyPlayers)
+            SetSettings:FireServer(
+                SelectedDungeon,
+                difficultyIndex,
+                MaxPartyPlayers,
+                IsPrivateParty,
+                false,
+                {}
+            )
+
+            -- 2. Only send SaveModifiers if we read the player's actual in-game config for THIS dungeon!
+            -- Never overwrite with foreign raid modifiers!
+            if SavedModifiers then
+                SaveModifiers:FireServer(
+                    SelectedDungeon,
+                    SavedModifiers
+                )
+            end
+        end)
+
+        if not success then
+            Entering = false
+            warn("Entry Error:", err)
+            ShowTopNotification("Entry Error!", tostring(err), Color3.fromRGB(255, 80, 80), 3.5)
+            return
+        end
+
+        local ModStatus = (SavedModifiers and SavedModifiers.enabled) and "In-Game Modifiers: ON" or "In-Game Default"
+        ShowTopNotification(
+            string.format("Entering: %s (%s)", tostring(SelectedDungeon), tostring(SelectedDifficulty)),
+            string.format("Players: %d | %s", MaxPartyPlayers, ModStatus),
+            Color3.fromRGB(0, 230, 145),
+            3.5
+        )
+
+        task.delay(12, function()
+            Entering = false
+        end)
+    end
+
+    -- ==========================================
+    -- RAYFIELD UI CONTROLS
+    -- ==========================================
+    AutoGrindTab:CreateDropdown({
+        Name = "Category",
+        Options = {"All", "Normal", "Raids", "Events", "Special"},
+        CurrentOption = {"All"},
+        Callback = function(value)
+            Category = GetValue(value)
+            RefreshDungeons()
+        end
+    })
+
+    DungeonDropdown = AutoGrindTab:CreateDropdown({
+        Name = "Select Dungeon / Raid",
+        Options = {},
+        CurrentOption = {},
+        Callback = function(value)
+            local selected = GetValue(value)
+            if type(selected) ~= "string" then return end
+
+            SelectedDungeon = DungeonNameToKey[selected]
+            if not SelectedDungeon then
+                warn("Dungeon key not found:", selected)
+                return
+            end
+
+            task.defer(function()
+                RefreshDifficulties()
+            end)
+        end
+    })
+
+    DifficultyDropdown = AutoGrindTab:CreateDropdown({
+        Name = "Select Difficulty",
+        Options = {},
+        CurrentOption = {},
+        Callback = function(value)
+            SelectedDifficulty = GetValue(value)
+        end
+    })
+
+    AutoGrindTab:CreateSlider({
+        Name = "Party Player Limit (Max Players)",
+        Range = {1, 8},
+        Increment = 1,
+        Suffix = " Player(s)",
+        CurrentValue = 1,
+        Flag = "AutoEntryMaxPlayers",
+        Callback = function(Value)
+            MaxPartyPlayers = tonumber(Value) or 1
+        end
+    })
+
+    AutoGrindTab:CreateToggle({
+        Name = "Private / Friends Only Queue",
+        CurrentValue = true,
+        Flag = "AutoEntryPrivateToggle",
+        Callback = function(Value)
+            IsPrivateParty = Value
+        end
+    })
+
+    AutoGrindTab:CreateButton({
+        Name = "ENTER SELECTED DUNGEON",
+        Callback = function()
+            EnterSelectedDungeon()
+        end
+    })
+
+    AutoGrindTab:CreateToggle({
+        Name = "Auto Enter Dungeon When In Lobby",
+        CurrentValue = false,
+        Flag = "AutoEnterFromLobbyToggle",
+        Callback = function(Value)
+            AutoEnterFromLobby = Value
+        end
+    })
+
+    AutoGrindTab:CreateToggle({
+        Name = "Auto Start Dungeon",
+        CurrentValue = true,
+        Flag = "AutoStartDungeonToggle",
+        Callback = function(value)
+            AutoStartDungeon = value
+        end
+    })
+
+    -- ==========================================
+    -- SMART AUTO START & AUTO LOBBY QUEUE LOOP
+    -- ==========================================
+    local LastStartFireTime = 0
+    local LastLobbyEnterTime = 0
+
+    task.spawn(function()
+        while task.wait(0.25) do
+            local ok, locationName, locationData = pcall(function()
+                return Locations:GetCurrentLocation()
+            end)
+
+            if not ok or type(locationData) ~= "table" then
+                continue
+            end
+
+            local inDungeon = (
+                locationData.IsDungeon == true
+                or locationData.IsRaid == true
+                or locationData.IsEventDungeon == true
+                or locationData.IsGauntlet == true
+                or locationData.SpecialDungeon == true
+            )
+
+            -- 1. Inside Dungeon: Fire TriggerStartDungeon until workspace attribute DungeonStarted is true
+            if inDungeon and AutoStartDungeon then
+                local AlreadyStarted = workspace:GetAttribute("DungeonStarted") == true
+                local AlreadyCleared = workspace:GetAttribute("DungeonCleared") == true
+                local AlreadyFailed = workspace:GetAttribute("DungeonFailed") == true
+
+                if not AlreadyStarted and not AlreadyCleared and not AlreadyFailed then
+                    if os.clock() - LastStartFireTime >= 1.2 then
+                        LastStartFireTime = os.clock()
+                        pcall(function()
+                            TriggerStartDungeon:FireServer()
+                        end)
+                    end
+                end
+
+            -- 2. Inside Lobby: Auto-Enter Selected Dungeon if AutoEnterFromLobby is enabled
+            elseif not inDungeon and AutoEnterFromLobby and not Entering then
+                if SelectedDungeon and SelectedDifficulty and (os.clock() - LastLobbyEnterTime >= 8.0) then
+                    LastLobbyEnterTime = os.clock()
+                    task.spawn(EnterSelectedDungeon)
+                end
+            end
+        end
+    end)
+
+    RefreshDungeons()
 end
 
-local function Matches(data)
-if Category == "All" then return true end
+-- ==========================================
+-- DUNGEON HEROES | AUTO NEXT & CLAIM ALL
+-- ==========================================
+do
+    local Players = game:GetService("Players")
+    local GuiService = game:GetService("GuiService")
+    local VirtualInputManager = game:GetService("VirtualInputManager")
+    local LocalPlayer = Players.LocalPlayer
 
-if Category == "Raids" then  
-    return data.IsRaid == true  
-elseif Category == "Events" then  
-    return data.IsEventDungeon == true  
-elseif Category == "Special" then  
-    return data.SpecialDungeon == true  
-        or data.IsGauntlet == true  
-elseif Category == "Normal" then  
-    return data.IsDungeon == true  
-        and data.IsRaid ~= true  
-        and data.IsEventDungeon ~= true  
-        and data.SpecialDungeon ~= true  
-        and data.IsGauntlet ~= true  
-end  
+    getgenv().AutoTapChestUI = false
 
-return false
+    local function instantTapButton(btn)
+        if not btn or not btn.Visible then return end
 
+        -- 1. SelectedObject + Return Key
+        pcall(function()
+            btn.Selectable = true
+            GuiService.SelectedObject = btn
+            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
+            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
+            GuiService.SelectedObject = nil
+        end)
+
+        -- 2. Signal Connections Fire
+        if getconnections then
+            local fakeTouchBegin = {UserInputType = Enum.UserInputType.Touch, UserInputState = Enum.UserInputState.Begin}
+            local fakeTouchEnd = {UserInputType = Enum.UserInputType.Touch, UserInputState = Enum.UserInputState.End}
+
+            local function fireSig(sig, a, b)
+                for _, conn in pairs(getconnections(sig)) do
+                    pcall(function() if conn.Fire then conn:Fire(a, b) end end)
+                    pcall(function() if conn.Function then task.spawn(conn.Function, a, b) end end)
+                end
+            end
+
+            fireSig(btn.Activated, fakeTouchBegin, 1)
+            fireSig(btn.MouseButton1Click)
+            fireSig(btn.MouseButton1Down, 0, 0)
+            fireSig(btn.MouseButton1Up, 0, 0)
+            if btn.TouchTap then fireSig(btn.TouchTap, {Vector2.zero}) end
+            fireSig(btn.InputBegan, fakeTouchBegin, false)
+            fireSig(btn.InputEnded, fakeTouchEnd, false)
+        end
+
+        -- 3. Screen Coordinates Tap Fallback
+        pcall(function()
+            local inset = GuiService:GetGuiInset()
+            local pos = btn.AbsolutePosition
+            local size = btn.AbsoluteSize
+            local x = pos.X + (size.X / 2)
+            local y = pos.Y + (size.Y / 2) + inset.Y
+
+            VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
+            VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
+        end)
+    end
+
+    AutoGrindTab:CreateToggle({
+        Name = "Auto Next & Claim All",
+        CurrentValue = false,
+        Flag = "AutoTapChestUI",
+        Callback = function(Value)
+            getgenv().AutoTapChestUI = Value
+
+            if Value then
+                task.spawn(function()
+                    while getgenv().AutoTapChestUI do
+                        pcall(function()
+                            local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+                            local chestOpen = playerGui and playerGui:FindFirstChild("ChestOpen")
+
+                            if chestOpen and chestOpen.Enabled then
+                                local overlay = chestOpen:FindFirstChild("Overlay")
+                                local actionButtons = overlay and overlay:FindFirstChild("ActionButtons")
+
+                                if actionButtons and overlay.Visible then
+                                    for _, child in ipairs(actionButtons:GetChildren()) do
+                                        if child.Name == "Button" and child:IsA("GuiObject") and child.Visible then
+                                            for _, desc in ipairs(child:GetDescendants()) do
+                                                if desc:IsA("TextLabel") or desc:IsA("TextButton") then
+                                                    local txt = desc.Text
+                                                    if txt == "Next" or txt == "Claim All" then
+                                                        instantTapButton(child)
+                                                        break
+                                                    end
+                                                end
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end)
+                        task.wait(0.05)
+                    end
+                end)
+            end
+        end
+    })
 end
-
-local DungeonDropdown
-local DifficultyDropdown
-
-local function RefreshDungeons()
-table.clear(DungeonOptions)
-table.clear(DungeonNameToKey)
-
-local entries = {}  
-local titleCounts = {}  
-
-for name, data in pairs(Floors) do  
-    if type(data) == "table"  
-        and (data.IsDungeon or data.IsRaid  
-        or data.IsEventDungeon or data.SpecialDungeon  
-        or data.IsGauntlet)  
-        and Matches(data) then  
-
-        local displayName = data.Title or name  
-
-        titleCounts[displayName] =  
-            (titleCounts[displayName] or 0) + 1  
-
-        table.insert(entries, {  
-            Name = name,  
-            Title = displayName,  
-            Data = data  
-        })  
-    end  
-end  
-
-table.sort(entries, function(a, b)  
-    local da = a.Data  
-    local db = b.Data  
-
-    if da.IsRaid and db.IsRaid then  
-        local orderA = da.DungeonSelectZIndex  
-            or da.LayoutOrder or da.RequiredLevel or 999999  
-
-        local orderB = db.DungeonSelectZIndex  
-            or db.LayoutOrder or db.RequiredLevel or 999999  
-
-        if orderA ~= orderB then  
-            return orderA < orderB  
-        end  
-    else  
-        local levelA = da.RequiredLevel or 999999  
-        local levelB = db.RequiredLevel or 999999  
-
-        if levelA ~= levelB then  
-            return levelA < levelB  
-        end  
-    end  
-
-    return a.Title < b.Title  
-end)  
-
-for _, entry in ipairs(entries) do  
-    local displayName = entry.Title  
-
-    -- Duplicate titles ko distinguish karna  
-    if titleCounts[displayName] > 1 then  
-        displayName = displayName .. " (" .. entry.Name .. ")"  
-    end  
-
-    table.insert(DungeonOptions, displayName)  
-    DungeonNameToKey[displayName] = entry.Name  
-end  
-
-SelectedDungeon = nil  
-SelectedDifficulty = nil  
-
-DungeonDropdown:Refresh(DungeonOptions)  
-DifficultyDropdown:Refresh({})
-
-end
-
-local function RefreshDifficulties()
-table.clear(DifficultyOptions)
-SelectedDifficulty = nil
-
-local data = Floors[SelectedDungeon]  
-local levels = data and data.DifficultyLevels  
-
-if type(levels) == "table" then  
-    local indexes = {}  
-
-    for index in pairs(levels) do  
-        if type(index) == "number" then  
-            table.insert(indexes, index)  
-        end  
-    end  
-
-    table.sort(indexes)  
-
-    for _, index in ipairs(indexes) do  
-        local name = Difficulties[index]  
-
-
-        local ok, available = pcall(function()  
-            return Dungeons:IsDungeonDifficultyAvailable(  
-                SelectedDungeon, index  
-            )  
-        end)  
-
-        if name and ok and available then  
-            table.insert(DifficultyOptions, name)  
-        end  
-    end  
-end  
-
-DifficultyDropdown:Refresh(DifficultyOptions)
-
-end
-
--- Category
-AutoGrindTab:CreateDropdown({
-Name = "Category",
-Options = {"All", "Normal", "Raids", "Events", "Special"},
-CurrentOption = {"All"},
-Callback = function(value)
-Category = GetValue(value)
-RefreshDungeons()
-end
-})
-
--- Dungeon
-DungeonDropdown = AutoGrindTab:CreateDropdown({
-Name = "Select Dungeon / Raid",
-Options = {},
-CurrentOption = {},
-Callback = function(value)
-local selected = GetValue(value)
-
-if type(selected) ~= "string" then  
-    return  
-end  
-
-SelectedDungeon = DungeonNameToKey[selected]  
-
-if not SelectedDungeon then  
-    warn("Dungeon key not found:", selected)  
-    return  
-end  
-
-task.defer(function()  
-    RefreshDifficulties()  
-end)
-
-end
-})
-
--- Difficulty
-DifficultyDropdown = AutoGrindTab:CreateDropdown({
-Name = "Select Difficulty",
-Options = {},
-CurrentOption = {},
-Callback = function(value)
-SelectedDifficulty = GetValue(value)
-end
-})
-
--- Original captured modifiers preserved
-local Modifiers = {
-enabled = true,
-enabledModifiers = {
-["titans-rage__5"] = true,
-["colossus__5"] = true,
-["titans-rage__1"] = true,
-["quake-step__1"] = true,
-["fault-line__4"] = true,
-["raid-champions__1"] = true,
-["shared-aegis__5"] = true,
-["quake-step__2"] = true,
-["tremor__3"] = true,
-["barren__1"] = true,
-["titans-rage__6"] = true,
-["quake-step__3"] = true,
-["titan-burden__5"] = true,
-["aftershock-armor__3"] = true,
-["permadeath-pact__6"] = true,
-["titans-rage__3"] = true,
-["raid-champions__3"] = true,
-["raid-champions__4"] = true,
-["raid-champions__5"] = true,
-["unbreakable-core__5"] = true,
-["fault-line__3"] = true,
-["borrowed-time__6"] = true,
-["runic-disenchant__1"] = true,
-["aftershock-armor__2"] = true,
-["stonebound__4"] = true,
-["glass-soul__6"] = true,
-["titans-rage__4"] = true,
-["raid-champions__2"] = true,
-["aftershock-armor__4"] = true,
-["runic-disenchant__4"] = true,
-["raid-champions__6"] = true,
-["titans-rage__2"] = true,
-["runic-disenchant__2"] = true
-},
-roulette = false
-}
-
--- Enter Dungeon
-AutoGrindTab:CreateButton({
-Name = "ENTER SELECTED DUNGEON",
-
-Callback = function()  
-    if Entering then return end  
-
-    if not SelectedDungeon or not SelectedDifficulty then  
-        Rayfield:Notify({  
-            Title = "Selection Missing",  
-            Content = "Select dungeon and difficulty",  
-            Duration = 3  
-        })  
-        return  
-    end  
-
-    local difficultyIndex = table.find(  
-        Difficulties, SelectedDifficulty  
-    )  
-
-    if not difficultyIndex then return end  
-
-    Entering = true  
-    StartFired = false  
-
-    local success, err = pcall(function()  
-        SetSettings:FireServer(  
-            SelectedDungeon,  
-            difficultyIndex,  
-            1,  
-            true,  
-            false,  
-            {}  
-        )  
-
-        SaveModifiers:FireServer(  
-            SelectedDungeon,  
-            Modifiers  
-        )  
-    end)  
-
-    if not success then  
-        Entering = false  
-        warn("Entry Error:", err)  
-        return  
-    end  
-
-    Rayfield:Notify({  
-        Title = "Solo Queue",  
-        Content = "Settings submitted. Waiting for entry...",  
-        Duration = 4  
-    })  
-
-    task.delay(15, function()  
-        Entering = false  
-    end)  
-end
-
-})
-
--- Auto Start Toggle
-AutoGrindTab:CreateToggle({
-Name = "Auto Start Dungeon",
-CurrentValue = true,
-Flag = "AutoStartDungeonToggle",
-
-Callback = function(value)  
-    AutoStartDungeon = value  
-
-    if not value then  
-        StartFired = false  
-    end  
-end
-
-})
-
--- Auto Start Detection (Fixed)
-task.spawn(function()
-while task.wait(0.1) do
-if not AutoStartDungeon then
-continue
-end
-
-if StartFired then  
-        continue  
-    end  
-
-    local ok, locationName, locationData = pcall(function()  
-        return Locations:GetCurrentLocation()  
-    end)  
-
-    if not AutoStartDungeon then  
-        continue  
-    end  
-
-    local inDungeon = ok and locationData and (  
-        locationData.IsDungeon  
-        or locationData.IsRaid  
-        or locationData.IsEventDungeon  
-        or locationData.IsGauntlet  
-    )  
-
-    if inDungeon and AutoStartDungeon and not StartFired then  
-
-        -- Final toggle check  
-        if not AutoStartDungeon then  
-            continue  
-        end  
-
-        StartFired = true  
-
-        if not AutoStartDungeon then  
-            StartFired = false  
-            continue  
-        end  
-
-        local fired, err = pcall(function()  
-            TriggerStartDungeon:FireServer()  
-        end)  
-
-        if fired then  
-            print("Auto Start Dungeon: Fired")  
-        else  
-            warn("Auto Start Error:", err)  
-            StartFired = false  
-        end  
-    end  
-end
-
-end)
-
-RefreshDungeons()
-end
-
-local Players = game:GetService("Players")
-local GuiService = game:GetService("GuiService")
-local VirtualInputManager = game:GetService("VirtualInputManager")
-local LocalPlayer = Players.LocalPlayer
-
-getgenv().AutoTapChestUI = false
-
--- Button ko instant trigger karne ka function
-local function instantTapButton(btn)
-if not btn or not btn.Visible then return end
-
--- 1. SelectedObject + Return Key (Instant Engine Click)  
-pcall(function()  
-    btn.Selectable = true  
-    GuiService.SelectedObject = btn  
-    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game)  
-    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game)  
-    GuiService.SelectedObject = nil  
-end)  
-
--- 2. Signal Connections Fire  
-if getconnections then  
-    local fakeTouchBegin = {UserInputType = Enum.UserInputType.Touch, UserInputState = Enum.UserInputState.Begin}  
-    local fakeTouchEnd = {UserInputType = Enum.UserInputType.Touch, UserInputState = Enum.UserInputState.End}  
-
-    local function fireSig(sig, a, b)  
-        for _, conn in pairs(getconnections(sig)) do  
-            pcall(function() if conn.Fire then conn:Fire(a, b) end end)  
-            pcall(function() if conn.Function then task.spawn(conn.Function, a, b) end end)  
-        end  
-    end  
-
-    fireSig(btn.Activated, fakeTouchBegin, 1)  
-    fireSig(btn.MouseButton1Click)  
-    fireSig(btn.MouseButton1Down, 0, 0)  
-    fireSig(btn.MouseButton1Up, 0, 0)  
-    if btn.TouchTap then fireSig(btn.TouchTap, {Vector2.zero}) end  
-    fireSig(btn.InputBegan, fakeTouchBegin, false)  
-    fireSig(btn.InputEnded, fakeTouchEnd, false)  
-end  
-
--- 3. Screen Coordinates Tap Fallback  
-pcall(function()  
-    local inset = GuiService:GetGuiInset()  
-    local pos = btn.AbsolutePosition  
-    local size = btn.AbsoluteSize  
-    local x = pos.X + (size.X / 2)  
-    local y = pos.Y + (size.Y / 2) + inset.Y  
-
-    VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)  
-    VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)  
-end)
-
-end
-
--- Rayfield Toggle
-AutoGrindTab:CreateToggle({
-Name = "Auto Next & Claim All",
-CurrentValue = false,
-Flag = "AutoTapChestUI",
-Callback = function(Value)
-getgenv().AutoTapChestUI = Value
-
-if Value then  
-        task.spawn(function()  
-            while getgenv().AutoTapChestUI do  
-                pcall(function()  
-                    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")  
-                    local chestOpen = playerGui and playerGui:FindFirstChild("ChestOpen")  
-                      
-                    if chestOpen and chestOpen.Enabled then  
-                        local overlay = chestOpen:FindFirstChild("Overlay")  
-                        local actionButtons = overlay and overlay:FindFirstChild("ActionButtons")  
-                          
-                        if actionButtons and overlay.Visible then  
-                            for _, child in ipairs(actionButtons:GetChildren()) do  
-                                if child.Name == "Button" and child:IsA("GuiObject") and child.Visible then  
-                                    for _, desc in ipairs(child:GetDescendants()) do  
-                                        if desc:IsA("TextLabel") or desc:IsA("TextButton") then  
-                                            local txt = desc.Text  
-                                            if txt == "Next" or txt == "Claim All" then  
-                                                instantTapButton(child)  
-                                                break  
-                                            end  
-                                        end  
-                                    end  
-                                end  
-                            end  
-                        end  
-                    end  
-                end)  
-                task.wait(0.05)  
-            end  
-        end)  
-    end  
-end,
-
-})
 
 -- ==========================================
 -- DUNGEON HEROES | AUTO PLAY AGAIN
 -- ==========================================
+do
+    local Players = game:GetService("Players")
+    local RS = game:GetService("ReplicatedStorage")
+    local TeleportService = game:GetService("TeleportService")
+    local GuiService = game:GetService("GuiService")
 
-local Players = game:GetService("Players")
-local RS = game:GetService("ReplicatedStorage")
-local TeleportService = game:GetService("TeleportService")
-local GuiService = game:GetService("GuiService")
+    local Player = Players.LocalPlayer
+    local Remote = RS:WaitForChild("Remotes"):WaitForChild("SetExitChoice")
 
-local Player = Players.LocalPlayer
-local Remote = RS.Remotes.SetExitChoice
+    local Enabled = false
+    local Busy = false
 
-local Enabled = false
-local Busy = false
+    local function IsDungeonCleared()
+        if workspace:GetAttribute("DungeonCleared") == true then
+            local gui = Player.PlayerGui:FindFirstChild("DungeonCleared")
+            if gui and gui.Enabled then
+                return true
+            end
+        end
 
-local function IsDungeonCleared()
-local gui = Player.PlayerGui:FindFirstChild("DungeonCleared")
-if not gui or not gui.Enabled then
-return false
+        local gui = Player.PlayerGui:FindFirstChild("DungeonCleared")
+        if not gui or not gui.Enabled then
+            return false
+        end
+
+        local frame = gui:FindFirstChild("Frame")
+        local cleared = frame and frame:FindFirstChild("Cleared")
+
+        return frame and frame.Visible and cleared and cleared.Visible
+    end
+
+    TeleportService.TeleportInitFailed:Connect(function(player, teleportResult, errorMessage)
+        if player == Player and Enabled then
+            warn("Teleport Failed (" .. tostring(teleportResult) .. "): " .. tostring(errorMessage) .. " - Retrying GoAgain...")
+            pcall(function()
+                GuiService:ClearError()
+            end)
+
+            task.wait(4)
+            pcall(function()
+                Remote:FireServer("GoAgain")
+            end)
+
+            Busy = false
+        end
+    end)
+
+    AutoGrindTab:CreateToggle({
+        Name = "Auto Play Again",
+        CurrentValue = false,
+        Flag = "AutoPlayAgainToggle",
+        Callback = function(value)
+            Enabled = value
+
+            if value then
+                task.spawn(function()
+                    while Enabled do
+                        if not Busy and IsDungeonCleared() then
+                            Busy = true
+
+                            pcall(function()
+                                GuiService:ClearError()
+                            end)
+
+                            local success, err = pcall(function()
+                                Remote:FireServer("GoAgain")
+                            end)
+
+                            if not success then
+                                warn("Play Again Error:", err)
+                            end
+
+                            task.wait(6)
+                            Busy = false
+                        end
+
+                        task.wait(0.2)
+                    end
+                end)
+            end
+        end
+    })
 end
-
-local frame = gui:FindFirstChild("Frame")  
-local cleared = frame and frame:FindFirstChild("Cleared")  
-
-return frame and frame.Visible  
-    and cleared and cleared.Visible
-
-end
-
--- Agar phir bhi kabhi HTTP 404 ya TP Fail aaye, toh bina GUI check kiye direct retry karega
-TeleportService.TeleportInitFailed:Connect(function(player, teleportResult, errorMessage)
-if player == Player and Enabled then
-warn("Teleport Failed (" .. tostring(teleportResult) .. "): " .. tostring(errorMessage) .. " - Retrying GoAgain...")
-
-pcall(function()  
-        GuiService:ClearError() -- 404 Error popup ko screen se hatayega  
-    end)  
-      
-    task.wait(4) -- Server cooldown hatne ka wait  
-    pcall(function()  
-        Remote:FireServer("GoAgain")  
-    end)  
-      
-    Busy = false  
-end
-
-end)
-
-AutoGrindTab:CreateToggle({
-Name = "Auto Play Again",
-CurrentValue = false,
-Flag = "AutoPlayAgainToggle",
-
-Callback = function(value)  
-    Enabled = value  
-
-    if value then  
-        task.spawn(function()  
-            while Enabled do  
-                if not Busy and IsDungeonCleared() then  
-                    Busy = true  
-
-                    -- Agar pehle se koi error popup hai toh clear karo  
-                    pcall(function()  
-                        GuiService:ClearError()  
-                    end)  
-
-                    local success, err = pcall(function()  
-                        Remote:FireServer("GoAgain")  
-                    end)  
-
-                    if not success then  
-                        warn("Play Again Error:", err)  
-                    end  
-
-                    -- 0.5s ki jagah 6s wait rakho taaki ek hi baar remote fire ho aur 404 error na aaye  
-                    task.wait(6)  
-                    Busy = false  
-                end  
-
-                task.wait(0.2)  
-            end  
-        end)  
-    end  
-end
-
-})
 
 do -- << 'do' BLOCK (Safety Wrapper) >>
 
