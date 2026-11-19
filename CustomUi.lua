@@ -1,15 +1,19 @@
 --====================================================================
--- SID ULTIMATE | ULTRA-PREMIUM CUSTOM UI LIBRARY (V4)
--- 100% Drop-In Compatible with Rayfield API
--- * Hold "ULTIMATE" Badge (0.4s) -> Full Script Info & Auto Last-Updated
--- * Global Search Bar + Dropdown Inline Search
--- * UI Scale Slider (0.70x-1.25x) + Window Position Lock
--- * Multi-Profile Config Manager (Save / Load / Delete / Reset)
--- * Live Topbar FPS & Ping Telemetry + Sidebar Avatar Profile Card
--- * Stackable Glass Notifications (Tap-to-Close) + Crisp Touch Sounds
--- * 5 Live Background Animations + 5 Window Open/Close Animations
--- * Smart Mobile Slider Gesture Lock + Vector X/Min + Locked "Show UI"
+-- SID ULTIMATE | UNIVERSAL RAYFIELD REPLACEMENT UI LIBRARY (V4.5)
+-- 100% Universal Drop-In Replacement for ANY Roblox Game's Rayfield Script
+-- * Full Rayfield API: Window, Tab, Section, Divider, Label, Paragraph,
+--   Button, Toggle, Slider, Input, Dropdown (Single/Multi + Table Spec),
+--   Keybind (PC + Mobile), ColorPicker (RGB + Hex), Notify, Flags, Configs
+-- * Metatable Anti-Crash Shield for Unlisted Rayfield Calls
+-- * Hold "ULTIMATE" Badge (0.4s) -> Universal Script Info & Auto Last-Updated
+-- * Global Search + Dropdown Inline Search + UI Scale + Position Lock
+-- * Multi-Profile Configs + Live FPS/Ping + Sidebar Avatar + Stackable Notifs
+-- * 5 Live Background Animations + 5 Window Open/Close Animations + Touch Sounds
 --====================================================================
+
+if not game:IsLoaded() then
+    pcall(function() game.Loaded:Wait() end)
+end
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -21,10 +25,25 @@ local MarketplaceService = game:GetService("MarketplaceService")
 local CoreGui = game:GetService("CoreGui")
 
 local LocalPlayer = Players.LocalPlayer
-local UI_BUILD_TAG = "v4.0-Ultra"
+while not LocalPlayer do
+    Players.PlayerAdded:Wait()
+    LocalPlayer = Players.LocalPlayer
+end
+
+local UI_BUILD_TAG = "v4.5-Universal"
 
 local function GetGuiParent()
-    return (gethui and gethui()) or CoreGui or LocalPlayer:WaitForChild("PlayerGui")
+    local okHui, hui = pcall(function() return gethui and gethui() end)
+    if okHui and hui then return hui end
+
+    local okCore = pcall(function()
+        local t = Instance.new("Folder")
+        t.Parent = CoreGui
+        t:Destroy()
+    end)
+    if okCore then return CoreGui end
+
+    return LocalPlayer:WaitForChild("PlayerGui")
 end
 
 -- Clean up old instances on re-execute
@@ -41,8 +60,8 @@ local Library = {
     _DefaultValues = {},
     _ConfigSettings = {
         Enabled = true,
-        FolderName = "SidDungeonHeroes",
-        FileName = "SavedConfig"
+        FolderName = "SidUltimateHub",
+        FileName = "Game_" .. tostring(game.PlaceId)
     },
     _SavePending = false,
     _IsLoadingConfig = false,
@@ -51,6 +70,8 @@ local Library = {
     _BgAnimConn = nil,
     _TelemetryConn = nil,
     _ActiveNotifs = {},
+    _ToggleVisibilityFn = nil,
+    _IsVisibleFn = nil,
 }
 
 -- ==========================================
@@ -210,6 +231,10 @@ local function ParseColorString(Text)
     return nil
 end
 
+local function ColorToHex(Col)
+    return string.format("#%02X%02X%02X", math.floor(Col.R * 255 + 0.5), math.floor(Col.G * 255 + 0.5), math.floor(Col.B * 255 + 0.5))
+end
+
 local function ApplyLiveColors(PrimaryCol, SecondaryCol)
     Theme.Accent = PrimaryCol or Theme.Accent
     Theme.AccentSecondary = SecondaryCol or Theme.AccentSecondary
@@ -292,27 +317,29 @@ local function SetThemePreset(PresetName)
 end
 
 -- ==========================================
--- MULTI-PROFILE CONFIG & AUTO-UPDATE TRACKER
+-- UNIVERSAL MULTI-PROFILE CONFIG & AUTO-UPDATE TRACKER
 -- ==========================================
 local function SanitizeFileName(Name)
-    local Clean = tostring(Name or "SavedConfig")
+    local Clean = tostring(Name or ("Game_" .. tostring(game.PlaceId)))
     Clean = string.gsub(Clean, "%.json$", "")
     Clean = string.gsub(Clean, "%.rfld$", "")
     Clean = string.gsub(Clean, "[^%w_%-%s]", "")
     Clean = string.gsub(Clean, "^%s*(.-)%s*$", "%1")
-    return (#Clean > 0) and Clean or "SavedConfig"
+    return (#Clean > 0) and Clean or ("Game_" .. tostring(game.PlaceId))
 end
 
 local function EnsureConfigFolder()
-    local Folder = Library._ConfigSettings.FolderName or "SidDungeonHeroes"
-    if makefolder and isfolder and not isfolder(Folder) then
-        pcall(makefolder, Folder)
+    local Folder = Library._ConfigSettings.FolderName or "SidUltimateHub"
+    if makefolder and isfolder then
+        pcall(function()
+            if not isfolder(Folder) then makefolder(Folder) end
+        end)
     end
     return Folder
 end
 
 local function GetConfigPaths(CustomProfileName)
-    local Folder = Library._ConfigSettings.FolderName or "SidDungeonHeroes"
+    local Folder = Library._ConfigSettings.FolderName or "SidUltimateHub"
     local File = SanitizeFileName(CustomProfileName or Library._ConfigSettings.FileName)
     return Folder, Folder .. "/" .. File .. ".json", Folder .. "/" .. File .. ".rfld"
 end
@@ -330,15 +357,18 @@ local function ListAvailableProfiles()
         end
     end
 
-    AddProf(Library._ConfigSettings.FileName or "SavedConfig")
+    AddProf(Library._ConfigSettings.FileName)
 
-    if listfiles and isfolder and isfolder(Folder) then
-        local ok, files = pcall(listfiles, Folder)
-        if ok and type(files) == "table" then
-            for _, Path in ipairs(files) do
-                local Base = string.match(tostring(Path), "([^/\\]+)$") or ""
-                if string.sub(Base, 1, 1) ~= "." and string.find(Base, "%.json$") then
-                    AddProf(string.gsub(Base, "%.json$", ""))
+    if listfiles and isfolder then
+        local okF, exists = pcall(isfolder, Folder)
+        if okF and exists then
+            local ok, files = pcall(listfiles, Folder)
+            if ok and type(files) == "table" then
+                for _, Path in ipairs(files) do
+                    local Base = string.match(tostring(Path), "([^/\\]+)$") or ""
+                    if string.sub(Base, 1, 1) ~= "." and string.find(Base, "%.json$") then
+                        AddProf(string.gsub(Base, "%.json$", ""))
+                    end
                 end
             end
         end
@@ -348,7 +378,7 @@ local function ListAvailableProfiles()
     return Profiles
 end
 
--- Auto-Detects Last Updated Date whenever Script Features / Build Fingerprint Changes
+-- Auto-Detects Last Updated Date per Game / Script Fingerprint
 local function ResolveAutoLastUpdated(WindowTitle, TotalTabs, TotalFlags, ManualOverride)
     if type(ManualOverride) == "string" and #ManualOverride > 0 then
         return ManualOverride
@@ -356,23 +386,25 @@ local function ResolveAutoLastUpdated(WindowTitle, TotalTabs, TotalFlags, Manual
 
     local TodayStr = os.date("%d %b %Y | %I:%M %p")
     local Folder = EnsureConfigFolder()
-    local MetaPath = Folder .. "/.sid_build_meta.json"
+    local MetaPath = Folder .. "/.sid_meta_" .. tostring(game.PlaceId) .. ".json"
 
-    -- Create deterministic signature from UI build + Script title + registered flags count
     local FlagKeys = {}
     for k in pairs(Library.Flags) do
         table.insert(FlagKeys, tostring(k))
     end
     table.sort(FlagKeys)
-    local Signature = string.format("%s|%s|%d|%d|%s", UI_BUILD_TAG, tostring(WindowTitle), TotalTabs, TotalFlags, table.concat(FlagKeys, ","))
+    local Signature = string.format("%s|%s|%d|%d|%d|%s", UI_BUILD_TAG, tostring(WindowTitle), game.PlaceId, TotalTabs, TotalFlags, table.concat(FlagKeys, ","))
 
     local SavedMeta = nil
-    if readfile and isfile and isfile(MetaPath) then
-        local ok, raw = pcall(readfile, MetaPath)
-        if ok and type(raw) == "string" then
-            local okJ, dec = pcall(function() return HttpService:JSONDecode(raw) end)
-            if okJ and type(dec) == "table" then
-                SavedMeta = dec
+    if readfile and isfile then
+        local okEx, exists = pcall(isfile, MetaPath)
+        if okEx and exists then
+            local ok, raw = pcall(readfile, MetaPath)
+            if ok and type(raw) == "string" then
+                local okJ, dec = pcall(function() return HttpService:JSONDecode(raw) end)
+                if okJ and type(dec) == "table" then
+                    SavedMeta = dec
+                end
             end
         end
     end
@@ -381,18 +413,32 @@ local function ResolveAutoLastUpdated(WindowTitle, TotalTabs, TotalFlags, Manual
         return SavedMeta.lastUpdated
     end
 
-    -- Script or UI changed -> stamp exact current date & time automatically!
     if writefile then
         pcall(function()
             writefile(MetaPath, HttpService:JSONEncode({
                 signature = Signature,
                 lastUpdated = TodayStr,
-                build = UI_BUILD_TAG
+                build = UI_BUILD_TAG,
+                placeId = game.PlaceId
             }))
         end)
     end
 
     return TodayStr
+end
+
+local function SerializeValue(Val)
+    if typeof(Val) == "Color3" then
+        return {__sidType = "Color3", r = Val.R, g = Val.G, b = Val.B}
+    end
+    return Val
+end
+
+local function DeserializeValue(Val)
+    if type(Val) == "table" and Val.__sidType == "Color3" then
+        return Color3.new(tonumber(Val.r) or 1, tonumber(Val.g) or 1, tonumber(Val.b) or 1)
+    end
+    return Val
 end
 
 function Library:SaveConfiguration(CustomProfileName, Immediate)
@@ -407,10 +453,14 @@ function Library:SaveConfiguration(CustomProfileName, Immediate)
             local Payload = {}
             for FlagName, Obj in pairs(Library.Flags) do
                 if type(Obj) == "table" then
-                    if Obj.CurrentOption ~= nil then
+                    if Obj.Color ~= nil then
+                        Payload[FlagName] = SerializeValue(Obj.Color)
+                    elseif Obj.CurrentKeybind ~= nil then
+                        Payload[FlagName] = Obj.CurrentKeybind
+                    elseif Obj.CurrentOption ~= nil then
                         Payload[FlagName] = Obj.CurrentOption
                     elseif Obj.CurrentValue ~= nil then
-                        Payload[FlagName] = Obj.CurrentValue
+                        Payload[FlagName] = SerializeValue(Obj.CurrentValue)
                     end
                 end
             end
@@ -465,9 +515,18 @@ function Library:LoadConfiguration(CustomProfileName)
             local Obj = Library.Flags[FlagName]
             if Obj and Obj.Set then
                 local ActualVal = SavedEntry
-                if type(SavedEntry) == "table" and (SavedEntry.CurrentValue ~= nil or SavedEntry.CurrentOption ~= nil) then
-                    ActualVal = (SavedEntry.CurrentOption ~= nil) and SavedEntry.CurrentOption or SavedEntry.CurrentValue
+                if type(SavedEntry) == "table" and SavedEntry.__sidType == nil then
+                    if SavedEntry.CurrentOption ~= nil then
+                        ActualVal = SavedEntry.CurrentOption
+                    elseif SavedEntry.CurrentValue ~= nil then
+                        ActualVal = SavedEntry.CurrentValue
+                    elseif SavedEntry.CurrentKeybind ~= nil then
+                        ActualVal = SavedEntry.CurrentKeybind
+                    elseif SavedEntry.Color ~= nil then
+                        ActualVal = SavedEntry.Color
+                    end
                 end
+                ActualVal = DeserializeValue(ActualVal)
                 pcall(function()
                     Obj:Set(ActualVal)
                 end)
@@ -503,6 +562,19 @@ function Library:ResetAllSettings()
     Library:SaveConfiguration(nil, true)
 end
 
+function Library:SetVisibility(Visible)
+    if Library._ToggleVisibilityFn then
+        Library._ToggleVisibilityFn(Visible == true)
+    end
+end
+
+function Library:IsVisible()
+    if Library._IsVisibleFn then
+        return Library._IsVisibleFn()
+    end
+    return false
+end
+
 -- ==========================================
 -- STACKABLE GLASSMORPHISM NOTIFICATIONS (MAX 3, TAP TO CLOSE)
 -- ==========================================
@@ -514,6 +586,7 @@ local function GetOrCreateNotifContainer()
             Name = "SidUltimateNotifStack",
             IgnoreGuiInset = true,
             ResetOnSpawn = false,
+            ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
             DisplayOrder = 999999
         }, Parent)
 
@@ -545,7 +618,6 @@ function Library:Notify(Opts)
             local Holder = GetOrCreateNotifContainer()
             if not Holder then return end
 
-            -- Cap active stack at 3 cards (dismiss oldest if exceeded)
             if #Library._ActiveNotifs >= 3 then
                 local Oldest = table.remove(Library._ActiveNotifs, 1)
                 if Oldest and Oldest.Close then
@@ -561,7 +633,6 @@ function Library:Notify(Opts)
 
             local Card = Make("Frame", {
                 Size = UDim2.new(1, 0, 0, 48),
-                Position = UDim2.new(0, 0, 0, 0),
                 BackgroundColor3 = Color3.fromRGB(16, 20, 30),
                 BackgroundTransparency = 0.16,
                 BorderSizePixel = 0,
@@ -688,6 +759,7 @@ local function PlaySidUltimateSplash(OnComplete)
             local SplashGui = Make("ScreenGui", {
                 Name = "SidUltimateSplash",
                 IgnoreGuiInset = true,
+                ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
                 DisplayOrder = 999998
             }, Parent)
 
@@ -757,7 +829,7 @@ local function PlaySidUltimateSplash(OnComplete)
             TweenService:Create(MainText, TweenInfo.new(0.4, Enum.EasingStyle.Quad), {TextTransparency = 0}):Play()
             TweenService:Create(ShadowText, TweenInfo.new(0.4, Enum.EasingStyle.Quad), {TextTransparency = 0.65}):Play()
 
-            task.wait(1.05)
+            task.wait(1.0)
 
             TweenService:Create(Scale, TweenInfo.new(0.30, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Scale = 1.06}):Play()
             TweenService:Create(TopLeaf, TweenInfo.new(0.28, Enum.EasingStyle.Quad), {BackgroundTransparency = 1}):Play()
@@ -779,7 +851,7 @@ local function PlaySidUltimateSplash(OnComplete)
 end
 
 -- ==========================================
--- HELPER: BUILD SCRIPT DETAILS MODAL (HOLD "ULTIMATE")
+-- HELPER: UNIVERSAL SCRIPT DETAILS MODAL (HOLD "ULTIMATE")
 -- ==========================================
 local function BuildScriptInfoModal(MainFrame, WindowTitle, Config, GetCountsFn)
     local ModalOverlay = Make("Frame", {
@@ -815,7 +887,6 @@ local function BuildScriptInfoModal(MainFrame, WindowTitle, Config, GetCountsFn)
     }, BoxStroke)
     table.insert(Registry.AccentGradients, BoxStrokeGrad)
 
-    -- Header Bar
     local Header = Make("Frame", {
         Size = UDim2.new(1, 0, 0, 40),
         BackgroundColor3 = Color3.fromRGB(22, 26, 40),
@@ -837,7 +908,6 @@ local function BuildScriptInfoModal(MainFrame, WindowTitle, Config, GetCountsFn)
     }, Header)
     table.insert(Registry.SecondaryTextObjs, HeaderTitle)
 
-    -- Close Button for Modal
     local ModalCloseBtn = Make("TextButton", {
         Size = UDim2.new(0, 26, 0, 24),
         Position = UDim2.new(1, -34, 0.5, -12),
@@ -868,7 +938,6 @@ local function BuildScriptInfoModal(MainFrame, WindowTitle, Config, GetCountsFn)
         ZIndex = 94
     }, ModalCloseBtn)
 
-    -- Scrollable Info Body
     local Body = Make("ScrollingFrame", {
         Size = UDim2.new(1, -16, 1, -48),
         Position = UDim2.new(0, 8, 0, 44),
@@ -925,7 +994,7 @@ local function BuildScriptInfoModal(MainFrame, WindowTitle, Config, GetCountsFn)
         return ValLbl
     end
 
-    local ExecName = "Mobile Executor"
+    local ExecName = "Mobile / PC Executor"
     pcall(function()
         if identifyexecutor then
             local n, v = identifyexecutor()
@@ -933,7 +1002,7 @@ local function BuildScriptInfoModal(MainFrame, WindowTitle, Config, GetCountsFn)
         end
     end)
 
-    local GameName = "Roblox Experience"
+    local GameName = "PlaceId: " .. tostring(game.PlaceId)
     task.spawn(function()
         local ok, info = pcall(function()
             return MarketplaceService:GetProductInfo(game.PlaceId)
@@ -946,14 +1015,13 @@ local function BuildScriptInfoModal(MainFrame, WindowTitle, Config, GetCountsFn)
     AddInfoRow("Script Hub", WindowTitle, Theme.TextPrimary)
     AddInfoRow("Developer / Owner", tostring(Config.Developer or "Sid"), Theme.AccentSecondary)
     local UpdatedValLbl = AddInfoRow("Last Updated (Auto)", "Detecting...", Theme.Success)
-    AddInfoRow("Engine Version", tostring(Config.Version or "Sid Ultimate V4.0 Pro"), Theme.TextPrimary)
+    AddInfoRow("UI Engine", tostring(Config.Version or "Sid Ultimate V4.5 Universal"), Theme.TextPrimary)
     local GameValLbl = AddInfoRow("Active Game", GameName, Theme.TextPrimary)
     AddInfoRow("Executor Runtime", ExecName, Theme.TextPrimary)
     local StatsValLbl = AddInfoRow("Loaded Modules", "Calculating...", Theme.AccentSecondary)
 
-    -- Detailed Script Features Overview Card
     local DescCard = Make("Frame", {
-        Size = UDim2.new(1, -4, 0, 118),
+        Size = UDim2.new(1, -4, 0, 114),
         BackgroundColor3 = Color3.fromRGB(22, 27, 40),
         BackgroundTransparency = 0.25,
         ZIndex = 93
@@ -969,7 +1037,7 @@ local function BuildScriptInfoModal(MainFrame, WindowTitle, Config, GetCountsFn)
         TextSize = 11,
         TextColor3 = Theme.AccentSecondary,
         TextXAlignment = Enum.TextXAlignment.Left,
-        Text = "ABOUT THIS SCRIPT HUB",
+        Text = "ABOUT SID ULTIMATE ENGINE",
         ZIndex = 94
     }, DescCard)
 
@@ -984,20 +1052,18 @@ local function BuildScriptInfoModal(MainFrame, WindowTitle, Config, GetCountsFn)
         TextYAlignment = Enum.TextYAlignment.Top,
         TextWrapped = true,
         Text = tostring(Config.ScriptDescription or (
-            "Created by Sid for smooth, zero-lag Android & PC gameplay.\n" ..
-            "• Combat & Automation: Kill Aura, Skill Aura, Auto Mobs + NoClip, Pet Lock.\n" ..
-            "• Economy & Storage: Zero-Risk Auto Sell (Inv + Bank Bridge) & Multi-Category Bank Manager.\n" ..
-            "• Performance: Incoming Remote Lag Blocker, Glass UI V4, Multi-Profile Auto-Save."
+            "Designed & developed by Sid as a zero-lag universal UI framework.\n" ..
+            "• 100% Universal Rayfield Drop-In Engine (Works in all Roblox games).\n" ..
+            "• Mobile-First: Smart Slider Scroll-Lock, Global Search & Inline Filters.\n" ..
+            "• Full Customization: Live Themes, 5 BG + 5 Window Animations & Multi-Profile Auto-Save."
         )),
         ZIndex = 94
     }, DescCard)
 
-    local function CloseModal()
+    ModalCloseBtn.MouseButton1Click:Connect(function()
         PlayUISound("Click", 0.9)
         ModalOverlay.Visible = false
-    end
-
-    ModalCloseBtn.MouseButton1Click:Connect(CloseModal)
+    end)
 
     local function OpenModal()
         PlayUISound("Open", 1.1)
@@ -1015,11 +1081,11 @@ local function BuildScriptInfoModal(MainFrame, WindowTitle, Config, GetCountsFn)
         end
     end
 
-    return OpenModal, CloseModal
+    return OpenModal
 end
 
 -- ==========================================
--- HELPER: SIDEBAR MINI-PROFILE CARD (AVATAR + NAME)
+-- HELPER: SIDEBAR MINI-PROFILE CARD
 -- ==========================================
 local function BuildSidebarProfileCard(MainFrame)
     local ProfileCard = Make("Frame", {
@@ -1045,7 +1111,6 @@ local function BuildSidebarProfileCard(MainFrame)
     AddCorner(AvatarImg, 13)
     AddStroke(AvatarImg, Theme.AccentSecondary, 1.1, 0.35)
 
-    -- Online Green Dot
     local OnlineDot = Make("Frame", {
         Size = UDim2.new(0, 7, 0, 7),
         Position = UDim2.new(0, 26, 0, 24),
@@ -1092,31 +1157,290 @@ local function BuildSidebarProfileCard(MainFrame)
 end
 
 -- ==========================================
--- CREATE WINDOW
+-- HELPER: POPULATE PRE-REGISTERED "LOOKS" TAB
+-- ==========================================
+local function PopulateLooksTab(LooksTab, Controls)
+    LooksTab:CreateSection("Color & Gradient Theme")
+
+    local PresetNames = {
+        "Kaixer Violet", "Cyber Cyan", "Crimson Blood", "Emerald Neon",
+        "Royal Gold", "Sakura Pink", "Sunset Blaze", "Midnight Ice",
+        "Toxic Lime", "Obsidian White", "RGB Rainbow"
+    }
+
+    LooksTab:CreateDropdown({
+        Name = "Gradient Color Preset",
+        Options = PresetNames,
+        CurrentOption = {"Kaixer Violet"},
+        MultipleOptions = false,
+        Flag = "SidUI_LooksColorPreset",
+        Callback = function(Opt)
+            if type(Opt) == "table" then Opt = Opt[1] end
+            if Opt and ColorPresets[Opt] then SetThemePreset(Opt) end
+        end
+    })
+
+    LooksTab:CreateInput({
+        Name = "Custom Primary Color (Hex / R,G,B)",
+        PlaceholderText = "#785FFF or 120,95,255",
+        RemoveTextAfterFocusLost = false,
+        Flag = "SidUI_LooksCustomPrimary",
+        Callback = function(Text)
+            local Col = ParseColorString(Text)
+            if Col then
+                LooksState.RainbowActive = false
+                if Library._RainbowConn then Library._RainbowConn:Disconnect(); Library._RainbowConn = nil end
+                ApplyLiveColors(Col, Theme.AccentSecondary)
+            end
+        end
+    })
+
+    LooksTab:CreateInput({
+        Name = "Custom Gradient Color 2 (Hex / R,G,B)",
+        PlaceholderText = "#00DCFF or 0,220,255",
+        RemoveTextAfterFocusLost = false,
+        Flag = "SidUI_LooksCustomSecondary",
+        Callback = function(Text)
+            local Col = ParseColorString(Text)
+            if Col then
+                LooksState.RainbowActive = false
+                if Library._RainbowConn then Library._RainbowConn:Disconnect(); Library._RainbowConn = nil end
+                ApplyLiveColors(Theme.Accent, Col)
+            end
+        end
+    })
+
+    LooksTab:CreateSection("Surface, Scale & HUD")
+
+    LooksTab:CreateDropdown({
+        Name = "UI Background Style",
+        Options = {"Transparent", "Translucent", "Opaque"},
+        CurrentOption = {"Translucent"},
+        MultipleOptions = false,
+        Flag = "SidUI_LooksSurfaceStyle",
+        Callback = function(Opt)
+            if type(Opt) == "table" then Opt = Opt[1] end
+            if Opt then ApplySurfaceMode(Opt) end
+        end
+    })
+
+    LooksTab:CreateSlider({
+        Name = "UI Size Scale",
+        Range = {0.70, 1.25},
+        Increment = 0.05,
+        Suffix = "x",
+        CurrentValue = 1.0,
+        Flag = "SidUI_LooksUIScale",
+        Callback = function(Val)
+            LooksState.UIScale = tonumber(Val) or 1.0
+            Controls.ApplyScale(LooksState.UIScale)
+        end
+    })
+
+    LooksTab:CreateToggle({
+        Name = "Lock Window Position (Prevent Drag)",
+        CurrentValue = false,
+        Flag = "SidUI_LooksLockPos",
+        Callback = function(Val)
+            LooksState.LockPosition = (Val == true)
+        end
+    })
+
+    LooksTab:CreateToggle({
+        Name = "Show Live FPS & Ping Telemetry",
+        CurrentValue = true,
+        Flag = "SidUI_LooksShowTelemetry",
+        Callback = function(Val)
+            LooksState.ShowTelemetry = (Val == true)
+            Controls.SetTelemetryVisible(LooksState.ShowTelemetry)
+        end
+    })
+
+    LooksTab:CreateToggle({
+        Name = "Enable Crisp UI Touch Sounds",
+        CurrentValue = true,
+        Flag = "SidUI_LooksSounds",
+        Callback = function(Val)
+            LooksState.SoundsEnabled = (Val == true)
+        end
+    })
+
+    LooksTab:CreateSection("UI Animations (Background + Open/Close)")
+
+    LooksTab:CreateToggle({
+        Name = "Enable All UI Animations",
+        CurrentValue = true,
+        Flag = "SidUI_LooksAnimEnabled",
+        Callback = function(Val)
+            LooksState.AnimationsEnabled = (Val == true)
+            Controls.RebuildBgAnim()
+        end
+    })
+
+    LooksTab:CreateDropdown({
+        Name = "Live Background Animation (5 Styles)",
+        Options = {"Moving Stars", "Floating Particles", "Cyber Rain", "Glow Orbs", "Aurora Wave", "None"},
+        CurrentOption = {"Moving Stars"},
+        MultipleOptions = false,
+        Flag = "SidUI_LooksBgAnimStyle",
+        Callback = function(Opt)
+            if type(Opt) == "table" then Opt = Opt[1] end
+            if Opt then
+                LooksState.BgAnimStyle = Opt
+                Controls.RebuildBgAnim()
+            end
+        end
+    })
+
+    LooksTab:CreateDropdown({
+        Name = "Window Open/Close Style (5 Styles)",
+        Options = {"Pop & Scale", "Slide From Top", "Slide From Bottom", "Fade & Glide", "Elastic Bounce"},
+        CurrentOption = {"Pop & Scale"},
+        MultipleOptions = false,
+        Flag = "SidUI_LooksAnimStyle",
+        Callback = function(Opt)
+            if type(Opt) == "table" then Opt = Opt[1] end
+            if Opt then
+                LooksState.WindowAnimStyle = Opt
+                Controls.PreviewWindowAnim()
+            end
+        end
+    })
+
+    LooksTab:CreateSection("Config Profiles (" .. tostring(Library._ConfigSettings.FolderName) .. ")")
+
+    local DefaultFileName = Library._ConfigSettings.FileName
+    local ActiveProfileName = DefaultFileName
+    local ProfileDropdownRef = nil
+
+    ProfileDropdownRef = LooksTab:CreateDropdown({
+        Name = "Select Saved Profile",
+        Options = ListAvailableProfiles(),
+        CurrentOption = {ActiveProfileName},
+        MultipleOptions = false,
+        Callback = function(Opt)
+            if type(Opt) == "table" then Opt = Opt[1] end
+            if Opt then ActiveProfileName = SanitizeFileName(Opt) end
+        end
+    })
+
+    LooksTab:CreateInput({
+        Name = "Create / Rename Profile",
+        PlaceholderText = "e.g. AFKFarm or Main",
+        RemoveTextAfterFocusLost = false,
+        Callback = function(Text)
+            if type(Text) == "string" and #Text > 0 then
+                ActiveProfileName = SanitizeFileName(Text)
+            end
+        end
+    })
+
+    LooksTab:CreateButton({
+        Name = "Save Current Settings to Profile",
+        Callback = function()
+            Library._ConfigSettings.FileName = ActiveProfileName
+            Library:SaveConfiguration(ActiveProfileName, true)
+            if ProfileDropdownRef and ProfileDropdownRef.Refresh then
+                ProfileDropdownRef:Refresh(ListAvailableProfiles(), {ActiveProfileName})
+            end
+            Library:Notify({
+                Title = "Profile Saved!",
+                Content = tostring(Library._ConfigSettings.FolderName) .. "/" .. ActiveProfileName .. ".json",
+                Color = Theme.Success,
+                Duration = 2.6
+            })
+        end
+    })
+
+    LooksTab:CreateButton({
+        Name = "Load Selected Profile",
+        Callback = function()
+            local ok = Library:LoadConfiguration(ActiveProfileName)
+            Library:Notify({
+                Title = ok and "Profile Loaded!" or "Profile Not Found",
+                Content = ok and ("Loaded: " .. ActiveProfileName) or ("No saved file for: " .. ActiveProfileName),
+                Color = ok and Theme.AccentSecondary or Theme.Danger,
+                Duration = 2.6
+            })
+        end
+    })
+
+    LooksTab:CreateButton({
+        Name = "Delete Selected Profile",
+        Callback = function()
+            if ActiveProfileName == DefaultFileName then
+                Library:Notify({
+                    Title = "Protected Profile",
+                    Content = "Default profile delete nahi hota; Reset button use karo.",
+                    Color = Theme.Danger,
+                    Duration = 3.0
+                })
+                return
+            end
+            local deleted = Library:DeleteProfile(ActiveProfileName)
+            ActiveProfileName = DefaultFileName
+            Library._ConfigSettings.FileName = DefaultFileName
+            if ProfileDropdownRef and ProfileDropdownRef.Refresh then
+                ProfileDropdownRef:Refresh(ListAvailableProfiles(), {DefaultFileName})
+            end
+            Library:Notify({
+                Title = deleted and "Profile Deleted" or "Delete Failed",
+                Content = deleted and ("Switched back to " .. DefaultFileName) or "File already removed",
+                Color = deleted and Theme.Danger or Theme.TextMuted,
+                Duration = 2.5
+            })
+        end
+    })
+
+    LooksTab:CreateButton({
+        Name = "Reset All Settings to Default",
+        Callback = function()
+            Library:ResetAllSettings()
+            Library:Notify({
+                Title = "Settings Reset!",
+                Content = "All toggles, sliders & looks restored to default.",
+                Color = Theme.AccentSecondary,
+                Duration = 2.8
+            })
+        end
+    })
+end
+
+-- ==========================================
+-- CREATE WINDOW (100% UNIVERSAL RAYFIELD API)
 -- ==========================================
 function Library:CreateWindow(Config)
     Config = Config or {}
-    local WindowTitle = tostring(Config.Name or "Sid Ultimate")
+    local WindowTitle = tostring(Config.Name or Config.LoadingTitle or "Sid Ultimate")
     local SubTag = tostring(Config.LoadingSubtitle or "ULTIMATE")
 
+    -- Universal Config Path: Honors any script's ConfigurationSaving; defaults per-PlaceId if omitted!
     if type(Config.ConfigurationSaving) == "table" then
         Library._ConfigSettings.Enabled = (Config.ConfigurationSaving.Enabled ~= false)
         if Config.ConfigurationSaving.FolderName and #tostring(Config.ConfigurationSaving.FolderName) > 0 then
             Library._ConfigSettings.FolderName = tostring(Config.ConfigurationSaving.FolderName)
+        else
+            Library._ConfigSettings.FolderName = "SidUltimateHub"
         end
         if Config.ConfigurationSaving.FileName and #tostring(Config.ConfigurationSaving.FileName) > 0 then
             Library._ConfigSettings.FileName = SanitizeFileName(Config.ConfigurationSaving.FileName)
+        else
+            Library._ConfigSettings.FileName = "Game_" .. tostring(game.PlaceId)
         end
+    else
+        Library._ConfigSettings.Enabled = true
+        Library._ConfigSettings.FolderName = "SidUltimateHub"
+        Library._ConfigSettings.FileName = "Game_" .. tostring(game.PlaceId)
     end
 
     local ScreenGui = Make("ScreenGui", {
         Name = "SidUltimateUI",
         IgnoreGuiInset = true,
         ResetOnSpawn = false,
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
         DisplayOrder = 100
     }, GetGuiParent())
 
-    -- Wide Rectangular MainFrame with Smooth Rounded Corners (565 x 315)
     local CenterPos = UDim2.new(0.5, 0, 0.5, 0)
     local MainFrame = Make("Frame", {
         Name = "MainFrame",
@@ -1379,7 +1703,7 @@ function Library:CreateWindow(Config)
     table.insert(Registry.AccentGradients, ShowUIGrad)
 
     -- ==========================================
-    -- 5-STYLE OPEN / CLOSE ANIMATION ENGINE (RESPECTS UI SCALE)
+    -- 5-STYLE OPEN / CLOSE ANIMATION ENGINE
     -- ==========================================
     local LastSavedPos = CenterPos
     local IsWindowVisible = false
@@ -1479,6 +1803,13 @@ function Library:CreateWindow(Config)
         end
     end
 
+    Library._ToggleVisibilityFn = function(Show)
+        if Show then AnimateShowUI() else AnimateHideUI() end
+    end
+    Library._IsVisibleFn = function()
+        return IsWindowVisible
+    end
+
     ShowUIBtn.MouseButton1Click:Connect(AnimateShowUI)
 
     -- ==========================================
@@ -1506,39 +1837,23 @@ function Library:CreateWindow(Config)
         ZIndex = 5
     }, MainFrame)
 
-    -- Dragging respecting LockPosition toggle
     do
-        local Dragging = false
-        local ActiveInput = nil
-        local DragStartPos = nil
-        local FrameStartPos = nil
-
+        local Dragging, ActiveInput, DragStartPos, FrameStartPos = false, nil, nil, nil
         Topbar.InputBegan:Connect(function(Input)
             if LooksState.LockPosition then return end
             if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
-                Dragging = true
-                ActiveInput = Input
-                DragStartPos = Input.Position
-                FrameStartPos = MainFrame.Position
+                Dragging = true; ActiveInput = Input; DragStartPos = Input.Position; FrameStartPos = MainFrame.Position
             end
         end)
-
         UserInputService.InputChanged:Connect(function(Input)
             if Dragging and not LooksState.LockPosition and (Input == ActiveInput or Input.UserInputType == Enum.UserInputType.MouseMovement) then
                 local Delta = Input.Position - DragStartPos
-                MainFrame.Position = UDim2.new(
-                    FrameStartPos.X.Scale,
-                    FrameStartPos.X.Offset + Delta.X,
-                    FrameStartPos.Y.Scale,
-                    FrameStartPos.Y.Offset + Delta.Y
-                )
+                MainFrame.Position = UDim2.new(FrameStartPos.X.Scale, FrameStartPos.X.Offset + Delta.X, FrameStartPos.Y.Scale, FrameStartPos.Y.Offset + Delta.Y)
             end
         end)
-
         UserInputService.InputEnded:Connect(function(Input)
             if Dragging and (Input == ActiveInput or Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch) then
-                Dragging = false
-                ActiveInput = nil
+                Dragging = false; ActiveInput = nil
             end
         end)
     end
@@ -1609,14 +1924,11 @@ function Library:CreateWindow(Config)
             local Now = os.clock()
             if Now - LastSample >= 0.5 then
                 local FPS = math.floor((FrameCount / (Now - LastSample)) + 0.5)
-                FrameCount = 0
-                LastSample = Now
-
+                FrameCount = 0; LastSample = Now
                 local Ping = 0
                 pcall(function()
                     Ping = math.floor(StatsService.Network.ServerStatsItem["Data Ping"]:GetValue() + 0.5)
                 end)
-
                 TelemetryPill.Text = string.format("%d FPS | %dms", FPS, Ping)
             end
         end)
@@ -1659,22 +1971,15 @@ function Library:CreateWindow(Config)
     table.insert(Registry.SecondaryTextObjs, BadgeText)
 
     do
-        local HoldToken = 0
-        local HoldDuration = 0.40
-        local ActiveTween = nil
-
+        local HoldToken, HoldDuration, ActiveTween = 0, 0.40, nil
         BadgeBtn.InputBegan:Connect(function(Input)
             if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
                 HoldToken = HoldToken + 1
                 local MyToken = HoldToken
-
                 if ActiveTween then ActiveTween:Cancel() end
                 HoldFill.Size = UDim2.new(0, 0, 1, 0)
-                ActiveTween = TweenService:Create(HoldFill, TweenInfo.new(HoldDuration, Enum.EasingStyle.Linear), {
-                    Size = UDim2.new(1, 0, 1, 0)
-                })
+                ActiveTween = TweenService:Create(HoldFill, TweenInfo.new(HoldDuration, Enum.EasingStyle.Linear), {Size = UDim2.new(1, 0, 1, 0)})
                 ActiveTween:Play()
-
                 task.delay(HoldDuration, function()
                     if HoldToken == MyToken then
                         HoldFill.Size = UDim2.new(0, 0, 1, 0)
@@ -1683,21 +1988,16 @@ function Library:CreateWindow(Config)
                 end)
             end
         end)
-
-        local function CancelHold()
-            HoldToken = HoldToken + 1
-            if ActiveTween then ActiveTween:Cancel() end
-            TweenService:Create(HoldFill, TweenInfo.new(0.12), {Size = UDim2.new(0, 0, 1, 0)}):Play()
-        end
-
         BadgeBtn.InputEnded:Connect(function(Input)
             if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
-                CancelHold()
+                HoldToken = HoldToken + 1
+                if ActiveTween then ActiveTween:Cancel() end
+                TweenService:Create(HoldFill, TweenInfo.new(0.12), {Size = UDim2.new(0, 0, 1, 0)}):Play()
             end
         end)
     end
 
-    -- MINIMIZE BUTTON (CRISP VECTOR BAR)
+    -- MINIMIZE & CLOSE BUTTONS (VECTOR)
     local MinBtn = Make("TextButton", {
         Size = UDim2.new(0, 26, 0, 25),
         Position = UDim2.new(1, -68, 0.5, -12),
@@ -1709,8 +2009,7 @@ function Library:CreateWindow(Config)
     }, Topbar)
     AddCorner(MinBtn, 8)
     AddStroke(MinBtn, Theme.Stroke, 1, 0.35)
-
-    local MinBar = Make("Frame", {
+    Make("Frame", {
         Size = UDim2.new(0, 11, 0, 2),
         Position = UDim2.new(0.5, 0, 0.5, 0),
         AnchorPoint = Vector2.new(0.5, 0.5),
@@ -1718,11 +2017,8 @@ function Library:CreateWindow(Config)
         BorderSizePixel = 0,
         ZIndex = 7
     }, MinBtn)
-    AddCorner(MinBar, 2)
-
     MinBtn.MouseButton1Click:Connect(AnimateHideUI)
 
-    -- CLOSE (X) BUTTON (CRISP VECTOR CROSSED BARS)
     local CloseBtn = Make("TextButton", {
         Size = UDim2.new(0, 26, 0, 25),
         Position = UDim2.new(1, -36, 0.5, -12),
@@ -1734,29 +2030,16 @@ function Library:CreateWindow(Config)
     }, Topbar)
     AddCorner(CloseBtn, 8)
     AddStroke(CloseBtn, Theme.Danger, 1, 0.45)
-
     Make("Frame", {
-        Size = UDim2.new(0, 12, 0, 2),
-        Position = UDim2.new(0.5, 0, 0.5, 0),
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        Rotation = 45,
-        BackgroundColor3 = Theme.Danger,
-        BorderSizePixel = 0,
-        ZIndex = 7
+        Size = UDim2.new(0, 12, 0, 2), Position = UDim2.new(0.5, 0, 0.5, 0), AnchorPoint = Vector2.new(0.5, 0.5),
+        Rotation = 45, BackgroundColor3 = Theme.Danger, BorderSizePixel = 0, ZIndex = 7
     }, CloseBtn)
     Make("Frame", {
-        Size = UDim2.new(0, 12, 0, 2),
-        Position = UDim2.new(0.5, 0, 0.5, 0),
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        Rotation = -45,
-        BackgroundColor3 = Theme.Danger,
-        BorderSizePixel = 0,
-        ZIndex = 7
+        Size = UDim2.new(0, 12, 0, 2), Position = UDim2.new(0.5, 0, 0.5, 0), AnchorPoint = Vector2.new(0.5, 0.5),
+        Rotation = -45, BackgroundColor3 = Theme.Danger, BorderSizePixel = 0, ZIndex = 7
     }, CloseBtn)
 
-    -- ==========================================
     -- EXIT CONFIRMATION MODAL
-    -- ==========================================
     local ConfirmOverlay = Make("Frame", {
         Name = "ConfirmOverlay",
         Size = UDim2.new(1, 0, 1, 0),
@@ -1777,49 +2060,24 @@ function Library:CreateWindow(Config)
     AddStroke(ConfirmBox, Theme.Danger, 1.2, 0.35)
 
     Make("TextLabel", {
-        Size = UDim2.new(1, -20, 0, 24),
-        Position = UDim2.new(0, 10, 0, 12),
-        BackgroundTransparency = 1,
-        Font = Enum.Font.GothamBold,
-        TextSize = 14,
-        TextColor3 = Theme.TextPrimary,
-        Text = "Close Sid Ultimate?",
-        ZIndex = 82
+        Size = UDim2.new(1, -20, 0, 24), Position = UDim2.new(0, 10, 0, 12), BackgroundTransparency = 1,
+        Font = Enum.Font.GothamBold, TextSize = 14, TextColor3 = Theme.TextPrimary, Text = "Close Sid Ultimate?", ZIndex = 82
     }, ConfirmBox)
-
     Make("TextLabel", {
-        Size = UDim2.new(1, -20, 0, 26),
-        Position = UDim2.new(0, 10, 0, 36),
-        BackgroundTransparency = 1,
-        Font = Enum.Font.GothamMedium,
-        TextSize = 11,
-        TextColor3 = Theme.TextMuted,
-        Text = "Hide karne ke liye Minimize (–) button use karo.",
-        TextWrapped = true,
-        ZIndex = 82
+        Size = UDim2.new(1, -20, 0, 26), Position = UDim2.new(0, 10, 0, 36), BackgroundTransparency = 1,
+        Font = Enum.Font.GothamMedium, TextSize = 11, TextColor3 = Theme.TextMuted,
+        Text = "Hide karne ke liye Minimize (–) button use karo.", TextWrapped = true, ZIndex = 82
     }, ConfirmBox)
 
     local CancelCloseBtn = Make("TextButton", {
-        Size = UDim2.new(0.44, 0, 0, 30),
-        Position = UDim2.new(0.05, 0, 1, -40),
-        BackgroundColor3 = Theme.ToggleOff,
-        Font = Enum.Font.GothamBold,
-        TextSize = 12,
-        TextColor3 = Theme.TextPrimary,
-        Text = "Cancel",
-        ZIndex = 82
+        Size = UDim2.new(0.44, 0, 0, 30), Position = UDim2.new(0.05, 0, 1, -40), BackgroundColor3 = Theme.ToggleOff,
+        Font = Enum.Font.GothamBold, TextSize = 12, TextColor3 = Theme.TextPrimary, Text = "Cancel", ZIndex = 82
     }, ConfirmBox)
     AddCorner(CancelCloseBtn, 8)
 
     local ConfirmCloseBtn = Make("TextButton", {
-        Size = UDim2.new(0.44, 0, 0, 30),
-        Position = UDim2.new(0.51, 0, 1, -40),
-        BackgroundColor3 = Theme.Danger,
-        Font = Enum.Font.GothamBold,
-        TextSize = 12,
-        TextColor3 = Color3.fromRGB(255, 255, 255),
-        Text = "Close UI",
-        ZIndex = 82
+        Size = UDim2.new(0.44, 0, 0, 30), Position = UDim2.new(0.51, 0, 1, -40), BackgroundColor3 = Theme.Danger,
+        Font = Enum.Font.GothamBold, TextSize = 12, TextColor3 = Color3.fromRGB(255, 255, 255), Text = "Close UI", ZIndex = 82
     }, ConfirmBox)
     AddCorner(ConfirmCloseBtn, 8)
 
@@ -1830,7 +2088,6 @@ function Library:CreateWindow(Config)
     -- ==========================================
     -- LEFT SIDEBAR: GLOBAL SEARCH + TABS + MINI PROFILE
     -- ==========================================
-    -- 1. Global Search Input at Sidebar Top
     local GlobalSearchBox = Make("TextBox", {
         Name = "GlobalSearchBox",
         Size = UDim2.new(0, 122, 0, 26),
@@ -1852,7 +2109,6 @@ function Library:CreateWindow(Config)
     table.insert(Registry.Inputs, GlobalSearchBox)
     table.insert(Registry.SecondaryTextObjs, GlobalSearchBox)
 
-    -- 2. Scrolling Tab List (Middle of Sidebar)
     local Sidebar = Make("ScrollingFrame", {
         Name = "Sidebar",
         Size = UDim2.new(0, 136, 1, -130),
@@ -1867,10 +2123,8 @@ function Library:CreateWindow(Config)
     table.insert(Registry.PrimaryColorObjs, Sidebar)
 
     Make("UIPadding", {
-        PaddingTop = UDim.new(0, 4),
-        PaddingBottom = UDim.new(0, 6),
-        PaddingLeft = UDim.new(0, 8),
-        PaddingRight = UDim.new(0, 6)
+        PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 6),
+        PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 6)
     }, Sidebar)
 
     local SideLayout = Make("UIListLayout", {
@@ -1881,17 +2135,11 @@ function Library:CreateWindow(Config)
         Sidebar.CanvasSize = UDim2.new(0, 0, 0, SideLayout.AbsoluteContentSize.Y + 12)
     end)
 
-    -- 3. Pinned Mini-Profile Card (Bottom of Sidebar)
     BuildSidebarProfileCard(MainFrame)
 
-    -- Vertical Separator
     Make("Frame", {
-        Size = UDim2.new(0, 1, 1, -56),
-        Position = UDim2.new(0, 138, 0, 48),
-        BackgroundColor3 = Theme.Stroke,
-        BackgroundTransparency = 0.5,
-        BorderSizePixel = 0,
-        ZIndex = 5
+        Size = UDim2.new(0, 1, 1, -56), Position = UDim2.new(0, 138, 0, 48),
+        BackgroundColor3 = Theme.Stroke, BackgroundTransparency = 0.5, BorderSizePixel = 0, ZIndex = 5
     }, MainFrame)
 
     local ContentHolder = Make("Frame", {
@@ -1903,9 +2151,6 @@ function Library:CreateWindow(Config)
         ZIndex = 5
     }, MainFrame)
 
-    -- ==========================================
-    -- GLOBAL SEARCH RESULTS OVERLAY PAGE
-    -- ==========================================
     local SearchPage = Make("ScrollingFrame", {
         Name = "GlobalSearchResultsPage",
         Size = UDim2.new(1, 0, 1, 0),
@@ -1920,10 +2165,8 @@ function Library:CreateWindow(Config)
     table.insert(Registry.PrimaryColorObjs, SearchPage)
 
     Make("UIPadding", {
-        PaddingTop = UDim.new(0, 8),
-        PaddingBottom = UDim.new(0, 14),
-        PaddingLeft = UDim.new(0, 8),
-        PaddingRight = UDim.new(0, 14)
+        PaddingTop = UDim.new(0, 8), PaddingBottom = UDim.new(0, 14),
+        PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 14)
     }, SearchPage)
 
     local SearchLayout = Make("UIListLayout", {
@@ -1967,9 +2210,7 @@ function Library:CreateWindow(Config)
                 BackgroundColor3 = IsSelected and Theme.CardHover or Theme.CardBg,
                 BackgroundTransparency = IsSelected and 0.15 or 0.75
             })
-            Tween(Rec.Label, 0.15, {
-                TextColor3 = IsSelected and Theme.TextPrimary or Theme.TextMuted
-            })
+            Tween(Rec.Label, 0.15, {TextColor3 = IsSelected and Theme.TextPrimary or Theme.TextMuted})
             Tween(Rec.Indicator, 0.15, {
                 Size = IsSelected and UDim2.new(0, 3, 0, 18) or UDim2.new(0, 3, 0, 0),
                 BackgroundTransparency = IsSelected and 0 or 1
@@ -1978,7 +2219,6 @@ function Library:CreateWindow(Config)
         ActiveTab = TabRecord
     end
 
-    -- Wire up Global Search live filtering
     GlobalSearchBox:GetPropertyChangedSignal("Text"):Connect(function()
         local Query = string.lower(string.gsub(GlobalSearchBox.Text or "", "^%s*(.-)%s*$", "%1"))
 
@@ -2013,28 +2253,17 @@ function Library:CreateWindow(Config)
                 AddStroke(ResBtn, Theme.Stroke, 1, 0.35)
 
                 Make("TextLabel", {
-                    Size = UDim2.new(1, -110, 1, 0),
-                    Position = UDim2.new(0, 10, 0, 0),
-                    BackgroundTransparency = 1,
-                    Font = Enum.Font.GothamSemibold,
-                    TextSize = 12,
-                    TextColor3 = Theme.TextPrimary,
-                    TextXAlignment = Enum.TextXAlignment.Left,
-                    TextTruncate = Enum.TextTruncate.AtEnd,
-                    Text = Item.Name,
-                    ZIndex = 14
+                    Size = UDim2.new(1, -110, 1, 0), Position = UDim2.new(0, 10, 0, 0), BackgroundTransparency = 1,
+                    Font = Enum.Font.GothamSemibold, TextSize = 12, TextColor3 = Theme.TextPrimary,
+                    TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
+                    Text = Item.Name, ZIndex = 14
                 }, ResBtn)
 
                 local TabPill = Make("TextLabel", {
-                    Size = UDim2.new(0, 92, 0, 18),
-                    Position = UDim2.new(1, -100, 0.5, -9),
-                    BackgroundColor3 = Theme.Accent,
-                    BackgroundTransparency = 0.78,
-                    Font = Enum.Font.GothamBold,
-                    TextSize = 9,
-                    TextColor3 = Theme.AccentSecondary,
-                    Text = Item.TabRecord.Name .. "  >",
-                    ZIndex = 14
+                    Size = UDim2.new(0, 92, 0, 18), Position = UDim2.new(1, -100, 0.5, -9),
+                    BackgroundColor3 = Theme.Accent, BackgroundTransparency = 0.78,
+                    Font = Enum.Font.GothamBold, TextSize = 9, TextColor3 = Theme.AccentSecondary,
+                    Text = Item.TabRecord.Name .. "  >", ZIndex = 14
                 }, ResBtn)
                 AddCorner(TabPill, 6)
 
@@ -2065,13 +2294,8 @@ function Library:CreateWindow(Config)
 
         if MatchCount == 0 then
             Make("TextLabel", {
-                Size = UDim2.new(1, 0, 0, 40),
-                BackgroundTransparency = 1,
-                Font = Enum.Font.GothamMedium,
-                TextSize = 12,
-                TextColor3 = Theme.TextMuted,
-                Text = "No matching feature found for '" .. Query .. "'",
-                ZIndex = 13
+                Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 1, Font = Enum.Font.GothamMedium,
+                TextSize = 12, TextColor3 = Theme.TextMuted, Text = "No matching feature found for '" .. Query .. "'", ZIndex = 13
             }, SearchPage)
         end
     end)
@@ -2142,10 +2366,8 @@ function Library:CreateWindow(Config)
         table.insert(Registry.PrimaryColorObjs, TabPage)
 
         Make("UIPadding", {
-            PaddingTop = UDim.new(0, 8),
-            PaddingBottom = UDim.new(0, 14),
-            PaddingLeft = UDim.new(0, 8),
-            PaddingRight = UDim.new(0, 14)
+            PaddingTop = UDim.new(0, 8), PaddingBottom = UDim.new(0, 14),
+            PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 14)
         }, TabPage)
 
         local PageLayout = Make("UIListLayout", {
@@ -2157,12 +2379,8 @@ function Library:CreateWindow(Config)
         end)
 
         local TabRecord = {
-            Name = TabName,
-            Button = TabBtn,
-            Label = TabLabel,
-            Indicator = Indicator,
-            Page = TabPage,
-            IsSystemTab = IsSystemTab == true
+            Name = TabName, Button = TabBtn, Label = TabLabel,
+            Indicator = Indicator, Page = TabPage, IsSystemTab = IsSystemTab == true
         }
         table.insert(Tabs, TabRecord)
 
@@ -2188,122 +2406,99 @@ function Library:CreateWindow(Config)
 
         -- 1. SECTION
         function Tab:CreateSection(SectionTitle)
-            local SecFrame = Make("Frame", {
-                Size = UDim2.new(1, 0, 0, 22),
-                BackgroundTransparency = 1,
-                ZIndex = 7
-            }, TabPage)
-
+            local SecFrame = Make("Frame", {Size = UDim2.new(1, 0, 0, 22), BackgroundTransparency = 1, ZIndex = 7}, TabPage)
             local SecLabel = Make("TextLabel", {
-                Size = UDim2.new(1, -6, 1, 0),
-                Position = UDim2.new(0, 2, 0, 0),
-                BackgroundTransparency = 1,
-                Font = Enum.Font.GothamBold,
-                TextSize = 11,
-                TextColor3 = Theme.AccentSecondary,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                Text = string.upper(tostring(SectionTitle or "SECTION")),
-                ZIndex = 7
+                Size = UDim2.new(1, -6, 1, 0), Position = UDim2.new(0, 2, 0, 0), BackgroundTransparency = 1,
+                Font = Enum.Font.GothamBold, TextSize = 11, TextColor3 = Theme.AccentSecondary,
+                TextXAlignment = Enum.TextXAlignment.Left, Text = string.upper(tostring(SectionTitle or "SECTION")), ZIndex = 7
             }, SecFrame)
             table.insert(Registry.SecondaryTextObjs, SecLabel)
-
             Make("Frame", {
-                Size = UDim2.new(1, 0, 0, 1),
-                Position = UDim2.new(0, 0, 1, -1),
-                BackgroundColor3 = Theme.Stroke,
-                BackgroundTransparency = 0.55,
-                BorderSizePixel = 0,
-                ZIndex = 7
+                Size = UDim2.new(1, 0, 0, 1), Position = UDim2.new(0, 0, 1, -1),
+                BackgroundColor3 = Theme.Stroke, BackgroundTransparency = 0.55, BorderSizePixel = 0, ZIndex = 7
             }, SecFrame)
-
             return {Set = function(_, NewText) SecLabel.Text = string.upper(tostring(NewText)) end}
         end
 
-        -- 2. LABEL
-        function Tab:CreateLabel(Text)
+        -- 2. DIVIDER (RAYFIELD V2 COMPAT)
+        function Tab:CreateDivider()
+            local Wrap = Make("Frame", {Size = UDim2.new(1, 0, 0, 10), BackgroundTransparency = 1, ZIndex = 7}, TabPage)
+            local Line = Make("Frame", {
+                Size = UDim2.new(1, -8, 0, 1), Position = UDim2.new(0, 4, 0.5, 0),
+                BackgroundColor3 = Theme.Accent, BackgroundTransparency = 0.55, BorderSizePixel = 0, ZIndex = 7
+            }, Wrap)
+            local G = Make("UIGradient", {
+                Color = ColorSequence.new({
+                    ColorSequenceKeypoint.new(0, Theme.Accent),
+                    ColorSequenceKeypoint.new(0.5, Theme.AccentSecondary),
+                    ColorSequenceKeypoint.new(1, Theme.Accent)
+                })
+            }, Line)
+            table.insert(Registry.AccentGradients, G)
+            return {Set = function(_, Vis) Wrap.Visible = (Vis ~= false) end}
+        end
+
+        -- 3. LABEL (SUPPORTS RAYFIELD V1 & V2 ARGS)
+        function Tab:CreateLabel(Text, _Icon, ColorOverride)
             local Card = Make("Frame", {
-                Size = UDim2.new(1, 0, 0, 30),
-                BackgroundColor3 = Theme.CardBg,
-                BackgroundTransparency = (SurfaceTransparency[LooksState.SurfaceMode] or SurfaceTransparency.Translucent).Card,
-                ZIndex = 7
+                Size = UDim2.new(1, 0, 0, 30), BackgroundColor3 = Theme.CardBg,
+                BackgroundTransparency = (SurfaceTransparency[LooksState.SurfaceMode] or SurfaceTransparency.Translucent).Card, ZIndex = 7
             }, TabPage)
             AddCorner(Card, 9)
-            AddStroke(Card, Theme.Stroke, 1, 0.45)
+            AddStroke(Card, typeof(ColorOverride) == "Color3" and ColorOverride or Theme.Stroke, 1, 0.45)
             table.insert(Registry.Cards, Card)
 
             local Lbl = Make("TextLabel", {
-                Size = UDim2.new(1, -20, 1, 0),
-                Position = UDim2.new(0, 10, 0, 0),
-                BackgroundTransparency = 1,
-                Font = Enum.Font.GothamMedium,
-                TextSize = 12,
-                TextColor3 = Theme.TextMuted,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                Text = tostring(Text or ""),
-                ZIndex = 8
+                Size = UDim2.new(1, -20, 1, 0), Position = UDim2.new(0, 10, 0, 0), BackgroundTransparency = 1,
+                Font = Enum.Font.GothamMedium, TextSize = 12,
+                TextColor3 = typeof(ColorOverride) == "Color3" and ColorOverride or Theme.TextMuted,
+                TextXAlignment = Enum.TextXAlignment.Left, Text = tostring(Text or ""), ZIndex = 8
             }, Card)
 
             return {Set = function(_, NewText) Lbl.Text = tostring(NewText) end}
         end
 
-        -- 3. PARAGRAPH
+        -- 4. PARAGRAPH
         function Tab:CreateParagraph(Opts)
             Opts = Opts or {}
             local Card = Make("Frame", {
-                Size = UDim2.new(1, 0, 0, 52),
-                BackgroundColor3 = Theme.CardBg,
-                BackgroundTransparency = (SurfaceTransparency[LooksState.SurfaceMode] or SurfaceTransparency.Translucent).Card,
-                ZIndex = 7
+                Size = UDim2.new(1, 0, 0, 52), BackgroundColor3 = Theme.CardBg,
+                BackgroundTransparency = (SurfaceTransparency[LooksState.SurfaceMode] or SurfaceTransparency.Translucent).Card, ZIndex = 7
             }, TabPage)
             AddCorner(Card, 9)
             AddStroke(Card, Theme.Stroke, 1, 0.45)
             table.insert(Registry.Cards, Card)
 
             local T = Make("TextLabel", {
-                Size = UDim2.new(1, -20, 0, 18),
-                Position = UDim2.new(0, 10, 0, 6),
-                BackgroundTransparency = 1,
-                Font = Enum.Font.GothamBold,
-                TextSize = 12,
-                TextColor3 = Theme.TextPrimary,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                Text = tostring(Opts.Title or ""),
-                ZIndex = 8
+                Size = UDim2.new(1, -20, 0, 18), Position = UDim2.new(0, 10, 0, 6), BackgroundTransparency = 1,
+                Font = Enum.Font.GothamBold, TextSize = 12, TextColor3 = Theme.TextPrimary,
+                TextXAlignment = Enum.TextXAlignment.Left, Text = tostring(Opts.Title or ""), ZIndex = 8
             }, Card)
-
             local C = Make("TextLabel", {
-                Size = UDim2.new(1, -20, 0, 24),
-                Position = UDim2.new(0, 10, 0, 24),
-                BackgroundTransparency = 1,
-                Font = Enum.Font.Gotham,
-                TextSize = 11,
-                TextColor3 = Theme.TextMuted,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                TextWrapped = true,
-                Text = tostring(Opts.Content or ""),
-                ZIndex = 8
+                Size = UDim2.new(1, -20, 0, 24), Position = UDim2.new(0, 10, 0, 24), BackgroundTransparency = 1,
+                Font = Enum.Font.Gotham, TextSize = 11, TextColor3 = Theme.TextMuted,
+                TextXAlignment = Enum.TextXAlignment.Left, TextWrapped = true, Text = tostring(Opts.Content or ""), ZIndex = 8
             }, Card)
 
             return {
                 Set = function(_, NewOpts)
-                    if NewOpts.Title then T.Text = tostring(NewOpts.Title) end
-                    if NewOpts.Content then C.Text = tostring(NewOpts.Content) end
+                    if type(NewOpts) == "table" then
+                        if NewOpts.Title then T.Text = tostring(NewOpts.Title) end
+                        if NewOpts.Content then C.Text = tostring(NewOpts.Content) end
+                    end
                 end
             }
         end
 
-        -- 4. BUTTON
+        -- 5. BUTTON
         function Tab:CreateButton(Opts)
             Opts = Opts or {}
             local NameStr = tostring(Opts.Name or "Button")
 
             local Btn = Make("TextButton", {
-                Size = UDim2.new(1, 0, 0, 34),
-                BackgroundColor3 = Theme.CardBg,
+                Size = UDim2.new(1, 0, 0, 34), BackgroundColor3 = Theme.CardBg,
                 BackgroundTransparency = (SurfaceTransparency[LooksState.SurfaceMode] or SurfaceTransparency.Translucent).Card,
-                Text = "",
-                AutoButtonColor = false,
-                ZIndex = 7
+                Text = "", AutoButtonColor = false, ZIndex = 7
             }, TabPage)
             AddCorner(Btn, 9)
             local Stroke = AddStroke(Btn, Theme.Stroke, 1, 0.35)
@@ -2311,28 +2506,15 @@ function Library:CreateWindow(Config)
             RegisterSearch(NameStr, Btn, Stroke)
 
             local TitleLbl = Make("TextLabel", {
-                Size = UDim2.new(1, -54, 1, 0),
-                Position = UDim2.new(0, 12, 0, 0),
-                BackgroundTransparency = 1,
-                Font = Enum.Font.GothamSemibold,
-                TextSize = 12,
-                TextColor3 = Theme.TextPrimary,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                TextTruncate = Enum.TextTruncate.AtEnd,
-                Text = NameStr,
-                ZIndex = 8
+                Size = UDim2.new(1, -54, 1, 0), Position = UDim2.new(0, 12, 0, 0), BackgroundTransparency = 1,
+                Font = Enum.Font.GothamSemibold, TextSize = 12, TextColor3 = Theme.TextPrimary,
+                TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, Text = NameStr, ZIndex = 8
             }, Btn)
 
             local Tag = Make("TextLabel", {
-                Size = UDim2.new(0, 36, 0, 18),
-                Position = UDim2.new(1, -46, 0.5, -9),
-                BackgroundColor3 = Theme.Accent,
-                BackgroundTransparency = 0.78,
-                Font = Enum.Font.GothamBold,
-                TextSize = 10,
-                TextColor3 = Theme.AccentSecondary,
-                Text = "RUN",
-                ZIndex = 8
+                Size = UDim2.new(0, 36, 0, 18), Position = UDim2.new(1, -46, 0.5, -9),
+                BackgroundColor3 = Theme.Accent, BackgroundTransparency = 0.78,
+                Font = Enum.Font.GothamBold, TextSize = 10, TextColor3 = Theme.AccentSecondary, Text = "RUN", ZIndex = 8
             }, Btn)
             AddCorner(Tag, 6)
             table.insert(Registry.SecondaryTextObjs, Tag)
@@ -2345,15 +2527,13 @@ function Library:CreateWindow(Config)
                     Tween(Btn, 0.14, {BackgroundColor3 = Theme.CardBg})
                     Tween(Stroke, 0.14, {Color = Theme.Stroke})
                 end)
-                if type(Opts.Callback) == "function" then
-                    task.spawn(Opts.Callback)
-                end
+                if type(Opts.Callback) == "function" then task.spawn(Opts.Callback) end
             end)
 
             return {Set = function(_, NewName) TitleLbl.Text = tostring(NewName) end}
         end
 
-        -- 5. TOGGLE
+        -- 6. TOGGLE
         function Tab:CreateToggle(Opts)
             Opts = Opts or {}
             local NameStr = tostring(Opts.Name or "Toggle")
@@ -2361,12 +2541,9 @@ function Library:CreateWindow(Config)
             local FlagName = Opts.Flag
 
             local Card = Make("TextButton", {
-                Size = UDim2.new(1, 0, 0, 36),
-                BackgroundColor3 = Theme.CardBg,
+                Size = UDim2.new(1, 0, 0, 36), BackgroundColor3 = Theme.CardBg,
                 BackgroundTransparency = (SurfaceTransparency[LooksState.SurfaceMode] or SurfaceTransparency.Translucent).Card,
-                Text = "",
-                AutoButtonColor = false,
-                ZIndex = 7
+                Text = "", AutoButtonColor = false, ZIndex = 7
             }, TabPage)
             AddCorner(Card, 9)
             local Stroke = AddStroke(Card, State and Theme.Accent or Theme.Stroke, 1, 0.35)
@@ -2374,33 +2551,21 @@ function Library:CreateWindow(Config)
             RegisterSearch(NameStr, Card, Stroke)
 
             Make("TextLabel", {
-                Size = UDim2.new(1, -66, 1, 0),
-                Position = UDim2.new(0, 12, 0, 0),
-                BackgroundTransparency = 1,
-                Font = Enum.Font.GothamSemibold,
-                TextSize = 12,
-                TextColor3 = Theme.TextPrimary,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                TextTruncate = Enum.TextTruncate.AtEnd,
-                Text = NameStr,
-                ZIndex = 8
+                Size = UDim2.new(1, -66, 1, 0), Position = UDim2.new(0, 12, 0, 0), BackgroundTransparency = 1,
+                Font = Enum.Font.GothamSemibold, TextSize = 12, TextColor3 = Theme.TextPrimary,
+                TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, Text = NameStr, ZIndex = 8
             }, Card)
 
             local SwitchBg = Make("Frame", {
-                Size = UDim2.new(0, 40, 0, 20),
-                Position = UDim2.new(1, -50, 0.5, -10),
-                BackgroundColor3 = State and Theme.Accent or Theme.ToggleOff,
-                BorderSizePixel = 0,
-                ZIndex = 8
+                Size = UDim2.new(0, 40, 0, 20), Position = UDim2.new(1, -50, 0.5, -10),
+                BackgroundColor3 = State and Theme.Accent or Theme.ToggleOff, BorderSizePixel = 0, ZIndex = 8
             }, Card)
             AddCorner(SwitchBg, 10)
 
             local Knob = Make("Frame", {
                 Size = UDim2.new(0, 14, 0, 14),
                 Position = State and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7),
-                BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-                BorderSizePixel = 0,
-                ZIndex = 9
+                BackgroundColor3 = Color3.fromRGB(255, 255, 255), BorderSizePixel = 0, ZIndex = 9
             }, SwitchBg)
             AddCorner(Knob, 7)
 
@@ -2414,10 +2579,7 @@ function Library:CreateWindow(Config)
             end
 
             table.insert(Registry.ToggleRefreshers, function()
-                if State then
-                    SwitchBg.BackgroundColor3 = Theme.Accent
-                    Stroke.Color = Theme.Accent
-                end
+                if State then SwitchBg.BackgroundColor3 = Theme.Accent; Stroke.Color = Theme.Accent end
             end)
 
             function ToggleObj:Set(NewVal)
@@ -2425,9 +2587,7 @@ function Library:CreateWindow(Config)
                 State = NewVal
                 ToggleObj.CurrentValue = State
                 UpdateVisual(State, Library._IsLoadingConfig)
-                if type(Opts.Callback) == "function" then
-                    task.spawn(Opts.Callback, State)
-                end
+                if type(Opts.Callback) == "function" then task.spawn(Opts.Callback, State) end
                 Library:SaveConfiguration()
             end
 
@@ -2444,7 +2604,7 @@ function Library:CreateWindow(Config)
             return ToggleObj
         end
 
-        -- 6. SLIDER (SMART MOBILE DIRECTION LOCK)
+        -- 7. SLIDER (SMART MOBILE DIRECTION LOCK)
         function Tab:CreateSlider(Opts)
             Opts = Opts or {}
             local NameStr = tostring(Opts.Name or "Slider")
@@ -2457,11 +2617,9 @@ function Library:CreateWindow(Config)
             local FlagName = Opts.Flag
 
             local Card = Make("Frame", {
-                Size = UDim2.new(1, 0, 0, 48),
-                BackgroundColor3 = Theme.CardBg,
+                Size = UDim2.new(1, 0, 0, 48), BackgroundColor3 = Theme.CardBg,
                 BackgroundTransparency = (SurfaceTransparency[LooksState.SurfaceMode] or SurfaceTransparency.Translucent).Card,
-                Active = false,
-                ZIndex = 7
+                Active = false, ZIndex = 7
             }, TabPage)
             AddCorner(Card, 9)
             local Stroke = AddStroke(Card, Theme.Stroke, 1, 0.35)
@@ -2469,48 +2627,29 @@ function Library:CreateWindow(Config)
             RegisterSearch(NameStr, Card, Stroke)
 
             Make("TextLabel", {
-                Size = UDim2.new(1, -95, 0, 20),
-                Position = UDim2.new(0, 12, 0, 5),
-                BackgroundTransparency = 1,
-                Font = Enum.Font.GothamSemibold,
-                TextSize = 12,
-                TextColor3 = Theme.TextPrimary,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                TextTruncate = Enum.TextTruncate.AtEnd,
-                Text = NameStr,
-                ZIndex = 8
+                Size = UDim2.new(1, -95, 0, 20), Position = UDim2.new(0, 12, 0, 5), BackgroundTransparency = 1,
+                Font = Enum.Font.GothamSemibold, TextSize = 12, TextColor3 = Theme.TextPrimary,
+                TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, Text = NameStr, ZIndex = 8
             }, Card)
 
             local ValLabel = Make("TextLabel", {
-                Size = UDim2.new(0, 82, 0, 20),
-                Position = UDim2.new(1, -92, 0, 5),
-                BackgroundTransparency = 1,
-                Font = Enum.Font.GothamBold,
-                TextSize = 11,
-                TextColor3 = Theme.AccentSecondary,
+                Size = UDim2.new(0, 82, 0, 20), Position = UDim2.new(1, -92, 0, 5), BackgroundTransparency = 1,
+                Font = Enum.Font.GothamBold, TextSize = 11, TextColor3 = Theme.AccentSecondary,
                 TextXAlignment = Enum.TextXAlignment.Right,
-                Text = tostring(CurrentVal) .. (Suffix ~= "" and (" " .. Suffix) or ""),
-                ZIndex = 8
+                Text = tostring(CurrentVal) .. (Suffix ~= "" and (" " .. Suffix) or ""), ZIndex = 8
             }, Card)
             table.insert(Registry.SecondaryTextObjs, ValLabel)
 
             local Track = Make("Frame", {
-                Size = UDim2.new(1, -24, 0, 7),
-                Position = UDim2.new(0, 12, 0, 31),
-                BackgroundColor3 = Theme.ToggleOff,
-                BorderSizePixel = 0,
-                Active = false,
-                ZIndex = 8
+                Size = UDim2.new(1, -24, 0, 7), Position = UDim2.new(0, 12, 0, 31),
+                BackgroundColor3 = Theme.ToggleOff, BorderSizePixel = 0, Active = false, ZIndex = 8
             }, Card)
             AddCorner(Track, 4)
 
             local FillPct = (MaxVal > MinVal) and ((CurrentVal - MinVal) / (MaxVal - MinVal)) or 0
             local Fill = Make("Frame", {
-                Size = UDim2.new(FillPct, 0, 1, 0),
-                BackgroundColor3 = Theme.Accent,
-                BorderSizePixel = 0,
-                Active = false,
-                ZIndex = 9
+                Size = UDim2.new(FillPct, 0, 1, 0), BackgroundColor3 = Theme.Accent,
+                BorderSizePixel = 0, Active = false, ZIndex = 9
             }, Track)
             AddCorner(Fill, 4)
             table.insert(Registry.PrimaryColorObjs, Fill)
@@ -2524,21 +2663,14 @@ function Library:CreateWindow(Config)
             table.insert(Registry.AccentGradients, FillGrad)
 
             local Knob = Make("Frame", {
-                Size = UDim2.new(0, 14, 0, 14),
-                Position = UDim2.new(1, -7, 0.5, -7),
-                BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-                BorderSizePixel = 0,
-                Active = false,
-                ZIndex = 10
+                Size = UDim2.new(0, 14, 0, 14), Position = UDim2.new(1, -7, 0.5, -7),
+                BackgroundColor3 = Color3.fromRGB(255, 255, 255), BorderSizePixel = 0, Active = false, ZIndex = 10
             }, Fill)
             AddCorner(Knob, 7)
 
             local TouchZone = Make("Frame", {
-                Size = UDim2.new(1, 8, 0, 26),
-                Position = UDim2.new(0, -4, 0.5, -13),
-                BackgroundTransparency = 1,
-                Active = false,
-                ZIndex = 11
+                Size = UDim2.new(1, 8, 0, 26), Position = UDim2.new(0, -4, 0.5, -13),
+                BackgroundTransparency = 1, Active = false, ZIndex = 11
             }, Track)
 
             local SliderObj = {CurrentValue = CurrentVal}
@@ -2562,9 +2694,7 @@ function Library:CreateWindow(Config)
                 local Pct = (MaxVal > MinVal) and ((CurrentVal - MinVal) / (MaxVal - MinVal)) or 0
                 Fill.Size = UDim2.new(Pct, 0, 1, 0)
                 ValLabel.Text = tostring(CurrentVal) .. (Suffix ~= "" and (" " .. Suffix) or "")
-                if type(Opts.Callback) == "function" then
-                    task.spawn(Opts.Callback, CurrentVal)
-                end
+                if type(Opts.Callback) == "function" then task.spawn(Opts.Callback, CurrentVal) end
                 Library:SaveConfiguration()
             end
 
@@ -2573,9 +2703,7 @@ function Library:CreateWindow(Config)
             local function UpdateFromInputX(InputPosX)
                 local RelX = math.clamp((InputPosX - Track.AbsolutePosition.X) / math.max(Track.AbsoluteSize.X, 1), 0, 1)
                 local Rounded = RoundStep(MinVal + (MaxVal - MinVal) * RelX)
-                if Rounded ~= CurrentVal then
-                    SliderObj:Set(Rounded)
-                end
+                if Rounded ~= CurrentVal then SliderObj:Set(Rounded) end
             end
 
             TouchZone.InputBegan:Connect(function(Input)
@@ -2619,18 +2747,17 @@ function Library:CreateWindow(Config)
             return SliderObj
         end
 
-        -- 7. INPUT
+        -- 8. INPUT
         function Tab:CreateInput(Opts)
             Opts = Opts or {}
             local NameStr = tostring(Opts.Name or "Input")
             local FlagName = Opts.Flag
             local ClearAfter = Opts.RemoveTextAfterFocusLost == true
+            local InitText = tostring(Opts.CurrentValue or "")
 
             local Card = Make("Frame", {
-                Size = UDim2.new(1, 0, 0, 38),
-                BackgroundColor3 = Theme.CardBg,
-                BackgroundTransparency = (SurfaceTransparency[LooksState.SurfaceMode] or SurfaceTransparency.Translucent).Card,
-                ZIndex = 7
+                Size = UDim2.new(1, 0, 0, 38), BackgroundColor3 = Theme.CardBg,
+                BackgroundTransparency = (SurfaceTransparency[LooksState.SurfaceMode] or SurfaceTransparency.Translucent).Card, ZIndex = 7
             }, TabPage)
             AddCorner(Card, 9)
             local Stroke = AddStroke(Card, Theme.Stroke, 1, 0.35)
@@ -2638,69 +2765,56 @@ function Library:CreateWindow(Config)
             RegisterSearch(NameStr, Card, Stroke)
 
             Make("TextLabel", {
-                Size = UDim2.new(0.52, -12, 1, 0),
-                Position = UDim2.new(0, 12, 0, 0),
-                BackgroundTransparency = 1,
-                Font = Enum.Font.GothamSemibold,
-                TextSize = 12,
-                TextColor3 = Theme.TextPrimary,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                TextTruncate = Enum.TextTruncate.AtEnd,
-                Text = NameStr,
-                ZIndex = 8
+                Size = UDim2.new(0.52, -12, 1, 0), Position = UDim2.new(0, 12, 0, 0), BackgroundTransparency = 1,
+                Font = Enum.Font.GothamSemibold, TextSize = 12, TextColor3 = Theme.TextPrimary,
+                TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, Text = NameStr, ZIndex = 8
             }, Card)
 
             local Box = Make("TextBox", {
-                Size = UDim2.new(0.45, -10, 0, 24),
-                Position = UDim2.new(0.55, 0, 0.5, -12),
+                Size = UDim2.new(0.45, -10, 0, 24), Position = UDim2.new(0.55, 0, 0.5, -12),
                 BackgroundColor3 = Theme.InputBg,
                 BackgroundTransparency = (SurfaceTransparency[LooksState.SurfaceMode] or SurfaceTransparency.Translucent).Input,
-                Font = Enum.Font.GothamMedium,
-                TextSize = 11,
-                TextColor3 = Theme.AccentSecondary,
-                PlaceholderColor3 = Theme.TextMuted,
-                PlaceholderText = tostring(Opts.PlaceholderText or "Type here..."),
-                Text = "",
-                ClearTextOnFocus = false,
-                ZIndex = 8
+                Font = Enum.Font.GothamMedium, TextSize = 11, TextColor3 = Theme.AccentSecondary,
+                PlaceholderColor3 = Theme.TextMuted, PlaceholderText = tostring(Opts.PlaceholderText or "Type here..."),
+                Text = InitText, ClearTextOnFocus = false, ZIndex = 8
             }, Card)
             AddCorner(Box, 7)
             AddStroke(Box, Theme.Stroke, 1, 0.35)
             table.insert(Registry.Inputs, Box)
             table.insert(Registry.SecondaryTextObjs, Box)
 
-            local InputObj = {CurrentValue = ""}
+            local InputObj = {CurrentValue = InitText}
 
             function InputObj:Set(TextVal)
                 local Str = tostring(TextVal or "")
                 InputObj.CurrentValue = Str
                 Box.Text = Str
-                if type(Opts.Callback) == "function" then
-                    task.spawn(Opts.Callback, Str)
-                end
+                if type(Opts.Callback) == "function" then task.spawn(Opts.Callback, Str) end
                 Library:SaveConfiguration()
             end
 
             Box.FocusLost:Connect(function()
                 PlayUISound("Click", 1.05)
                 local Typed = Box.Text
-                InputObj.CurrentValue = Typed
-                if type(Opts.Callback) == "function" then
-                    task.spawn(Opts.Callback, Typed)
+                if Opts.NumbersOnly then
+                    Typed = string.gsub(Typed, "[^%d%.%-]", "")
+                    Box.Text = Typed
                 end
+                InputObj.CurrentValue = Typed
+                if type(Opts.Callback) == "function" then task.spawn(Opts.Callback, Typed) end
                 Library:SaveConfiguration()
                 if ClearAfter then Box.Text = "" end
             end)
 
             if FlagName then
                 Library.Flags[FlagName] = InputObj
-                Library._DefaultValues[FlagName] = ""
+                Library._DefaultValues[FlagName] = InitText
             end
 
             return InputObj
         end
 
-        -- 8. DROPDOWN (SINGLE + MULTI-SELECT + INLINE SEARCH + REFRESH)
+        -- 9. DROPDOWN (100% OFFICIAL RAYFIELD TABLE CALLBACK SPEC + INLINE SEARCH)
         function Tab:CreateDropdown(Opts)
             Opts = Opts or {}
             local NameStr = tostring(Opts.Name or "Dropdown")
@@ -2726,11 +2840,9 @@ function Library:CreateWindow(Config)
             end
 
             local Container = Make("Frame", {
-                Size = UDim2.new(1, 0, 0, 38),
-                BackgroundColor3 = Theme.CardBg,
+                Size = UDim2.new(1, 0, 0, 38), BackgroundColor3 = Theme.CardBg,
                 BackgroundTransparency = (SurfaceTransparency[LooksState.SurfaceMode] or SurfaceTransparency.Translucent).Card,
-                ClipsDescendants = true,
-                ZIndex = 7
+                ClipsDescendants = true, ZIndex = 7
             }, TabPage)
             AddCorner(Container, 9)
             local Stroke = AddStroke(Container, Theme.Stroke, 1, 0.35)
@@ -2738,103 +2850,62 @@ function Library:CreateWindow(Config)
             RegisterSearch(NameStr, Container, Stroke)
 
             local HeaderBtn = Make("TextButton", {
-                Size = UDim2.new(1, 0, 0, 38),
-                BackgroundTransparency = 1,
-                Text = "",
-                AutoButtonColor = false,
-                ZIndex = 8
+                Size = UDim2.new(1, 0, 0, 38), BackgroundTransparency = 1, Text = "", AutoButtonColor = false, ZIndex = 8
             }, Container)
 
             Make("TextLabel", {
-                Size = UDim2.new(0.50, -12, 1, 0),
-                Position = UDim2.new(0, 12, 0, 0),
-                BackgroundTransparency = 1,
-                Font = Enum.Font.GothamSemibold,
-                TextSize = 12,
-                TextColor3 = Theme.TextPrimary,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                TextTruncate = Enum.TextTruncate.AtEnd,
-                Text = NameStr,
-                ZIndex = 9
+                Size = UDim2.new(0.50, -12, 1, 0), Position = UDim2.new(0, 12, 0, 0), BackgroundTransparency = 1,
+                Font = Enum.Font.GothamSemibold, TextSize = 12, TextColor3 = Theme.TextPrimary,
+                TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, Text = NameStr, ZIndex = 9
             }, HeaderBtn)
 
             local SelectedLabel = Make("TextLabel", {
-                Size = UDim2.new(0.46, -24, 1, 0),
-                Position = UDim2.new(0.50, 0, 0, 0),
-                BackgroundTransparency = 1,
-                Font = Enum.Font.GothamMedium,
-                TextSize = 11,
-                TextColor3 = Theme.AccentSecondary,
-                TextXAlignment = Enum.TextXAlignment.Right,
-                TextTruncate = Enum.TextTruncate.AtEnd,
-                Text = "None",
-                ZIndex = 9
+                Size = UDim2.new(0.46, -24, 1, 0), Position = UDim2.new(0.50, 0, 0, 0), BackgroundTransparency = 1,
+                Font = Enum.Font.GothamMedium, TextSize = 11, TextColor3 = Theme.AccentSecondary,
+                TextXAlignment = Enum.TextXAlignment.Right, TextTruncate = Enum.TextTruncate.AtEnd, Text = "None", ZIndex = 9
             }, HeaderBtn)
             table.insert(Registry.SecondaryTextObjs, SelectedLabel)
 
             local Arrow = Make("TextLabel", {
-                Size = UDim2.new(0, 18, 1, 0),
-                Position = UDim2.new(1, -24, 0, 0),
-                BackgroundTransparency = 1,
-                Font = Enum.Font.GothamBold,
-                TextSize = 11,
-                TextColor3 = Theme.TextMuted,
-                Text = "v",
-                ZIndex = 9
+                Size = UDim2.new(0, 18, 1, 0), Position = UDim2.new(1, -24, 0, 0), BackgroundTransparency = 1,
+                Font = Enum.Font.GothamBold, TextSize = 11, TextColor3 = Theme.TextMuted, Text = "v", ZIndex = 9
             }, HeaderBtn)
 
-            -- Inline Search Box inside Dropdown (auto-shown when >= 5 options)
             local InlineSearch = Make("TextBox", {
-                Size = UDim2.new(1, -16, 0, 22),
-                Position = UDim2.new(0, 8, 0, 40),
+                Size = UDim2.new(1, -16, 0, 22), Position = UDim2.new(0, 8, 0, 40),
                 BackgroundColor3 = Theme.InputBg,
                 BackgroundTransparency = (SurfaceTransparency[LooksState.SurfaceMode] or SurfaceTransparency.Translucent).Input,
-                Font = Enum.Font.GothamMedium,
-                TextSize = 10,
-                TextColor3 = Theme.AccentSecondary,
-                PlaceholderColor3 = Theme.TextMuted,
-                PlaceholderText = "  Filter options...",
-                Text = "",
-                TextXAlignment = Enum.TextXAlignment.Left,
-                ClearTextOnFocus = false,
-                Visible = false,
-                ZIndex = 9
+                Font = Enum.Font.GothamMedium, TextSize = 10, TextColor3 = Theme.AccentSecondary,
+                PlaceholderColor3 = Theme.TextMuted, PlaceholderText = "  Filter options...",
+                Text = "", TextXAlignment = Enum.TextXAlignment.Left, ClearTextOnFocus = false, Visible = false, ZIndex = 9
             }, Container)
             AddCorner(InlineSearch, 6)
             AddStroke(InlineSearch, Theme.Stroke, 1, 0.40)
             table.insert(Registry.Inputs, InlineSearch)
 
             local ListScroll = Make("ScrollingFrame", {
-                Size = UDim2.new(1, -16, 0, 0),
-                Position = UDim2.new(0, 8, 0, 40),
+                Size = UDim2.new(1, -16, 0, 0), Position = UDim2.new(0, 8, 0, 40),
                 BackgroundColor3 = Theme.InputBg,
                 BackgroundTransparency = (SurfaceTransparency[LooksState.SurfaceMode] or SurfaceTransparency.Translucent).Input,
-                BorderSizePixel = 0,
-                ScrollBarThickness = 2,
-                ScrollBarImageColor3 = Theme.Accent,
-                CanvasSize = UDim2.new(0, 0, 0, 0),
-                ZIndex = 8
+                BorderSizePixel = 0, ScrollBarThickness = 2, ScrollBarImageColor3 = Theme.Accent,
+                CanvasSize = UDim2.new(0, 0, 0, 0), ZIndex = 8
             }, Container)
             AddCorner(ListScroll, 7)
             table.insert(Registry.Inputs, ListScroll)
             table.insert(Registry.PrimaryColorObjs, ListScroll)
 
             Make("UIPadding", {
-                PaddingTop = UDim.new(0, 4),
-                PaddingBottom = UDim.new(0, 4),
-                PaddingLeft = UDim.new(0, 4),
-                PaddingRight = UDim.new(0, 4)
+                PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 4),
+                PaddingLeft = UDim.new(0, 4), PaddingRight = UDim.new(0, 4)
             }, ListScroll)
 
-            local DropLayout = Make("UIListLayout", {
-                SortOrder = Enum.SortOrder.LayoutOrder,
-                Padding = UDim.new(0, 4)
-            }, ListScroll)
+            local DropLayout = Make("UIListLayout", {SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 4)}, ListScroll)
 
             local DropdownObj = {}
             local OptionButtons = {}
 
-            local function GetCurrentReturnValue()
+            -- Official Rayfield ALWAYS returns a table of strings (e.g. {"Selected"})!
+            local function GetCurrentReturnTable()
                 if Multi then
                     local Arr = {}
                     for _, Opt in ipairs(OptionsList) do
@@ -2842,24 +2913,19 @@ function Library:CreateWindow(Config)
                     end
                     return Arr
                 else
-                    return SingleSelected
+                    return SingleSelected and {tostring(SingleSelected)} or {}
                 end
             end
 
             local function UpdateSelectedText()
-                if Multi then
-                    local Arr = GetCurrentReturnValue()
-                    DropdownObj.CurrentOption = Arr
-                    if #Arr == 0 then
-                        SelectedLabel.Text = "None"
-                    elseif #Arr == 1 then
-                        SelectedLabel.Text = Arr[1]
-                    else
-                        SelectedLabel.Text = string.format("%s (+%d)", Arr[1], #Arr - 1)
-                    end
+                local Arr = GetCurrentReturnTable()
+                DropdownObj.CurrentOption = Arr
+                if #Arr == 0 then
+                    SelectedLabel.Text = "None"
+                elseif #Arr == 1 then
+                    SelectedLabel.Text = Arr[1]
                 else
-                    DropdownObj.CurrentOption = SingleSelected
-                    SelectedLabel.Text = SingleSelected and tostring(SingleSelected) or "None"
+                    SelectedLabel.Text = string.format("%s (+%d)", Arr[1], #Arr - 1)
                 end
             end
 
@@ -2898,15 +2964,13 @@ function Library:CreateWindow(Config)
                 end
             end
 
-            local function ApplyInlineFilter()
+            InlineSearch:GetPropertyChangedSignal("Text"):Connect(function()
                 local Q = string.lower(string.gsub(InlineSearch.Text or "", "^%s*(.-)%s*$", "%1"))
                 for OptStr, Btn in pairs(OptionButtons) do
                     Btn.Visible = (#Q == 0) or (string.find(string.lower(OptStr), Q, 1, true) ~= nil)
                 end
                 task.defer(UpdateDropdownHeight)
-            end
-
-            InlineSearch:GetPropertyChangedSignal("Text"):Connect(ApplyInlineFilter)
+            end)
 
             local function BuildOptionItems()
                 for _, Child in ipairs(ListScroll:GetChildren()) do
@@ -2917,19 +2981,12 @@ function Library:CreateWindow(Config)
                 for _, OptName in ipairs(OptionsList) do
                     local OptStr = tostring(OptName)
                     local OptBtn = Make("TextButton", {
-                        Size = UDim2.new(1, 0, 0, 26),
-                        BackgroundColor3 = Theme.CardBg,
-                        Font = Enum.Font.GothamMedium,
-                        TextSize = 11,
-                        TextColor3 = Theme.TextMuted,
-                        Text = "  " .. OptStr,
-                        TextXAlignment = Enum.TextXAlignment.Left,
-                        TextTruncate = Enum.TextTruncate.AtEnd,
-                        AutoButtonColor = false,
-                        ZIndex = 9
+                        Size = UDim2.new(1, 0, 0, 26), BackgroundColor3 = Theme.CardBg,
+                        Font = Enum.Font.GothamMedium, TextSize = 11, TextColor3 = Theme.TextMuted,
+                        Text = "  " .. OptStr, TextXAlignment = Enum.TextXAlignment.Left,
+                        TextTruncate = Enum.TextTruncate.AtEnd, AutoButtonColor = false, ZIndex = 9
                     }, ListScroll)
                     AddCorner(OptBtn, 6)
-
                     OptionButtons[OptStr] = OptBtn
 
                     OptBtn.MouseButton1Click:Connect(function()
@@ -2947,7 +3004,7 @@ function Library:CreateWindow(Config)
                         RefreshButtonStyles()
 
                         if type(Opts.Callback) == "function" then
-                            task.spawn(Opts.Callback, GetCurrentReturnValue())
+                            task.spawn(Opts.Callback, GetCurrentReturnTable())
                         end
                         Library:SaveConfiguration()
                     end)
@@ -2976,13 +3033,9 @@ function Library:CreateWindow(Config)
                 else
                     SingleSelected = (type(NewVal) == "table") and NewVal[1] or NewVal
                 end
-
                 UpdateSelectedText()
                 RefreshButtonStyles()
-
-                if type(Opts.Callback) == "function" then
-                    task.spawn(Opts.Callback, GetCurrentReturnValue())
-                end
+                if type(Opts.Callback) == "function" then task.spawn(Opts.Callback, GetCurrentReturnTable()) end
                 Library:SaveConfiguration()
             end
 
@@ -3003,13 +3056,9 @@ function Library:CreateWindow(Config)
                     if Multi then
                         local ValidMap = {}
                         for _, v in ipairs(OptionsList) do ValidMap[tostring(v)] = true end
-                        for k in pairs(SelectedSet) do
-                            if not ValidMap[k] then SelectedSet[k] = nil end
-                        end
+                        for k in pairs(SelectedSet) do if not ValidMap[k] then SelectedSet[k] = nil end end
                     else
-                        if SingleSelected and not table.find(OptionsList, SingleSelected) then
-                            SingleSelected = nil
-                        end
+                        if SingleSelected and not table.find(OptionsList, SingleSelected) then SingleSelected = nil end
                     end
                 end
                 BuildOptionItems()
@@ -3019,282 +3068,290 @@ function Library:CreateWindow(Config)
 
             if FlagName then
                 Library.Flags[FlagName] = DropdownObj
-                Library._DefaultValues[FlagName] = GetCurrentReturnValue()
+                Library._DefaultValues[FlagName] = GetCurrentReturnTable()
             end
 
             return DropdownObj
         end
 
-        return Tab
+        -- 10. KEYBIND (OFFICIAL RAYFIELD COMPAT — WORKS ON PC & MOBILE)
+        function Tab:CreateKeybind(Opts)
+            Opts = Opts or {}
+            local NameStr = tostring(Opts.Name or "Keybind")
+            local CurrentKey = tostring(Opts.CurrentKeybind or "Q")
+            local HoldMode = Opts.HoldToInteract == true
+            local FlagName = Opts.Flag
+            local Listening = false
+
+            local Card = Make("TextButton", {
+                Size = UDim2.new(1, 0, 0, 36), BackgroundColor3 = Theme.CardBg,
+                BackgroundTransparency = (SurfaceTransparency[LooksState.SurfaceMode] or SurfaceTransparency.Translucent).Card,
+                Text = "", AutoButtonColor = false, ZIndex = 7
+            }, TabPage)
+            AddCorner(Card, 9)
+            local Stroke = AddStroke(Card, Theme.Stroke, 1, 0.35)
+            table.insert(Registry.Cards, Card)
+            RegisterSearch(NameStr, Card, Stroke)
+
+            Make("TextLabel", {
+                Size = UDim2.new(1, -100, 1, 0), Position = UDim2.new(0, 12, 0, 0), BackgroundTransparency = 1,
+                Font = Enum.Font.GothamSemibold, TextSize = 12, TextColor3 = Theme.TextPrimary,
+                TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, Text = NameStr, ZIndex = 8
+            }, Card)
+
+            local KeyBtn = Make("TextButton", {
+                Size = UDim2.new(0, 74, 0, 22), Position = UDim2.new(1, -84, 0.5, -11),
+                BackgroundColor3 = Theme.InputBg,
+                BackgroundTransparency = (SurfaceTransparency[LooksState.SurfaceMode] or SurfaceTransparency.Translucent).Input,
+                Font = Enum.Font.GothamBold, TextSize = 10, TextColor3 = Theme.AccentSecondary,
+                Text = CurrentKey, AutoButtonColor = false, ZIndex = 9
+            }, Card)
+            AddCorner(KeyBtn, 6)
+            AddStroke(KeyBtn, Theme.Stroke, 1, 0.35)
+            table.insert(Registry.Inputs, KeyBtn)
+            table.insert(Registry.SecondaryTextObjs, KeyBtn)
+
+            local KeybindObj = {CurrentKeybind = CurrentKey}
+
+            function KeybindObj:Set(NewKey)
+                CurrentKey = tostring(NewKey or "Q")
+                KeybindObj.CurrentKeybind = CurrentKey
+                KeyBtn.Text = CurrentKey
+                if type(Opts.OnChanged) == "function" then task.spawn(Opts.OnChanged, CurrentKey) end
+                Library:SaveConfiguration()
+            end
+
+            -- Tap card directly on Mobile to fire the keybind action!
+            Card.MouseButton1Click:Connect(function()
+                PlayUISound("Click", 1.1)
+                if type(Opts.Callback) == "function" then
+                    task.spawn(Opts.Callback, HoldMode and true or CurrentKey)
+                end
+            end)
+
+            KeyBtn.MouseButton1Click:Connect(function()
+                PlayUISound("Click", 1.0)
+                Listening = not Listening
+                KeyBtn.Text = Listening and "..." or CurrentKey
+            end)
+
+            UserInputService.InputBegan:Connect(function(Input, Processed)
+                if Processed then return end
+                if Listening and Input.UserInputType == Enum.UserInputType.Keyboard then
+                    Listening = false
+                    KeybindObj:Set(Input.KeyCode.Name)
+                    return
+                end
+                if Input.UserInputType == Enum.UserInputType.Keyboard and Input.KeyCode.Name == CurrentKey then
+                    if type(Opts.Callback) == "function" then
+                        task.spawn(Opts.Callback, HoldMode and true or CurrentKey)
+                    end
+                end
+            end)
+
+            if HoldMode then
+                UserInputService.InputEnded:Connect(function(Input)
+                    if Input.UserInputType == Enum.UserInputType.Keyboard and Input.KeyCode.Name == CurrentKey then
+                        if type(Opts.Callback) == "function" then task.spawn(Opts.Callback, false) end
+                    end
+                end)
+            end
+
+            if FlagName then
+                Library.Flags[FlagName] = KeybindObj
+                Library._DefaultValues[FlagName] = CurrentKey
+            end
+
+            return KeybindObj
+        end
+
+        -- 11. COLOR PICKER (OFFICIAL RAYFIELD COMPAT — COMPACT RGB + HEX)
+        function Tab:CreateColorPicker(Opts)
+            Opts = Opts or {}
+            local NameStr = tostring(Opts.Name or "Color Picker")
+            local CurColor = typeof(Opts.Color) == "Color3" and Opts.Color or Color3.fromRGB(120, 95, 255)
+            local FlagName = Opts.Flag
+            local IsOpen = false
+
+            local Container = Make("Frame", {
+                Size = UDim2.new(1, 0, 0, 38), BackgroundColor3 = Theme.CardBg,
+                BackgroundTransparency = (SurfaceTransparency[LooksState.SurfaceMode] or SurfaceTransparency.Translucent).Card,
+                ClipsDescendants = true, ZIndex = 7
+            }, TabPage)
+            AddCorner(Container, 9)
+            local Stroke = AddStroke(Container, Theme.Stroke, 1, 0.35)
+            table.insert(Registry.Cards, Container)
+            RegisterSearch(NameStr, Container, Stroke)
+
+            local HeaderBtn = Make("TextButton", {
+                Size = UDim2.new(1, 0, 0, 38), BackgroundTransparency = 1, Text = "", AutoButtonColor = false, ZIndex = 8
+            }, Container)
+
+            Make("TextLabel", {
+                Size = UDim2.new(1, -90, 1, 0), Position = UDim2.new(0, 12, 0, 0), BackgroundTransparency = 1,
+                Font = Enum.Font.GothamSemibold, TextSize = 12, TextColor3 = Theme.TextPrimary,
+                TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, Text = NameStr, ZIndex = 9
+            }, HeaderBtn)
+
+            local Swatch = Make("Frame", {
+                Size = UDim2.new(0, 34, 0, 18), Position = UDim2.new(1, -46, 0.5, -9),
+                BackgroundColor3 = CurColor, BorderSizePixel = 0, ZIndex = 9
+            }, HeaderBtn)
+            AddCorner(Swatch, 6)
+            AddStroke(Swatch, Color3.fromRGB(255, 255, 255), 1, 0.65)
+
+            local HexInput = Make("TextBox", {
+                Size = UDim2.new(1, -24, 0, 24), Position = UDim2.new(0, 12, 0, 42),
+                BackgroundColor3 = Theme.InputBg,
+                BackgroundTransparency = (SurfaceTransparency[LooksState.SurfaceMode] or SurfaceTransparency.Translucent).Input,
+                Font = Enum.Font.GothamBold, TextSize = 11, TextColor3 = Theme.TextPrimary,
+                Text = ColorToHex(CurColor), ClearTextOnFocus = false, ZIndex = 9
+            }, Container)
+            AddCorner(HexInput, 6)
+            AddStroke(HexInput, Theme.Stroke, 1, 0.4)
+
+            local ColorObj = {Color = CurColor}
+            local ChannelBars = {}
+
+            local function ApplyColor(NewCol, FireCb)
+                CurColor = NewCol
+                ColorObj.Color = CurColor
+                Swatch.BackgroundColor3 = CurColor
+                HexInput.Text = ColorToHex(CurColor)
+                if ChannelBars.R then ChannelBars.R.Size = UDim2.new(CurColor.R, 0, 1, 0) end
+                if ChannelBars.G then ChannelBars.G.Size = UDim2.new(CurColor.G, 0, 1, 0) end
+                if ChannelBars.B then ChannelBars.B.Size = UDim2.new(CurColor.B, 0, 1, 0) end
+                if FireCb and type(Opts.Callback) == "function" then task.spawn(Opts.Callback, CurColor) end
+                Library:SaveConfiguration()
+            end
+
+            local Channels = {
+                {Key = "R", Y = 72, Col = Color3.fromRGB(255, 80, 90)},
+                {Key = "G", Y = 94, Col = Color3.fromRGB(60, 235, 130)},
+                {Key = "B", Y = 116, Col = Color3.fromRGB(70, 165, 255)},
+            }
+
+            for _, Ch in ipairs(Channels) do
+                Make("TextLabel", {
+                    Size = UDim2.new(0, 16, 0, 14), Position = UDim2.new(0, 12, 0, Ch.Y),
+                    BackgroundTransparency = 1, Font = Enum.Font.GothamBold, TextSize = 10,
+                    TextColor3 = Ch.Col, Text = Ch.Key, ZIndex = 9
+                }, Container)
+
+                local BarBg = Make("Frame", {
+                    Size = UDim2.new(1, -44, 0, 8), Position = UDim2.new(0, 32, 0, Ch.Y + 3),
+                    BackgroundColor3 = Theme.ToggleOff, BorderSizePixel = 0, ZIndex = 9
+                }, Container)
+                AddCorner(BarBg, 4)
+
+                local InitPct = (Ch.Key == "R" and CurColor.R) or (Ch.Key == "G" and CurColor.G) or CurColor.B
+                local BarFill = Make("Frame", {
+                    Size = UDim2.new(InitPct, 0, 1, 0), BackgroundColor3 = Ch.Col, BorderSizePixel = 0, ZIndex = 10
+                }, BarBg)
+                AddCorner(BarFill, 4)
+                ChannelBars[Ch.Key] = BarFill
+
+                local Hit = Make("TextButton", {
+                    Size = UDim2.new(1, 0, 0, 20), Position = UDim2.new(0, 0, 0.5, -10),
+                    BackgroundTransparency = 1, Text = "", ZIndex = 11
+                }, BarBg)
+
+                local DragC = false
+                local function SetChannelX(PosX)
+                    local Pct = math.clamp((PosX - BarBg.AbsolutePosition.X) / math.max(BarBg.AbsoluteSize.X, 1), 0, 1)
+                    local r, g, b = CurColor.R, CurColor.G, CurColor.B
+                    if Ch.Key == "R" then r = Pct elseif Ch.Key == "G" then g = Pct else b = Pct end
+                    ApplyColor(Color3.new(r, g, b), true)
+                end
+
+                Hit.InputBegan:Connect(function(In)
+                    if In.UserInputType == Enum.UserInputType.MouseButton1 or In.UserInputType == Enum.UserInputType.Touch then
+                        DragC = true; TabPage.ScrollingEnabled = false; SetChannelX(In.Position.X)
+                    end
+                end)
+                UserInputService.InputChanged:Connect(function(In)
+                    if DragC and (In.UserInputType == Enum.UserInputType.MouseMovement or In.UserInputType == Enum.UserInputType.Touch) then
+                        SetChannelX(In.Position.X)
+                    end
+                end)
+                UserInputService.InputEnded:Connect(function(In)
+                    if DragC and (In.UserInputType == Enum.UserInputType.MouseButton1 or In.UserInputType == Enum.UserInputType.Touch) then
+                        DragC = false; TabPage.ScrollingEnabled = true
+                    end
+                end)
+            end
+
+            HexInput.FocusLost:Connect(function()
+                local Parsed = ParseColorString(HexInput.Text)
+                if Parsed then ApplyColor(Parsed, true) else HexInput.Text = ColorToHex(CurColor) end
+            end)
+
+            HeaderBtn.MouseButton1Click:Connect(function()
+                PlayUISound("Click", 1.1)
+                IsOpen = not IsOpen
+                Tween(Container, 0.16, {Size = UDim2.new(1, 0, 0, IsOpen and 140 or 38)})
+                Tween(Stroke, 0.16, {Color = IsOpen and Theme.Accent or Theme.Stroke})
+            end)
+
+            function ColorObj:Set(NewCol)
+                if typeof(NewCol) == "Color3" then
+                    ApplyColor(NewCol, true)
+                end
+            end
+
+            if FlagName then
+                Library.Flags[FlagName] = ColorObj
+                Library._DefaultValues[FlagName] = CurColor
+            end
+
+            return ColorObj
+        end
+
+        -- Universal Anti-Crash Fallback on Tab (handles any unlisted future Rayfield methods safely)
+        return setmetatable(Tab, {
+            __index = function(_, MethodName)
+                return function()
+                    return {Set = function() end, Refresh = function() end}
+                end
+            end
+        })
     end
 
     function Window:CreateTab(TabName, _Icon)
         return CreateTabInternal(TabName, nil, false)
     end
 
-    -- ==========================================
-    -- PRE-REGISTERED "LOOKS" TAB (ALWAYS LAST: LayoutOrder = 9999)
-    -- ==========================================
-    do
-        local LooksTab = CreateTabInternal("Looks", 9999, true)
-
-        LooksTab:CreateSection("Color & Gradient Theme")
-
-        local PresetNames = {
-            "Kaixer Violet", "Cyber Cyan", "Crimson Blood", "Emerald Neon",
-            "Royal Gold", "Sakura Pink", "Sunset Blaze", "Midnight Ice",
-            "Toxic Lime", "Obsidian White", "RGB Rainbow"
-        }
-
-        LooksTab:CreateDropdown({
-            Name = "Gradient Color Preset",
-            Options = PresetNames,
-            CurrentOption = "Kaixer Violet",
-            MultipleOptions = false,
-            Flag = "SidUI_LooksColorPreset",
-            Callback = function(Opt)
-                if type(Opt) == "table" then Opt = Opt[1] end
-                if Opt and ColorPresets[Opt] then SetThemePreset(Opt) end
-            end
-        })
-
-        LooksTab:CreateInput({
-            Name = "Custom Primary Color (Hex / R,G,B)",
-            PlaceholderText = "#785FFF or 120,95,255",
-            RemoveTextAfterFocusLost = false,
-            Flag = "SidUI_LooksCustomPrimary",
-            Callback = function(Text)
-                local Col = ParseColorString(Text)
-                if Col then
-                    LooksState.RainbowActive = false
-                    if Library._RainbowConn then Library._RainbowConn:Disconnect(); Library._RainbowConn = nil end
-                    ApplyLiveColors(Col, Theme.AccentSecondary)
-                end
-            end
-        })
-
-        LooksTab:CreateInput({
-            Name = "Custom Gradient Color 2 (Hex / R,G,B)",
-            PlaceholderText = "#00DCFF or 0,220,255",
-            RemoveTextAfterFocusLost = false,
-            Flag = "SidUI_LooksCustomSecondary",
-            Callback = function(Text)
-                local Col = ParseColorString(Text)
-                if Col then
-                    LooksState.RainbowActive = false
-                    if Library._RainbowConn then Library._RainbowConn:Disconnect(); Library._RainbowConn = nil end
-                    ApplyLiveColors(Theme.Accent, Col)
-                end
-            end
-        })
-
-        LooksTab:CreateSection("Surface, Scale & HUD")
-
-        LooksTab:CreateDropdown({
-            Name = "UI Background Style",
-            Options = {"Transparent", "Translucent", "Opaque"},
-            CurrentOption = "Translucent",
-            MultipleOptions = false,
-            Flag = "SidUI_LooksSurfaceStyle",
-            Callback = function(Opt)
-                if type(Opt) == "table" then Opt = Opt[1] end
-                if Opt then ApplySurfaceMode(Opt) end
-            end
-        })
-
-        LooksTab:CreateSlider({
-            Name = "UI Size Scale",
-            Range = {0.70, 1.25},
-            Increment = 0.05,
-            Suffix = "x",
-            CurrentValue = 1.0,
-            Flag = "SidUI_LooksUIScale",
-            Callback = function(Val)
-                LooksState.UIScale = tonumber(Val) or 1.0
-                if IsWindowVisible then
-                    Tween(MainUIScale, 0.14, {Scale = LooksState.UIScale})
-                else
-                    MainUIScale.Scale = LooksState.UIScale
-                end
-            end
-        })
-
-        LooksTab:CreateToggle({
-            Name = "Lock Window Position (Prevent Drag)",
-            CurrentValue = false,
-            Flag = "SidUI_LooksLockPos",
-            Callback = function(Val)
-                LooksState.LockPosition = (Val == true)
-            end
-        })
-
-        LooksTab:CreateToggle({
-            Name = "Show Live FPS & Ping Telemetry",
-            CurrentValue = true,
-            Flag = "SidUI_LooksShowTelemetry",
-            Callback = function(Val)
-                LooksState.ShowTelemetry = (Val == true)
-                TelemetryPill.Visible = LooksState.ShowTelemetry
-            end
-        })
-
-        LooksTab:CreateToggle({
-            Name = "Enable Crisp UI Touch Sounds",
-            CurrentValue = true,
-            Flag = "SidUI_LooksSounds",
-            Callback = function(Val)
-                LooksState.SoundsEnabled = (Val == true)
-            end
-        })
-
-        LooksTab:CreateSection("UI Animations (Background + Open/Close)")
-
-        LooksTab:CreateToggle({
-            Name = "Enable All UI Animations",
-            CurrentValue = true,
-            Flag = "SidUI_LooksAnimEnabled",
-            Callback = function(Val)
-                LooksState.AnimationsEnabled = (Val == true)
-                RebuildBackgroundAnim()
-            end
-        })
-
-        LooksTab:CreateDropdown({
-            Name = "Live Background Animation (5 Styles)",
-            Options = {"Moving Stars", "Floating Particles", "Cyber Rain", "Glow Orbs", "Aurora Wave", "None"},
-            CurrentOption = "Moving Stars",
-            MultipleOptions = false,
-            Flag = "SidUI_LooksBgAnimStyle",
-            Callback = function(Opt)
-                if type(Opt) == "table" then Opt = Opt[1] end
-                if Opt then
-                    LooksState.BgAnimStyle = Opt
-                    RebuildBackgroundAnim()
-                end
-            end
-        })
-
-        LooksTab:CreateDropdown({
-            Name = "Window Open/Close Style (5 Styles)",
-            Options = {"Pop & Scale", "Slide From Top", "Slide From Bottom", "Fade & Glide", "Elastic Bounce"},
-            CurrentOption = "Pop & Scale",
-            MultipleOptions = false,
-            Flag = "SidUI_LooksAnimStyle",
-            Callback = function(Opt)
-                if type(Opt) == "table" then Opt = Opt[1] end
-                if Opt then
-                    LooksState.WindowAnimStyle = Opt
-                    if not Library._IsLoadingConfig and IsWindowVisible and LooksState.AnimationsEnabled then
-                        LastSavedPos = MainFrame.Position
-                        AnimateShowUI()
-                    end
-                end
-            end
-        })
-
-        -- MULTI-PROFILE CONFIG MANAGER
-        LooksTab:CreateSection("Config Profiles (" .. tostring(Library._ConfigSettings.FolderName) .. ")")
-
-        local ActiveProfileName = Library._ConfigSettings.FileName or "SavedConfig"
-        local ProfileDropdownRef = nil
-
-        ProfileDropdownRef = LooksTab:CreateDropdown({
-            Name = "Select Saved Profile",
-            Options = ListAvailableProfiles(),
-            CurrentOption = ActiveProfileName,
-            MultipleOptions = false,
-            Callback = function(Opt)
-                if type(Opt) == "table" then Opt = Opt[1] end
-                if Opt then ActiveProfileName = SanitizeFileName(Opt) end
-            end
-        })
-
-        LooksTab:CreateInput({
-            Name = "Create / Rename Profile",
-            PlaceholderText = "e.g. AFKFarm or RaidBoss",
-            RemoveTextAfterFocusLost = false,
-            Callback = function(Text)
-                if type(Text) == "string" and #Text > 0 then
-                    ActiveProfileName = SanitizeFileName(Text)
-                end
-            end
-        })
-
-        LooksTab:CreateButton({
-            Name = "Save Current Settings to Profile",
-            Callback = function()
-                Library._ConfigSettings.FileName = ActiveProfileName
-                Library:SaveConfiguration(ActiveProfileName, true)
-                if ProfileDropdownRef and ProfileDropdownRef.Refresh then
-                    ProfileDropdownRef:Refresh(ListAvailableProfiles(), ActiveProfileName)
-                end
-                Library:Notify({
-                    Title = "Profile Saved!",
-                    Content = tostring(Library._ConfigSettings.FolderName) .. "/" .. ActiveProfileName .. ".json",
-                    Color = Theme.Success,
-                    Duration = 2.6
-                })
-            end
-        })
-
-        LooksTab:CreateButton({
-            Name = "Load Selected Profile",
-            Callback = function()
-                local ok = Library:LoadConfiguration(ActiveProfileName)
-                Library:Notify({
-                    Title = ok and "Profile Loaded!" or "Profile Not Found",
-                    Content = ok and ("Loaded: " .. ActiveProfileName) or ("No saved file for: " .. ActiveProfileName),
-                    Color = ok and Theme.AccentSecondary or Theme.Danger,
-                    Duration = 2.6
-                })
-            end
-        })
-
-        LooksTab:CreateButton({
-            Name = "Delete Selected Profile",
-            Callback = function()
-                if ActiveProfileName == "SavedConfig" then
-                    Library:Notify({
-                        Title = "Protected Profile",
-                        Content = "Default 'SavedConfig' delete nahi hota; Reset button use karo.",
-                        Color = Theme.Danger,
-                        Duration = 3.0
-                    })
-                    return
-                end
-                local deleted = Library:DeleteProfile(ActiveProfileName)
-                ActiveProfileName = "SavedConfig"
-                Library._ConfigSettings.FileName = "SavedConfig"
-                if ProfileDropdownRef and ProfileDropdownRef.Refresh then
-                    ProfileDropdownRef:Refresh(ListAvailableProfiles(), "SavedConfig")
-                end
-                Library:Notify({
-                    Title = deleted and "Profile Deleted" or "Delete Failed",
-                    Content = deleted and "Switched back to SavedConfig" or "File already removed",
-                    Color = deleted and Theme.Danger or Theme.TextMuted,
-                    Duration = 2.5
-                })
-            end
-        })
-
-        LooksTab:CreateButton({
-            Name = "Reset All Settings to Default",
-            Callback = function()
-                Library:ResetAllSettings()
-                Library:Notify({
-                    Title = "Settings Reset!",
-                    Content = "All toggles, sliders & looks restored to default.",
-                    Color = Theme.AccentSecondary,
-                    Duration = 2.8
-                })
-            end
-        })
+    function Window:ModifyTheme(ThemeIdentifier)
+        if type(ThemeIdentifier) == "string" and ColorPresets[ThemeIdentifier] then
+            SetThemePreset(ThemeIdentifier)
+        end
     end
 
-    -- Start default live background animation
+    -- Pre-Registered "Looks" Tab (Always Last)
+    local LooksTab = CreateTabInternal("Looks", 9999, true)
+    PopulateLooksTab(LooksTab, {
+        ApplyScale = function(NewScale)
+            if IsWindowVisible then
+                Tween(MainUIScale, 0.14, {Scale = NewScale})
+            else
+                MainUIScale.Scale = NewScale
+            end
+        end,
+        SetTelemetryVisible = function(Vis)
+            TelemetryPill.Visible = Vis
+        end,
+        RebuildBgAnim = RebuildBackgroundAnim,
+        PreviewWindowAnim = function()
+            if not Library._IsLoadingConfig and IsWindowVisible and LooksState.AnimationsEnabled then
+                LastSavedPos = MainFrame.Position
+                AnimateShowUI()
+            end
+        end
+    })
+
     RebuildBackgroundAnim()
 
-    -- Auto-load saved configuration & stamp auto Last Updated meta after tabs register
+    -- Auto-load config & stamp auto Last Updated meta
     task.delay(0.65, function()
         if not Library._ConfigLoadedOnce then
             Library:LoadConfiguration()
@@ -3303,14 +3360,22 @@ function Library:CreateWindow(Config)
         ResolveAutoLastUpdated(WindowTitle, tCount, fCount, Config.LastUpdated)
     end)
 
-    -- Play "Sid Ultimate" White Splash -> Reveal Main UI
     PlaySidUltimateSplash(function()
         if ScreenGui and ScreenGui.Parent then
             AnimateShowUI()
         end
     end)
 
-    return Window
+    return setmetatable(Window, {
+        __index = function()
+            return function() return {} end
+        end
+    })
 end
 
-return Library
+-- Universal Anti-Crash Fallback on Library root
+return setmetatable(Library, {
+    __index = function()
+        return function() return {} end
+    end
+})
