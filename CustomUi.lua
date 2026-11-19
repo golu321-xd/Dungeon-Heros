@@ -2666,12 +2666,26 @@ function Library:CreateWindow(Config)
         BackgroundTransparency = DefaultSurf.Main,
         BorderSizePixel = 0,
         ClipsDescendants = true,
-        Visible = true -- Instant Display (< 0.1s)
+        Active = true,
+        Visible = true
     }, ScreenGui)
+
     table.insert(Registry.MainFrames, MainFrame)
     AddCorner(MainFrame, 18)
 
     local MainUIScale = Make("UIScale", {Scale = LooksState.UIScale}, MainFrame)
+
+    -- Blocks all taps/clicks inside MainFrame from passing through to game UI behind it
+    Make("TextButton", {
+        Name = "TouchInputBlocker",
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundTransparency = 1,
+        Text = "",
+        AutoButtonColor = false,
+        Active = true,
+        Selectable = false,
+        ZIndex = 0
+    }, MainFrame)
 
     local MainBgGrad = Make("UIGradient", {
         Color = ColorSequence.new({
@@ -2895,7 +2909,7 @@ function Library:CreateWindow(Config)
     -- TOPBAR (TITLE + TELEMETRY + HOLD "ULTIMATE" + MIN + X)
     -- ==========================================
     local Topbar = Make("Frame", {
-        Name = "Topbar", Size = UDim2.new(1, 0, 0, 42), BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 5
+        Name = "Topbar", Size = UDim2.new(1, 0, 0, 42), BackgroundTransparency = 1, BorderSizePixel = 0, Active = true, ZIndex = 5
     }, MainFrame)
 
     do
