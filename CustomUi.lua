@@ -1,10 +1,10 @@
 --====================================================================
--- SID ULTIMATE | UNIVERSAL RAYFIELD REPLACEMENT UI LIBRARY (V4.5)
+-- SID ULTIMATE | UNIVERSAL RAYFIELD REPLACEMENT UI LIBRARY (V4.6 FIXED)
 -- 100% Universal Drop-In Replacement for ANY Roblox Game's Rayfield Script
+-- * FIXED: Isolated Internal State + SafeDisconnect (Zero Metatable Crash)
 -- * Full Rayfield API: Window, Tab, Section, Divider, Label, Paragraph,
 --   Button, Toggle, Slider, Input, Dropdown (Single/Multi + Table Spec),
 --   Keybind (PC + Mobile), ColorPicker (RGB + Hex), Notify, Flags, Configs
--- * Metatable Anti-Crash Shield for Unlisted Rayfield Calls
 -- * Hold "ULTIMATE" Badge (0.4s) -> Universal Script Info & Auto Last-Updated
 -- * Global Search + Dropdown Inline Search + UI Scale + Position Lock
 -- * Multi-Profile Configs + Live FPS/Ping + Sidebar Avatar + Stackable Notifs
@@ -30,7 +30,7 @@ while not LocalPlayer do
     LocalPlayer = Players.LocalPlayer
 end
 
-local UI_BUILD_TAG = "v4.5-Universal"
+local UI_BUILD_TAG = "v4.6-Universal"
 
 local function GetGuiParent()
     local okHui, hui = pcall(function() return gethui and gethui() end)
@@ -46,6 +46,15 @@ local function GetGuiParent()
     return LocalPlayer:WaitForChild("PlayerGui")
 end
 
+local function SafeDisconnect(Conn)
+    if typeof(Conn) == "RBXScriptConnection" then
+        pcall(function()
+            Conn:Disconnect()
+        end)
+    end
+    return nil
+end
+
 -- Clean up old instances on re-execute
 do
     local Parent = GetGuiParent()
@@ -55,23 +64,27 @@ do
     end
 end
 
-local Library = {
-    Flags = {},
-    _DefaultValues = {},
-    _ConfigSettings = {
+-- Private internal state (isolated from Library's __index metatable)
+local Internal = {
+    DefaultValues = {},
+    ConfigSettings = {
         Enabled = true,
         FolderName = "SidUltimateHub",
         FileName = "Game_" .. tostring(game.PlaceId)
     },
-    _SavePending = false,
-    _IsLoadingConfig = false,
-    _ConfigLoadedOnce = false,
-    _RainbowConn = nil,
-    _BgAnimConn = nil,
-    _TelemetryConn = nil,
-    _ActiveNotifs = {},
-    _ToggleVisibilityFn = nil,
-    _IsVisibleFn = nil,
+    SavePending = false,
+    IsLoadingConfig = false,
+    ConfigLoadedOnce = false,
+    RainbowConn = nil,
+    BgAnimConn = nil,
+    TelemetryConn = nil,
+    ActiveNotifs = {},
+    ToggleVisibilityFn = nil,
+    IsVisibleFn = nil,
+}
+
+local Library = {
+    Flags = {},
 }
 
 -- ==========================================
@@ -189,7 +202,7 @@ local SoundIds = {
 }
 
 local function PlayUISound(SoundType, Pitch)
-    if not LooksState.SoundsEnabled or Library._IsLoadingConfig then return end
+    if not LooksState.SoundsEnabled or Internal.IsLoadingConfig then return end
     task.spawn(function()
         pcall(function()
             local S = Instance.new("Sound")
@@ -295,15 +308,12 @@ local function SetThemePreset(PresetName)
     if not Preset then return end
     LooksState.ThemeName = PresetName
 
-    if Library._RainbowConn then
-        Library._RainbowConn:Disconnect()
-        Library._RainbowConn = nil
-    end
+    Internal.RainbowConn = SafeDisconnect(Internal.RainbowConn)
 
     if Preset.Rainbow then
         LooksState.RainbowActive = true
         local Hue = 0
-        Library._RainbowConn = RunService.Heartbeat:Connect(function(dt)
+        Internal.RainbowConn = RunService.Heartbeat:Connect(function(dt)
             if not LooksState.RainbowActive then return end
             Hue = (Hue + dt * 0.14) % 1
             local C1 = Color3.fromHSV(Hue, 0.78, 1)
@@ -329,7 +339,7 @@ local function SanitizeFileName(Name)
 end
 
 local function EnsureConfigFolder()
-    local Folder = Library._ConfigSettings.FolderName or "SidUltimateHub"
+    local Folder = Internal.ConfigSettings.FolderName or "SidUltimateHub"
     if makefolder and isfolder then
         pcall(function()
             if not isfolder(Folder) then makefolder(Folder) end
@@ -339,8 +349,8 @@ local function EnsureConfigFolder()
 end
 
 local function GetConfigPaths(CustomProfileName)
-    local Folder = Library._ConfigSettings.FolderName or "SidUltimateHub"
-    local File = SanitizeFileName(CustomProfileName or Library._ConfigSettings.FileName)
+    local Folder = Internal.ConfigSettings.FolderName or "SidUltimateHub"
+    local File = SanitizeFileName(CustomProfileName or Internal.ConfigSettings.FileName)
     return Folder, Folder .. "/" .. File .. ".json", Folder .. "/" .. File .. ".rfld"
 end
 
@@ -357,7 +367,7 @@ local function ListAvailableProfiles()
         end
     end
 
-    AddProf(Library._ConfigSettings.FileName)
+    AddProf(Internal.ConfigSettings.FileName)
 
     if listfiles and isfolder then
         local okF, exists = pcall(isfolder, Folder)
@@ -378,7 +388,6 @@ local function ListAvailableProfiles()
     return Profiles
 end
 
--- Auto-Detects Last Updated Date per Game / Script Fingerprint
 local function ResolveAutoLastUpdated(WindowTitle, TotalTabs, TotalFlags, ManualOverride)
     if type(ManualOverride) == "string" and #ManualOverride > 0 then
         return ManualOverride
@@ -442,7 +451,7 @@ local function DeserializeValue(Val)
 end
 
 function Library:SaveConfiguration(CustomProfileName, Immediate)
-    if not Library._ConfigSettings.Enabled or Library._IsLoadingConfig then return end
+    if not Internal.ConfigSettings.Enabled or Internal.IsLoadingConfig then return end
     if not writefile then return end
 
     local function DoWrite()
@@ -474,24 +483,24 @@ function Library:SaveConfiguration(CustomProfileName, Immediate)
         return
     end
 
-    if Library._SavePending then return end
-    Library._SavePending = true
+    if Internal.SavePending then return end
+    Internal.SavePending = true
     task.delay(0.35, function()
-        Library._SavePending = false
+        Internal.SavePending = false
         DoWrite()
     end)
 end
 
 function Library:LoadConfiguration(CustomProfileName)
-    if not Library._ConfigSettings.Enabled then return false end
+    if not Internal.ConfigSettings.Enabled then return false end
     if not readfile or not isfile then return false end
 
     if CustomProfileName then
-        Library._ConfigSettings.FileName = SanitizeFileName(CustomProfileName)
+        Internal.ConfigSettings.FileName = SanitizeFileName(CustomProfileName)
     end
 
-    Library._ConfigLoadedOnce = true
-    Library._IsLoadingConfig = true
+    Internal.ConfigLoadedOnce = true
+    Internal.IsLoadingConfig = true
 
     local LoadedAny = false
     pcall(function()
@@ -534,7 +543,7 @@ function Library:LoadConfiguration(CustomProfileName)
         end
     end)
 
-    Library._IsLoadingConfig = false
+    Internal.IsLoadingConfig = false
     return LoadedAny
 end
 
@@ -549,8 +558,8 @@ function Library:DeleteProfile(ProfileName)
 end
 
 function Library:ResetAllSettings()
-    Library._IsLoadingConfig = true
-    for FlagName, DefaultVal in pairs(Library._DefaultValues) do
+    Internal.IsLoadingConfig = true
+    for FlagName, DefaultVal in pairs(Internal.DefaultValues) do
         local Obj = Library.Flags[FlagName]
         if Obj and Obj.Set then
             pcall(function()
@@ -558,19 +567,19 @@ function Library:ResetAllSettings()
             end)
         end
     end
-    Library._IsLoadingConfig = false
+    Internal.IsLoadingConfig = false
     Library:SaveConfiguration(nil, true)
 end
 
 function Library:SetVisibility(Visible)
-    if Library._ToggleVisibilityFn then
-        Library._ToggleVisibilityFn(Visible == true)
+    if type(Internal.ToggleVisibilityFn) == "function" then
+        Internal.ToggleVisibilityFn(Visible == true)
     end
 end
 
 function Library:IsVisible()
-    if Library._IsVisibleFn then
-        return Library._IsVisibleFn()
+    if type(Internal.IsVisibleFn) == "function" then
+        return Internal.IsVisibleFn()
     end
     return false
 end
@@ -618,8 +627,8 @@ function Library:Notify(Opts)
             local Holder = GetOrCreateNotifContainer()
             if not Holder then return end
 
-            if #Library._ActiveNotifs >= 3 then
-                local Oldest = table.remove(Library._ActiveNotifs, 1)
+            if #Internal.ActiveNotifs >= 3 then
+                local Oldest = table.remove(Internal.ActiveNotifs, 1)
                 if Oldest and Oldest.Close then
                     task.spawn(Oldest.Close)
                 end
@@ -710,8 +719,8 @@ function Library:Notify(Opts)
                 if Dismissed then return end
                 Dismissed = true
 
-                local Idx = table.find(Library._ActiveNotifs, Record)
-                if Idx then table.remove(Library._ActiveNotifs, Idx) end
+                local Idx = table.find(Internal.ActiveNotifs, Record)
+                if Idx then table.remove(Internal.ActiveNotifs, Idx) end
 
                 if Wrapper and Wrapper.Parent then
                     local Out = TweenService:Create(Wrapper, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
@@ -724,7 +733,7 @@ function Library:Notify(Opts)
                 end
             end
 
-            table.insert(Library._ActiveNotifs, Record)
+            table.insert(Internal.ActiveNotifs, Record)
 
             DismissBtn.Activated:Connect(function()
                 PlayUISound("Click", 1.2)
@@ -1015,7 +1024,7 @@ local function BuildScriptInfoModal(MainFrame, WindowTitle, Config, GetCountsFn)
     AddInfoRow("Script Hub", WindowTitle, Theme.TextPrimary)
     AddInfoRow("Developer / Owner", tostring(Config.Developer or "Sid"), Theme.AccentSecondary)
     local UpdatedValLbl = AddInfoRow("Last Updated (Auto)", "Detecting...", Theme.Success)
-    AddInfoRow("UI Engine", tostring(Config.Version or "Sid Ultimate V4.5 Universal"), Theme.TextPrimary)
+    AddInfoRow("UI Engine", tostring(Config.Version or "Sid Ultimate V4.6 Universal"), Theme.TextPrimary)
     local GameValLbl = AddInfoRow("Active Game", GameName, Theme.TextPrimary)
     AddInfoRow("Executor Runtime", ExecName, Theme.TextPrimary)
     local StatsValLbl = AddInfoRow("Loaded Modules", "Calculating...", Theme.AccentSecondary)
@@ -1189,7 +1198,7 @@ local function PopulateLooksTab(LooksTab, Controls)
             local Col = ParseColorString(Text)
             if Col then
                 LooksState.RainbowActive = false
-                if Library._RainbowConn then Library._RainbowConn:Disconnect(); Library._RainbowConn = nil end
+                Internal.RainbowConn = SafeDisconnect(Internal.RainbowConn)
                 ApplyLiveColors(Col, Theme.AccentSecondary)
             end
         end
@@ -1204,7 +1213,7 @@ local function PopulateLooksTab(LooksTab, Controls)
             local Col = ParseColorString(Text)
             if Col then
                 LooksState.RainbowActive = false
-                if Library._RainbowConn then Library._RainbowConn:Disconnect(); Library._RainbowConn = nil end
+                Internal.RainbowConn = SafeDisconnect(Internal.RainbowConn)
                 ApplyLiveColors(Theme.Accent, Col)
             end
         end
@@ -1307,9 +1316,9 @@ local function PopulateLooksTab(LooksTab, Controls)
         end
     })
 
-    LooksTab:CreateSection("Config Profiles (" .. tostring(Library._ConfigSettings.FolderName) .. ")")
+    LooksTab:CreateSection("Config Profiles (" .. tostring(Internal.ConfigSettings.FolderName) .. ")")
 
-    local DefaultFileName = Library._ConfigSettings.FileName
+    local DefaultFileName = Internal.ConfigSettings.FileName
     local ActiveProfileName = DefaultFileName
     local ProfileDropdownRef = nil
 
@@ -1338,14 +1347,14 @@ local function PopulateLooksTab(LooksTab, Controls)
     LooksTab:CreateButton({
         Name = "Save Current Settings to Profile",
         Callback = function()
-            Library._ConfigSettings.FileName = ActiveProfileName
+            Internal.ConfigSettings.FileName = ActiveProfileName
             Library:SaveConfiguration(ActiveProfileName, true)
             if ProfileDropdownRef and ProfileDropdownRef.Refresh then
                 ProfileDropdownRef:Refresh(ListAvailableProfiles(), {ActiveProfileName})
             end
             Library:Notify({
                 Title = "Profile Saved!",
-                Content = tostring(Library._ConfigSettings.FolderName) .. "/" .. ActiveProfileName .. ".json",
+                Content = tostring(Internal.ConfigSettings.FolderName) .. "/" .. ActiveProfileName .. ".json",
                 Color = Theme.Success,
                 Duration = 2.6
             })
@@ -1379,7 +1388,7 @@ local function PopulateLooksTab(LooksTab, Controls)
             end
             local deleted = Library:DeleteProfile(ActiveProfileName)
             ActiveProfileName = DefaultFileName
-            Library._ConfigSettings.FileName = DefaultFileName
+            Internal.ConfigSettings.FileName = DefaultFileName
             if ProfileDropdownRef and ProfileDropdownRef.Refresh then
                 ProfileDropdownRef:Refresh(ListAvailableProfiles(), {DefaultFileName})
             end
@@ -1414,23 +1423,22 @@ function Library:CreateWindow(Config)
     local WindowTitle = tostring(Config.Name or Config.LoadingTitle or "Sid Ultimate")
     local SubTag = tostring(Config.LoadingSubtitle or "ULTIMATE")
 
-    -- Universal Config Path: Honors any script's ConfigurationSaving; defaults per-PlaceId if omitted!
     if type(Config.ConfigurationSaving) == "table" then
-        Library._ConfigSettings.Enabled = (Config.ConfigurationSaving.Enabled ~= false)
+        Internal.ConfigSettings.Enabled = (Config.ConfigurationSaving.Enabled ~= false)
         if Config.ConfigurationSaving.FolderName and #tostring(Config.ConfigurationSaving.FolderName) > 0 then
-            Library._ConfigSettings.FolderName = tostring(Config.ConfigurationSaving.FolderName)
+            Internal.ConfigSettings.FolderName = tostring(Config.ConfigurationSaving.FolderName)
         else
-            Library._ConfigSettings.FolderName = "SidUltimateHub"
+            Internal.ConfigSettings.FolderName = "SidUltimateHub"
         end
         if Config.ConfigurationSaving.FileName and #tostring(Config.ConfigurationSaving.FileName) > 0 then
-            Library._ConfigSettings.FileName = SanitizeFileName(Config.ConfigurationSaving.FileName)
+            Internal.ConfigSettings.FileName = SanitizeFileName(Config.ConfigurationSaving.FileName)
         else
-            Library._ConfigSettings.FileName = "Game_" .. tostring(game.PlaceId)
+            Internal.ConfigSettings.FileName = "Game_" .. tostring(game.PlaceId)
         end
     else
-        Library._ConfigSettings.Enabled = true
-        Library._ConfigSettings.FolderName = "SidUltimateHub"
-        Library._ConfigSettings.FileName = "Game_" .. tostring(game.PlaceId)
+        Internal.ConfigSettings.Enabled = true
+        Internal.ConfigSettings.FolderName = "SidUltimateHub"
+        Internal.ConfigSettings.FileName = "Game_" .. tostring(game.PlaceId)
     end
 
     local ScreenGui = Make("ScreenGui", {
@@ -1494,10 +1502,7 @@ function Library:CreateWindow(Config)
     local AuroraGrad = nil
 
     local function ClearBackgroundAnim()
-        if Library._BgAnimConn then
-            Library._BgAnimConn:Disconnect()
-            Library._BgAnimConn = nil
-        end
+        Internal.BgAnimConn = SafeDisconnect(Internal.BgAnimConn)
         for _, Child in ipairs(BgAnimLayer:GetChildren()) do
             if not Child:IsA("UICorner") then Child:Destroy() end
         end
@@ -1613,7 +1618,7 @@ function Library:CreateWindow(Config)
         end
 
         local TimeAcc = 0
-        Library._BgAnimConn = RunService.Heartbeat:Connect(function(dt)
+        Internal.BgAnimConn = RunService.Heartbeat:Connect(function(dt)
             if not MainFrame.Visible or not LooksState.AnimationsEnabled then return end
             dt = math.min(dt, 0.05)
             TimeAcc = TimeAcc + dt
@@ -1803,10 +1808,10 @@ function Library:CreateWindow(Config)
         end
     end
 
-    Library._ToggleVisibilityFn = function(Show)
+    Internal.ToggleVisibilityFn = function(Show)
         if Show then AnimateShowUI() else AnimateHideUI() end
     end
-    Library._IsVisibleFn = function()
+    Internal.IsVisibleFn = function()
         return IsWindowVisible
     end
 
@@ -1918,7 +1923,7 @@ function Library:CreateWindow(Config)
     do
         local FrameCount = 0
         local LastSample = os.clock()
-        Library._TelemetryConn = RunService.RenderStepped:Connect(function()
+        Internal.TelemetryConn = RunService.RenderStepped:Connect(function()
             if not MainFrame.Visible or not LooksState.ShowTelemetry then return end
             FrameCount = FrameCount + 1
             local Now = os.clock()
@@ -2187,8 +2192,8 @@ function Library:CreateWindow(Config)
 
     function Library:Destroy()
         ClearBackgroundAnim()
-        if Library._RainbowConn then Library._RainbowConn:Disconnect(); Library._RainbowConn = nil end
-        if Library._TelemetryConn then Library._TelemetryConn:Disconnect(); Library._TelemetryConn = nil end
+        Internal.RainbowConn = SafeDisconnect(Internal.RainbowConn)
+        Internal.TelemetryConn = SafeDisconnect(Internal.TelemetryConn)
         if ScreenGui and ScreenGui.Parent then ScreenGui:Destroy() end
     end
 
@@ -2420,7 +2425,7 @@ function Library:CreateWindow(Config)
             return {Set = function(_, NewText) SecLabel.Text = string.upper(tostring(NewText)) end}
         end
 
-        -- 2. DIVIDER (RAYFIELD V2 COMPAT)
+        -- 2. DIVIDER
         function Tab:CreateDivider()
             local Wrap = Make("Frame", {Size = UDim2.new(1, 0, 0, 10), BackgroundTransparency = 1, ZIndex = 7}, TabPage)
             local Line = Make("Frame", {
@@ -2438,7 +2443,7 @@ function Library:CreateWindow(Config)
             return {Set = function(_, Vis) Wrap.Visible = (Vis ~= false) end}
         end
 
-        -- 3. LABEL (SUPPORTS RAYFIELD V1 & V2 ARGS)
+        -- 3. LABEL
         function Tab:CreateLabel(Text, _Icon, ColorOverride)
             local Card = Make("Frame", {
                 Size = UDim2.new(1, 0, 0, 30), BackgroundColor3 = Theme.CardBg,
@@ -2586,7 +2591,7 @@ function Library:CreateWindow(Config)
                 NewVal = (NewVal == true)
                 State = NewVal
                 ToggleObj.CurrentValue = State
-                UpdateVisual(State, Library._IsLoadingConfig)
+                UpdateVisual(State, Internal.IsLoadingConfig)
                 if type(Opts.Callback) == "function" then task.spawn(Opts.Callback, State) end
                 Library:SaveConfiguration()
             end
@@ -2598,7 +2603,7 @@ function Library:CreateWindow(Config)
 
             if FlagName then
                 Library.Flags[FlagName] = ToggleObj
-                Library._DefaultValues[FlagName] = State
+                Internal.DefaultValues[FlagName] = State
             end
 
             return ToggleObj
@@ -2741,7 +2746,7 @@ function Library:CreateWindow(Config)
 
             if FlagName then
                 Library.Flags[FlagName] = SliderObj
-                Library._DefaultValues[FlagName] = CurrentVal
+                Internal.DefaultValues[FlagName] = CurrentVal
             end
 
             return SliderObj
@@ -2808,7 +2813,7 @@ function Library:CreateWindow(Config)
 
             if FlagName then
                 Library.Flags[FlagName] = InputObj
-                Library._DefaultValues[FlagName] = InitText
+                Internal.DefaultValues[FlagName] = InitText
             end
 
             return InputObj
@@ -2904,7 +2909,6 @@ function Library:CreateWindow(Config)
             local DropdownObj = {}
             local OptionButtons = {}
 
-            -- Official Rayfield ALWAYS returns a table of strings (e.g. {"Selected"})!
             local function GetCurrentReturnTable()
                 if Multi then
                     local Arr = {}
@@ -3068,13 +3072,13 @@ function Library:CreateWindow(Config)
 
             if FlagName then
                 Library.Flags[FlagName] = DropdownObj
-                Library._DefaultValues[FlagName] = GetCurrentReturnTable()
+                Internal.DefaultValues[FlagName] = GetCurrentReturnTable()
             end
 
             return DropdownObj
         end
 
-        -- 10. KEYBIND (OFFICIAL RAYFIELD COMPAT — WORKS ON PC & MOBILE)
+        -- 10. KEYBIND (PC + MOBILE)
         function Tab:CreateKeybind(Opts)
             Opts = Opts or {}
             local NameStr = tostring(Opts.Name or "Keybind")
@@ -3121,7 +3125,6 @@ function Library:CreateWindow(Config)
                 Library:SaveConfiguration()
             end
 
-            -- Tap card directly on Mobile to fire the keybind action!
             Card.MouseButton1Click:Connect(function()
                 PlayUISound("Click", 1.1)
                 if type(Opts.Callback) == "function" then
@@ -3159,13 +3162,13 @@ function Library:CreateWindow(Config)
 
             if FlagName then
                 Library.Flags[FlagName] = KeybindObj
-                Library._DefaultValues[FlagName] = CurrentKey
+                Internal.DefaultValues[FlagName] = CurrentKey
             end
 
             return KeybindObj
         end
 
-        -- 11. COLOR PICKER (OFFICIAL RAYFIELD COMPAT — COMPACT RGB + HEX)
+        -- 11. COLOR PICKER (RGB + HEX)
         function Tab:CreateColorPicker(Opts)
             Opts = Opts or {}
             local NameStr = tostring(Opts.Name or "Color Picker")
@@ -3294,22 +3297,19 @@ function Library:CreateWindow(Config)
             end)
 
             function ColorObj:Set(NewCol)
-                if typeof(NewCol) == "Color3" then
-                    ApplyColor(NewCol, true)
-                end
+                if typeof(NewCol) == "Color3" then ApplyColor(NewCol, true) end
             end
 
             if FlagName then
                 Library.Flags[FlagName] = ColorObj
-                Library._DefaultValues[FlagName] = CurColor
+                Internal.DefaultValues[FlagName] = CurColor
             end
 
             return ColorObj
         end
 
-        -- Universal Anti-Crash Fallback on Tab (handles any unlisted future Rayfield methods safely)
         return setmetatable(Tab, {
-            __index = function(_, MethodName)
+            __index = function()
                 return function()
                     return {Set = function() end, Refresh = function() end}
                 end
@@ -3342,7 +3342,7 @@ function Library:CreateWindow(Config)
         end,
         RebuildBgAnim = RebuildBackgroundAnim,
         PreviewWindowAnim = function()
-            if not Library._IsLoadingConfig and IsWindowVisible and LooksState.AnimationsEnabled then
+            if not Internal.IsLoadingConfig and IsWindowVisible and LooksState.AnimationsEnabled then
                 LastSavedPos = MainFrame.Position
                 AnimateShowUI()
             end
@@ -3351,9 +3351,8 @@ function Library:CreateWindow(Config)
 
     RebuildBackgroundAnim()
 
-    -- Auto-load config & stamp auto Last Updated meta
     task.delay(0.65, function()
-        if not Library._ConfigLoadedOnce then
+        if not Internal.ConfigLoadedOnce then
             Library:LoadConfiguration()
         end
         local tCount, fCount = GetHubCounts()
@@ -3373,9 +3372,11 @@ function Library:CreateWindow(Config)
     })
 end
 
--- Universal Anti-Crash Fallback on Library root
 return setmetatable(Library, {
-    __index = function()
+    __index = function(_, Key)
+        if type(Key) == "string" and string.sub(Key, 1, 1) == "_" then
+            return nil
+        end
         return function() return {} end
     end
 })
