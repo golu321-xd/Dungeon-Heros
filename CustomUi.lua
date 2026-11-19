@@ -96,6 +96,22 @@ local Internal = {
     ActiveNotifs = {},
     ToggleVisibilityFn = nil,
     IsVisibleFn = nil,
+    BorderFlowConn = nil,
+    AntiAfkConn = nil,
+    AfkClockConn = nil,
+    ActiveToggleStates = {},
+    PinnableRegistry = {},
+    PinnedKeys = {},
+    FloatingButtons = {},
+    RefreshActiveHudFn = nil,
+    TogglePinItemFn = nil,
+    ToggleFloatingBtnFn = nil,
+    SyncToggleExternalsFn = nil,
+    ApplyShowUIFn = nil,
+    ApplyRadiusFn = nil,
+    ApplyFontFn = nil,
+    ToggleBorderFlowFn = nil,
+    OpenAfkSaverFn = nil,
 }
 
 local function TrackConn(Conn)
@@ -163,6 +179,19 @@ local LooksState = {
     ShowTelemetry = true,
     SoundsEnabled = true,
     RainbowActive = false,
+    ShowActiveHUD = false,
+    AntiAfkEnabled = true,
+    ShowUICustomEnabled = false,
+    ShowUIPosition = "Top-Center (Default)",
+    ShowUIShape = "Pill (Default)",
+    ShowUISize = 1.0,
+    ShowUITransparency = 0.42,
+    ShowUIColorMode = "Match Theme",
+    ShowUICustomHex = "#00E0FF",
+    ShowUIText = "Show UI",
+    CornerRadius = 18,
+    FlowingBorder = false,
+    UIFont = "Gotham",
 }
 
 local Registry = {
@@ -180,6 +209,9 @@ local Registry = {
     TabRefreshers = {},
     BgParticleRefreshers = {},
     WheelRefreshers = {},
+    MainCorners = {},
+    CardCorners = {},
+    AllTextObjs = {},
 }
 
 -- ==========================================
@@ -190,6 +222,9 @@ local function Make(ClassName, Props, Parent)
     for k, v in pairs(Props or {}) do
         Inst[k] = v
     end
+    if ClassName == "TextLabel" or ClassName == "TextButton" or ClassName == "TextBox" then
+        table.insert(Registry.AllTextObjs, Inst)
+    end
     if Parent then
         Inst.Parent = Parent
     end
@@ -197,7 +232,14 @@ local function Make(ClassName, Props, Parent)
 end
 
 local function AddCorner(Parent, Radius)
-    return Make("UICorner", {CornerRadius = UDim.new(0, Radius or 10)}, Parent)
+    local r = Radius or 10
+    local c = Make("UICorner", {CornerRadius = UDim.new(0, r)}, Parent)
+    if r == 18 then
+        table.insert(Registry.MainCorners, c)
+    elseif r == 9 then
+        table.insert(Registry.CardCorners, c)
+    end
+    return c
 end
 
 local function AddStroke(Parent, Color, Thickness, Transparency)
@@ -2077,6 +2119,66 @@ end
 -- HELPER: POPULATE PRE-REGISTERED "LOOKS" TAB
 -- ==========================================
 local function PopulateLooksTab(LooksTab, LooksPage, Controls)
+
+    -- PATCH 8B: Premium Studio Hero Banner + 1-Tap Quick Color Swatches
+    local HeroBanner = Make("Frame", {
+        Name = "LooksHeroBanner",
+        Size = UDim2.new(1, 0, 0, 66),
+        BackgroundColor3 = Theme.CardBg,
+        BackgroundTransparency = GetSurfaceSpec(LooksState.SurfaceMode).Card,
+        ClipsDescendants = true, ZIndex = 7
+    }, LooksPage)
+    AddCorner(HeroBanner, 9)
+    local HeroStroke = AddStroke(HeroBanner, Theme.AccentSecondary, 1.2, 0.30)
+    local HeroGrad = Make("UIGradient", {
+        Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Theme.Accent),
+            ColorSequenceKeypoint.new(0.5, Theme.AccentSecondary),
+            ColorSequenceKeypoint.new(1, Theme.Accent)
+        }),
+        Rotation = 45
+    }, HeroStroke)
+    table.insert(Registry.AccentGradients, HeroGrad)
+    table.insert(Registry.Cards, HeroBanner)
+
+    local HeroTitle = Make("TextLabel", {
+        Size = UDim2.new(1, -20, 0, 18), Position = UDim2.new(0, 12, 0, 6), BackgroundTransparency = 1,
+        Font = Enum.Font.GothamBlack, TextSize = 13, TextColor3 = Theme.AccentSecondary,
+        TextXAlignment = Enum.TextXAlignment.Left, Text = "SID ULTIMATE  •  VISUAL STUDIO", ZIndex = 8
+    }, HeroBanner)
+    table.insert(Registry.SecondaryTextObjs, HeroTitle)
+
+    Make("TextLabel", {
+        Size = UDim2.new(1, -20, 0, 13), Position = UDim2.new(0, 12, 0, 23), BackgroundTransparency = 1,
+        Font = Enum.Font.GothamMedium, TextSize = 10, TextColor3 = Theme.TextMuted,
+        TextXAlignment = Enum.TextXAlignment.Left, Text = "1-Tap Theme Swatches • Live FX • HUD • AFK Saver", ZIndex = 8
+    }, HeroBanner)
+
+    local QuickSwatches = {
+        {"Sid Violet",    Color3.fromRGB(122, 95, 255)},
+        {"Cyber Cyan",    Color3.fromRGB(0, 195, 255)},
+        {"Crimson Blood", Color3.fromRGB(245, 55, 85)},
+        {"Emerald Neon",  Color3.fromRGB(0, 220, 135)},
+        {"Royal Gold",    Color3.fromRGB(255, 190, 45)},
+        {"Sakura Pink",   Color3.fromRGB(255, 85, 175)},
+        {"RGB Rainbow",   Color3.fromRGB(255, 255, 255)},
+    }
+
+    for i, Sw in ipairs(QuickSwatches) do
+        local DotBtn = Make("TextButton", {
+            Size = UDim2.new(0, 18, 0, 18), Position = UDim2.new(0, 12 + (i - 1) * 26, 0, 42),
+            BackgroundColor3 = Sw[2], Text = (Sw[1] == "RGB Rainbow") and "R" or "",
+            Font = Enum.Font.GothamBlack, TextSize = 9, TextColor3 = Color3.fromRGB(20, 20, 30),
+            AutoButtonColor = false, ZIndex = 9
+        }, HeroBanner)
+        AddCorner(DotBtn, 9); AddStroke(DotBtn, Color3.fromRGB(255, 255, 255), 1, 0.55)
+        DotBtn.MouseButton1Click:Connect(function()
+            PlayUISound("Click", 1.15)
+            SetThemePreset(Sw[1])
+            Library:SaveConfiguration()
+        end)
+    end
+
     LooksTab:CreateSection("Unlimited Color Spectrum Studio")
     BuildColorSpectrumStudio(LooksPage)
 
@@ -2206,6 +2308,216 @@ local function PopulateLooksTab(LooksTab, LooksPage, Controls)
                 LooksState.WindowAnimStyle = Opt
                 Controls.PreviewWindowAnim()
             end
+        end
+    })
+
+
+    -- ==========================================
+    -- PATCH 8C: CORNER, FLOWING BORDER & FONT STUDIO (FEATURE 6)
+    -- ==========================================
+    LooksTab:CreateSection("Corner Radius, Glow & Font Studio")
+
+    LooksTab:CreateSlider({
+        Name = "UI Corner Roundness",
+        Range = {0, 24},
+        Increment = 1,
+        Suffix = "px",
+        CurrentValue = 18,
+        Flag = "SidUI_LooksCornerRadius",
+        Callback = function(Val)
+            if Internal.ApplyRadiusFn then Internal.ApplyRadiusFn(Val) end
+        end
+    })
+
+    LooksTab:CreateToggle({
+        Name = "Animated Flowing Border Glow",
+        CurrentValue = false,
+        Flag = "SidUI_LooksFlowBorder",
+        Callback = function(Val)
+            if Internal.ToggleBorderFlowFn then Internal.ToggleBorderFlowFn(Val) end
+        end
+    })
+
+    LooksTab:CreateDropdown({
+        Name = "UI Font Style",
+        Options = {"Gotham (Default)", "Smooth (Fredoka)", "Cyber Tech (Code)", "Hacker (Mono)", "Clean (Ubuntu)", "Light (SourceSans)"},
+        CurrentOption = {"Gotham (Default)"},
+        MultipleOptions = false,
+        Flag = "SidUI_LooksFont",
+        Callback = function(Opt)
+            if type(Opt) == "table" then Opt = Opt[1] end
+            if Opt and Internal.ApplyFontFn then Internal.ApplyFontFn(Opt) end
+        end
+    })
+
+    -- ==========================================
+    -- SHOW UI BUTTON STUDIO (FEATURE 5 — 100% OPTIONAL)
+    -- ==========================================
+    LooksTab:CreateSection("Show UI Button Studio (Optional)")
+
+    local CustomShowUIToggleRef = nil
+    CustomShowUIToggleRef = LooksTab:CreateToggle({
+        Name = "Customize Show UI Pill (OFF = Classic Default)",
+        CurrentValue = false,
+        Flag = "SidUI_ShowUICustomEnabled",
+        Callback = function(Val)
+            LooksState.ShowUICustomEnabled = (Val == true)
+            if Internal.ApplyShowUIFn then Internal.ApplyShowUIFn() end
+        end
+    })
+
+    LooksTab:CreateDropdown({
+        Name = "Show UI Position / Mode",
+        Options = {"Top-Center (Default)", "Top-Left", "Top-Right", "Middle-Left", "Middle-Right", "Bottom-Left", "Bottom-Right", "Free Draggable"},
+        CurrentOption = {"Top-Center (Default)"},
+        MultipleOptions = false,
+        Flag = "SidUI_ShowUIPosition",
+        Callback = function(Opt)
+            if type(Opt) == "table" then Opt = Opt[1] end
+            if Opt then
+                LooksState.ShowUIPosition = Opt
+                if Internal.ApplyShowUIFn then Internal.ApplyShowUIFn() end
+            end
+        end
+    })
+
+    LooksTab:CreateDropdown({
+        Name = "Show UI Shape",
+        Options = {"Pill (Default)", "Circle (Icon)", "Rounded Square", "Capsule Slim", "Sharp Cyber"},
+        CurrentOption = {"Pill (Default)"},
+        MultipleOptions = false,
+        Flag = "SidUI_ShowUIShape",
+        Callback = function(Opt)
+            if type(Opt) == "table" then Opt = Opt[1] end
+            if Opt then
+                LooksState.ShowUIShape = Opt
+                if Internal.ApplyShowUIFn then Internal.ApplyShowUIFn() end
+            end
+        end
+    })
+
+    LooksTab:CreateSlider({
+        Name = "Show UI Button Size",
+        Range = {0.70, 1.50},
+        Increment = 0.05,
+        Suffix = "x",
+        CurrentValue = 1.0,
+        Flag = "SidUI_ShowUISize",
+        Callback = function(Val)
+            LooksState.ShowUISize = tonumber(Val) or 1.0
+            if Internal.ApplyShowUIFn then Internal.ApplyShowUIFn() end
+        end
+    })
+
+    LooksTab:CreateSlider({
+        Name = "Show UI Transparency",
+        Range = {0, 0.85},
+        Increment = 0.05,
+        Suffix = "",
+        CurrentValue = 0.42,
+        Flag = "SidUI_ShowUITransparency",
+        Callback = function(Val)
+            LooksState.ShowUITransparency = tonumber(Val) or 0.42
+            if Internal.ApplyShowUIFn then Internal.ApplyShowUIFn() end
+        end
+    })
+
+    LooksTab:CreateDropdown({
+        Name = "Show UI Color Style",
+        Options = {"Match Theme", "Dark Glass", "Neon Cyan", "Crimson Red", "Royal Gold", "Emerald Green", "Pure White", "Custom Hex"},
+        CurrentOption = {"Match Theme"},
+        MultipleOptions = false,
+        Flag = "SidUI_ShowUIColorMode",
+        Callback = function(Opt)
+            if type(Opt) == "table" then Opt = Opt[1] end
+            if Opt then
+                LooksState.ShowUIColorMode = Opt
+                if Internal.ApplyShowUIFn then Internal.ApplyShowUIFn() end
+            end
+        end
+    })
+
+    LooksTab:CreateInput({
+        Name = "Show UI Custom Color (Hex)",
+        PlaceholderText = "#00E0FF or 0,224,255",
+        RemoveTextAfterFocusLost = false,
+        Flag = "SidUI_ShowUICustomHex",
+        Callback = function(Text)
+            LooksState.ShowUICustomHex = tostring(Text or "#00E0FF")
+            if Internal.ApplyShowUIFn then Internal.ApplyShowUIFn() end
+        end
+    })
+
+    LooksTab:CreateInput({
+        Name = "Show UI Custom Label",
+        PlaceholderText = "Show UI",
+        RemoveTextAfterFocusLost = false,
+        Flag = "SidUI_ShowUIText",
+        Callback = function(Text)
+            LooksState.ShowUIText = tostring(Text or "Show UI")
+            if Internal.ApplyShowUIFn then Internal.ApplyShowUIFn() end
+        end
+    })
+
+    LooksTab:CreateButton({
+        Name = "Reset Show UI to Classic Default",
+        Callback = function()
+            LooksState.ShowUICustomEnabled = false
+            LooksState.ShowUIPosition = "Top-Center (Default)"
+            LooksState.ShowUIShape = "Pill (Default)"
+            LooksState.ShowUISize = 1.0
+            LooksState.ShowUITransparency = 0.42
+            LooksState.ShowUIColorMode = "Match Theme"
+            LooksState.ShowUIText = "Show UI"
+            if CustomShowUIToggleRef and CustomShowUIToggleRef.Set then
+                CustomShowUIToggleRef:Set(false)
+            end
+            if Internal.ApplyShowUIFn then Internal.ApplyShowUIFn() end
+            Library:Notify({Title = "Show UI Reset", Content = "Restored to classic default pill.", Color = Theme.Success, Duration = 2.2})
+        end
+    })
+
+    -- ==========================================
+    -- ACTIVE HUD & AFK POWER SAVER (FEATURES 2 & 4)
+    -- ==========================================
+    LooksTab:CreateSection("Active HUD & 20-Min Anti-AFK")
+
+    LooksTab:CreateToggle({
+        Name = "Show Active Features Mini HUD",
+        CurrentValue = false,
+        Flag = "SidUI_LooksActiveHUD",
+        Callback = function(Val)
+            LooksState.ShowActiveHUD = (Val == true)
+            if Internal.RefreshActiveHudFn then Internal.RefreshActiveHudFn() end
+        end
+    })
+
+    LooksTab:CreateToggle({
+        Name = "Permanent Anti-AFK (Block 20-Min Kick)",
+        CurrentValue = true,
+        Flag = "SidUI_LooksAntiAfk",
+        Callback = function(Val)
+            LooksState.AntiAfkEnabled = (Val == true)
+            if Val then
+                pcall(function()
+                    local VU = game:GetService("VirtualUser")
+                    Internal.AntiAfkConn = SafeDisconnect(Internal.AntiAfkConn)
+                    Internal.AntiAfkConn = LocalPlayer.Idled:Connect(function()
+                        if LooksState.AntiAfkEnabled then
+                            pcall(function() VU:CaptureController(); VU:ClickButton2(Vector2.new()) end)
+                        end
+                    end)
+                end)
+            else
+                Internal.AntiAfkConn = SafeDisconnect(Internal.AntiAfkConn)
+            end
+        end
+    })
+
+    LooksTab:CreateButton({
+        Name = "Activate OLED Black Screen Saver (Battery Mode)",
+        Callback = function()
+            if Internal.OpenAfkSaverFn then Internal.OpenAfkSaverFn() end
         end
     })
 
@@ -2339,7 +2651,7 @@ function Library:CreateWindow(Config)
         IgnoreGuiInset = true,
         ResetOnSpawn = false,
         ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-        DisplayOrder = 100
+        DisplayOrder = 50
     }, GetGuiParent())
 
     local DefaultSurf = GetSurfaceSpec(LooksState.SurfaceMode)
@@ -2537,7 +2849,32 @@ function Library:CreateWindow(Config)
     end
     Internal.IsVisibleFn = function() return IsWindowVisible end
 
-    ShowUIBtn.MouseButton1Click:Connect(function() AnimateShowUI(false) end)
+        -- PATCH 6A: Show UI Smart Tap + Optional Free-Drag Handler
+    local ShowUICorner = ShowUIBtn:FindFirstChildOfClass("UICorner") or AddCorner(ShowUIBtn, 14)
+    local ShowUIScaleObj = Make("UIScale", {Scale = 1.0}, ShowUIBtn)
+
+    do
+        local Dragging, ActiveIn, StartPos, FrameStart, Moved = false, nil, nil, nil, 0
+        ShowUIBtn.InputBegan:Connect(function(In)
+            if In.UserInputType == Enum.UserInputType.MouseButton1 or In.UserInputType == Enum.UserInputType.Touch then
+                Dragging = true; ActiveIn = In; StartPos = In.Position; FrameStart = ShowUIBtn.Position; Moved = 0
+            end
+        end)
+        TrackConn(UserInputService.InputChanged:Connect(function(In)
+            if Dragging and LooksState.ShowUICustomEnabled and LooksState.ShowUIPosition == "Free Draggable"
+                and (In == ActiveIn or In.UserInputType == Enum.UserInputType.MouseMovement) then
+                local Delta = In.Position - StartPos
+                Moved = Delta.Magnitude
+                ShowUIBtn.Position = UDim2.new(FrameStart.X.Scale, FrameStart.X.Offset + Delta.X, FrameStart.Y.Scale, FrameStart.Y.Offset + Delta.Y)
+            end
+        end))
+        TrackConn(UserInputService.InputEnded:Connect(function(In)
+            if Dragging and (In == ActiveIn or In.UserInputType == Enum.UserInputType.MouseButton1 or In.UserInputType == Enum.UserInputType.Touch) then
+                Dragging = false; ActiveIn = nil
+                if Moved < 10 then AnimateShowUI(false) end
+            end
+        end))
+    end
 
     -- ==========================================
     -- TRACKERS & MODALS (SCRIPT INFO + PLAYER PROFILE)
@@ -2815,6 +3152,9 @@ function Library:CreateWindow(Config)
         Internal.RainbowConn = SafeDisconnect(Internal.RainbowConn)
         Internal.TelemetryConn = SafeDisconnect(Internal.TelemetryConn)
         Internal.ProfileLiveConn = SafeDisconnect(Internal.ProfileLiveConn)
+        Internal.BorderFlowConn = SafeDisconnect(Internal.BorderFlowConn)
+        Internal.AntiAfkConn = SafeDisconnect(Internal.AntiAfkConn)
+        Internal.AfkClockConn = SafeDisconnect(Internal.AfkClockConn)
         for _, c in ipairs(Internal.GlobalConns) do SafeDisconnect(c) end
         table.clear(Internal.GlobalConns)
         if ScreenGui and ScreenGui.Parent then ScreenGui:Destroy() end
@@ -3074,7 +3414,13 @@ function Library:CreateWindow(Config)
             }, Btn)
             AddCorner(Tag, 6); table.insert(Registry.SecondaryTextObjs, Tag)
 
-            Btn.MouseButton1Click:Connect(function()
+                        -- PATCH 1: External GUI Auto-Front Boost + Touch-Safe Activated + Error Catch
+            local LastBtnClick = 0
+            local function FireExternalSafeButton()
+                local Now = os.clock()
+                if Now - LastBtnClick < 0.22 then return end
+                LastBtnClick = Now
+
                 PlayUISound("Click", 1.1)
                 Tween(Btn, 0.08, {BackgroundColor3 = Theme.CardHover})
                 Tween(Stroke, 0.08, {Color = Theme.AccentSecondary})
@@ -3082,8 +3428,90 @@ function Library:CreateWindow(Config)
                     Tween(Btn, 0.14, {BackgroundColor3 = Theme.CardBg})
                     Tween(Stroke, 0.14, {Color = Theme.Stroke})
                 end)
-                if type(Opts.Callback) == "function" then task.spawn(Opts.Callback) end
-            end)
+
+                if type(Opts.Callback) ~= "function" then return end
+
+                -- Snapshot existing ScreenGuis before running script loader
+                local Roots = {}
+                local gParent = GetGuiParent()
+                if gParent then table.insert(Roots, gParent) end
+                if CoreGui and CoreGui ~= gParent then table.insert(Roots, CoreGui) end
+                local pGui = LocalPlayer:FindFirstChild("PlayerGui")
+                if pGui and pGui ~= gParent then table.insert(Roots, pGui) end
+
+                local Existing = {}
+                for _, Root in ipairs(Roots) do
+                    pcall(function()
+                        for _, Obj in ipairs(Root:GetChildren()) do
+                            if Obj:IsA("ScreenGui") then Existing[Obj] = true end
+                        end
+                    end)
+                end
+
+                -- Watch for any newly spawned external GUI for 3 seconds and bring it to front!
+                task.spawn(function()
+                    local WatchStart = os.clock()
+                    while os.clock() - WatchStart < 3.0 do
+                        for _, Root in ipairs(Roots) do
+                            pcall(function()
+                                for _, Obj in ipairs(Root:GetChildren()) do
+                                    if Obj:IsA("ScreenGui") and not Existing[Obj] and not string.find(Obj.Name, "^SidUltimate") then
+                                        Existing[Obj] = true
+                                        Obj.Enabled = true
+                                        if Obj.DisplayOrder < 150 then
+                                            Obj.DisplayOrder = 150
+                                        end
+                                    end
+                                end
+                            end)
+                        end
+                        task.wait(0.12)
+                    end
+                end)
+
+                -- Execute callback safely and show error toast if script fails
+                task.spawn(function()
+                    local ok, err = pcall(Opts.Callback)
+                    if not ok then
+                        warn("[Sid Ultimate Button Error - " .. NameStr .. "]:", err)
+                        Library:Notify({
+                            Title = "Loader Error: " .. NameStr,
+                            Content = tostring(err),
+                            Color = Theme.Danger,
+                            Duration = 4.0
+                        })
+                    end
+                end)
+            end
+
+            Btn.Activated:Connect(FireExternalSafeButton)
+
+            if not IsSystemTab then
+                local PinB = Make("TextButton", {
+                    Size = UDim2.new(0, 26, 0, 18), Position = UDim2.new(1, -78, 0.5, -9),
+                    BackgroundColor3 = Theme.InputBg, BackgroundTransparency = 0.2,
+                    Font = Enum.Font.GothamBold, TextSize = 8, TextColor3 = Theme.TextMuted,
+                    Text = "PIN", AutoButtonColor = false, ZIndex = 9
+                }, Btn)
+                AddCorner(PinB, 5)
+
+                Internal.PinnableRegistry[NameStr] = {
+                    Kind = "Button",
+                    Name = NameStr,
+                    Fire = FireExternalSafeButton,
+                    UpdatePinVisual = function(IsPinned)
+                        if PinB and PinB.Parent then
+                            PinB.BackgroundColor3 = IsPinned and Color3.fromRGB(255, 190, 45) or Theme.InputBg
+                            PinB.TextColor3 = IsPinned and Color3.fromRGB(16, 18, 26) or Theme.TextMuted
+                        end
+                    end
+                }
+                PinB.MouseButton1Click:Connect(function()
+                    PlayUISound("Click", 1.15)
+                    if Internal.TogglePinItemFn then Internal.TogglePinItemFn(NameStr) end
+                end)
+            end
+
             return {Set = function(_, NewName) TitleLbl.Text = tostring(NewName) end}
         end
 
@@ -3120,6 +3548,26 @@ function Library:CreateWindow(Config)
             }, SwitchBg)
             AddCorner(Knob, 7)
 
+            -- PATCH 3B: Micro PIN & FLT Shortcut Buttons on User Toggles
+            local PinBtn, FltBtn = nil, nil
+            if not IsSystemTab then
+                PinBtn = Make("TextButton", {
+                    Size = UDim2.new(0, 26, 0, 18), Position = UDim2.new(1, -82, 0.5, -9),
+                    BackgroundColor3 = Theme.InputBg, BackgroundTransparency = 0.2,
+                    Font = Enum.Font.GothamBold, TextSize = 8, TextColor3 = Theme.TextMuted,
+                    Text = "PIN", AutoButtonColor = false, ZIndex = 9
+                }, Card)
+                AddCorner(PinBtn, 5)
+
+                FltBtn = Make("TextButton", {
+                    Size = UDim2.new(0, 26, 0, 18), Position = UDim2.new(1, -112, 0.5, -9),
+                    BackgroundColor3 = Theme.InputBg, BackgroundTransparency = 0.2,
+                    Font = Enum.Font.GothamBold, TextSize = 8, TextColor3 = Theme.TextMuted,
+                    Text = "FLT", AutoButtonColor = false, ZIndex = 9
+                }, Card)
+                AddCorner(FltBtn, 5)
+            end
+
             local ToggleObj = {CurrentValue = State}
             local function UpdateVisual(Val, Instant)
                 local Dur = Instant and 0 or 0.14
@@ -3136,6 +3584,11 @@ function Library:CreateWindow(Config)
                 NewVal = (NewVal == true)
                 State = NewVal; ToggleObj.CurrentValue = State
                 UpdateVisual(State, Internal.IsLoadingConfig)
+                if not IsSystemTab then
+                    Internal.ActiveToggleStates[NameStr] = State
+                    if Internal.RefreshActiveHudFn then Internal.RefreshActiveHudFn() end
+                    if Internal.SyncToggleExternalsFn then Internal.SyncToggleExternalsFn(NameStr, State) end
+                end
                 if type(Opts.Callback) == "function" then task.spawn(Opts.Callback, State) end
                 Library:SaveConfiguration()
             end
@@ -3148,6 +3601,39 @@ function Library:CreateWindow(Config)
             if FlagName then
                 Library.Flags[FlagName] = ToggleObj
                 Internal.DefaultValues[FlagName] = State
+            end
+            if not IsSystemTab then
+                Internal.ActiveToggleStates[NameStr] = State
+                Internal.PinnableRegistry[NameStr] = {
+                    Kind = "Toggle",
+                    Name = NameStr,
+                    GetState = function() return State end,
+                    Toggle = function() ToggleObj:Set(not State) end,
+                    UpdatePinVisual = function(IsPinned)
+                        if PinBtn and PinBtn.Parent then
+                            PinBtn.BackgroundColor3 = IsPinned and Color3.fromRGB(255, 190, 45) or Theme.InputBg
+                            PinBtn.TextColor3 = IsPinned and Color3.fromRGB(16, 18, 26) or Theme.TextMuted
+                        end
+                    end,
+                    UpdateFloatVisual = function(IsFloating)
+                        if FltBtn and FltBtn.Parent then
+                            FltBtn.BackgroundColor3 = IsFloating and Theme.AccentSecondary or Theme.InputBg
+                            FltBtn.TextColor3 = IsFloating and Color3.fromRGB(14, 18, 28) or Theme.TextMuted
+                        end
+                    end
+                }
+                if PinBtn then
+                    PinBtn.MouseButton1Click:Connect(function()
+                        PlayUISound("Click", 1.15)
+                        if Internal.TogglePinItemFn then Internal.TogglePinItemFn(NameStr) end
+                    end)
+                end
+                if FltBtn then
+                    FltBtn.MouseButton1Click:Connect(function()
+                        PlayUISound("Click", 1.15)
+                        if Internal.ToggleFloatingBtnFn then Internal.ToggleFloatingBtnFn(NameStr) end
+                    end)
+                end
             end
             return ToggleObj
         end
@@ -3746,8 +4232,594 @@ function Library:CreateWindow(Config)
         end
     end
 
+    -- ==========================================
+    -- PATCH 3: ⭐ PINNED TAB + FLOATING QUICK-TOGGLES
+    -- ==========================================
+    local _, PinnedPage = CreateTabInternal("⭐ Pinned", 0, true)
+
+    local FloatingHolder = Make("Frame", {
+        Name = "FloatingQuickButtonsHolder",
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundTransparency = 1,
+        ZIndex = 55
+    }, ScreenGui)
+
+    local PinnedMirrorUpdaters = {}
+
+    local function RebuildPinnedPage()
+        for _, Child in ipairs(PinnedPage:GetChildren()) do
+            if Child:IsA("GuiObject") then Child:Destroy() end
+        end
+        table.clear(PinnedMirrorUpdaters)
+
+        local Count = 0
+        for _, KeyName in ipairs(Internal.PinnedKeys) do
+            local Entry = Internal.PinnableRegistry[KeyName]
+            if Entry then
+                Count = Count + 1
+
+                if Entry.Kind == "Toggle" then
+                    local State = Entry.GetState()
+                    local Card = Make("TextButton", {
+                        Size = UDim2.new(1, 0, 0, 36),
+                        BackgroundColor3 = Theme.CardBg,
+                        BackgroundTransparency = GetSurfaceSpec(LooksState.SurfaceMode).Card,
+                        Text = "", AutoButtonColor = false, ZIndex = 7
+                    }, PinnedPage)
+                    AddCorner(Card, 9)
+                    local Stroke = AddStroke(Card, State and Theme.Accent or Theme.Stroke, 1, 0.35)
+                    table.insert(Registry.Cards, Card)
+
+                    Make("TextLabel", {
+                        Size = UDim2.new(1, -102, 1, 0), Position = UDim2.new(0, 12, 0, 0), BackgroundTransparency = 1,
+                        Font = Enum.Font.GothamSemibold, TextSize = 12, TextColor3 = Theme.TextPrimary,
+                        TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
+                        Text = Entry.Name, ZIndex = 8
+                    }, Card)
+
+                    local UnpinBtn = Make("TextButton", {
+                        Size = UDim2.new(0, 26, 0, 18), Position = UDim2.new(1, -84, 0.5, -9),
+                        BackgroundColor3 = Color3.fromRGB(55, 24, 32), Font = Enum.Font.GothamBold,
+                        TextSize = 9, TextColor3 = Theme.Danger, Text = "DEL", AutoButtonColor = false, ZIndex = 9
+                    }, Card)
+                    AddCorner(UnpinBtn, 5)
+
+                    local SwitchBg = Make("Frame", {
+                        Size = UDim2.new(0, 40, 0, 20), Position = UDim2.new(1, -50, 0.5, -10),
+                        BackgroundColor3 = State and Theme.Accent or Theme.ToggleOff, BorderSizePixel = 0, ZIndex = 8
+                    }, Card)
+                    AddCorner(SwitchBg, 10)
+
+                    local Knob = Make("Frame", {
+                        Size = UDim2.new(0, 14, 0, 14),
+                        Position = State and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7),
+                        BackgroundColor3 = Color3.fromRGB(255, 255, 255), BorderSizePixel = 0, ZIndex = 9
+                    }, SwitchBg)
+                    AddCorner(Knob, 7)
+
+                    PinnedMirrorUpdaters[KeyName] = function(NewVal)
+                        Tween(SwitchBg, 0.14, {BackgroundColor3 = NewVal and Theme.Accent or Theme.ToggleOff})
+                        Tween(Knob, 0.14, {Position = NewVal and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7)})
+                        Tween(Stroke, 0.14, {Color = NewVal and Theme.Accent or Theme.Stroke})
+                    end
+
+                    Card.MouseButton1Click:Connect(function()
+                        PlayUISound("Toggle", Entry.GetState() and 0.95 or 1.2)
+                        Entry.Toggle()
+                    end)
+                    UnpinBtn.MouseButton1Click:Connect(function()
+                        PlayUISound("Click", 0.9)
+                        Internal.TogglePinItemFn(KeyName)
+                    end)
+
+                elseif Entry.Kind == "Button" then
+                    local Btn = Make("TextButton", {
+                        Size = UDim2.new(1, 0, 0, 34),
+                        BackgroundColor3 = Theme.CardBg,
+                        BackgroundTransparency = GetSurfaceSpec(LooksState.SurfaceMode).Card,
+                        Text = "", AutoButtonColor = false, ZIndex = 7
+                    }, PinnedPage)
+                    AddCorner(Btn, 9)
+                    AddStroke(Btn, Theme.Stroke, 1, 0.35)
+                    table.insert(Registry.Cards, Btn)
+
+                    Make("TextLabel", {
+                        Size = UDim2.new(1, -94, 1, 0), Position = UDim2.new(0, 12, 0, 0), BackgroundTransparency = 1,
+                        Font = Enum.Font.GothamSemibold, TextSize = 12, TextColor3 = Theme.TextPrimary,
+                        TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
+                        Text = Entry.Name, ZIndex = 8
+                    }, Btn)
+
+                    local UnpinBtn = Make("TextButton", {
+                        Size = UDim2.new(0, 26, 0, 18), Position = UDim2.new(1, -80, 0.5, -9),
+                        BackgroundColor3 = Color3.fromRGB(55, 24, 32), Font = Enum.Font.GothamBold,
+                        TextSize = 9, TextColor3 = Theme.Danger, Text = "DEL", AutoButtonColor = false, ZIndex = 9
+                    }, Btn)
+                    AddCorner(UnpinBtn, 5)
+
+                    local RunTag = Make("TextLabel", {
+                        Size = UDim2.new(0, 36, 0, 18), Position = UDim2.new(1, -46, 0.5, -9),
+                        BackgroundColor3 = Theme.Accent, BackgroundTransparency = 0.78,
+                        Font = Enum.Font.GothamBold, TextSize = 10, TextColor3 = Theme.AccentSecondary, Text = "RUN", ZIndex = 8
+                    }, Btn)
+                    AddCorner(RunTag, 6)
+
+                    Btn.Activated:Connect(function() Entry.Fire() end)
+                    UnpinBtn.MouseButton1Click:Connect(function()
+                        PlayUISound("Click", 0.9)
+                        Internal.TogglePinItemFn(KeyName)
+                    end)
+                end
+            end
+        end
+
+        if Count == 0 then
+            local Empty = Make("Frame", {
+                Size = UDim2.new(1, 0, 0, 62), BackgroundColor3 = Theme.CardBg,
+                BackgroundTransparency = GetSurfaceSpec(LooksState.SurfaceMode).Card, ZIndex = 7
+            }, PinnedPage)
+            AddCorner(Empty, 9); AddStroke(Empty, Theme.Stroke, 1, 0.45)
+            Make("TextLabel", {
+                Size = UDim2.new(1, -20, 1, 0), Position = UDim2.new(0, 10, 0, 0), BackgroundTransparency = 1,
+                Font = Enum.Font.GothamMedium, TextSize = 11, TextColor3 = Theme.TextMuted, TextWrapped = true,
+                Text = "Koi feature pinned nahi hai.\nKisi bhi Toggle ya Button par 'PIN' tap karo — wo yahan save ho jayega!", ZIndex = 8
+            }, Empty)
+        end
+    end
+
+    -- Persist Pinned Items in Config Automatically
+    local PinnedFlagObj = {CurrentValue = {}}
+    function PinnedFlagObj:Set(SavedList)
+        table.clear(Internal.PinnedKeys)
+        if type(SavedList) == "table" then
+            for _, k in ipairs(SavedList) do
+                table.insert(Internal.PinnedKeys, tostring(k))
+            end
+        end
+        PinnedFlagObj.CurrentValue = Internal.PinnedKeys
+        for KeyName, Entry in pairs(Internal.PinnableRegistry) do
+            if Entry.UpdatePinVisual then
+                Entry.UpdatePinVisual(table.find(Internal.PinnedKeys, KeyName) ~= nil)
+            end
+        end
+        RebuildPinnedPage()
+    end
+    Library.Flags["SidUI_PinnedItems"] = PinnedFlagObj
+    Internal.DefaultValues["SidUI_PinnedItems"] = {}
+
+    Internal.TogglePinItemFn = function(KeyName)
+        local Idx = table.find(Internal.PinnedKeys, KeyName)
+        local NowPinned = false
+        if Idx then
+            table.remove(Internal.PinnedKeys, Idx)
+            NowPinned = false
+        else
+            table.insert(Internal.PinnedKeys, KeyName)
+            NowPinned = true
+        end
+        PinnedFlagObj.CurrentValue = Internal.PinnedKeys
+        local Entry = Internal.PinnableRegistry[KeyName]
+        if Entry and Entry.UpdatePinVisual then Entry.UpdatePinVisual(NowPinned) end
+        RebuildPinnedPage()
+        Library:SaveConfiguration()
+    end
+
+    -- Floating Quick-Toggle Shortcut Spawner (Draggable On-Screen Pill)
+    Internal.ToggleFloatingBtnFn = function(KeyName)
+        local Existing = Internal.FloatingButtons[KeyName]
+        if Existing then
+            if Existing.Frame and Existing.Frame.Parent then Existing.Frame:Destroy() end
+            Internal.FloatingButtons[KeyName] = nil
+            local Entry = Internal.PinnableRegistry[KeyName]
+            if Entry and Entry.UpdateFloatVisual then Entry.UpdateFloatVisual(false) end
+            return
+        end
+
+        local Entry = Internal.PinnableRegistry[KeyName]
+        if not Entry or Entry.Kind ~= "Toggle" then return end
+
+        local ActiveCount = 0
+        for _ in pairs(Internal.FloatingButtons) do ActiveCount = ActiveCount + 1 end
+
+        local State = Entry.GetState()
+        local FloatBtn = Make("Frame", {
+            Name = "Float_" .. KeyName,
+            Size = UDim2.new(0, 114, 0, 32),
+            Position = UDim2.new(0, 18, 0.25, ActiveCount * 38),
+            BackgroundColor3 = Color3.fromRGB(14, 17, 26),
+            BackgroundTransparency = 0.20,
+            ZIndex = 56
+        }, FloatingHolder)
+        AddCorner(FloatBtn, 16)
+        local FStroke = AddStroke(FloatBtn, State and Theme.Success or Theme.Stroke, 1.3, 0.20)
+
+        local Dot = Make("Frame", {
+            Size = UDim2.new(0, 8, 0, 8), Position = UDim2.new(0, 10, 0.5, -4),
+            BackgroundColor3 = State and Theme.Success or Theme.TextMuted, BorderSizePixel = 0, ZIndex = 57
+        }, FloatBtn)
+        AddCorner(Dot, 8)
+
+        Make("TextLabel", {
+            Size = UDim2.new(1, -42, 1, 0), Position = UDim2.new(0, 23, 0, 0), BackgroundTransparency = 1,
+            Font = Enum.Font.GothamBold, TextSize = 10, TextColor3 = Theme.TextPrimary,
+            TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
+            Text = Entry.Name, ZIndex = 57
+        }, FloatBtn)
+
+        local RemoveMini = Make("TextButton", {
+            Size = UDim2.new(0, 18, 0, 18), Position = UDim2.new(1, -22, 0.5, -9),
+            BackgroundColor3 = Color3.fromRGB(50, 22, 30), Font = Enum.Font.GothamBold,
+            TextSize = 9, TextColor3 = Theme.Danger, Text = "x", AutoButtonColor = false, ZIndex = 58
+        }, FloatBtn)
+        AddCorner(RemoveMini, 9)
+
+        RemoveMini.MouseButton1Click:Connect(function()
+            PlayUISound("Click", 0.9)
+            Internal.ToggleFloatingBtnFn(KeyName)
+        end)
+
+        -- Draggable + Tap to Toggle (drag >= 10px moves, tap < 10px toggles!)
+        local Dragging, ActiveIn, StartPos, FrameStart, Moved = false, nil, nil, nil, 0
+        FloatBtn.InputBegan:Connect(function(In)
+            if In.UserInputType == Enum.UserInputType.MouseButton1 or In.UserInputType == Enum.UserInputType.Touch then
+                Dragging = true; ActiveIn = In; StartPos = In.Position; FrameStart = FloatBtn.Position; Moved = 0
+            end
+        end)
+        TrackConn(UserInputService.InputChanged:Connect(function(In)
+            if Dragging and (In == ActiveIn or In.UserInputType == Enum.UserInputType.MouseMovement) then
+                local Delta = In.Position - StartPos
+                Moved = Delta.Magnitude
+                FloatBtn.Position = UDim2.new(FrameStart.X.Scale, FrameStart.X.Offset + Delta.X, FrameStart.Y.Scale, FrameStart.Y.Offset + Delta.Y)
+            end
+        end))
+        TrackConn(UserInputService.InputEnded:Connect(function(In)
+            if Dragging and (In == ActiveIn or In.UserInputType == Enum.UserInputType.MouseButton1 or In.UserInputType == Enum.UserInputType.Touch) then
+                Dragging = false; ActiveIn = nil
+                if Moved < 10 then
+                    PlayUISound("Toggle", Entry.GetState() and 0.95 or 1.2)
+                    Entry.Toggle()
+                end
+            end
+        end))
+
+        Internal.FloatingButtons[KeyName] = {
+            Frame = FloatBtn,
+            UpdateVisual = function(NewVal)
+                Dot.BackgroundColor3 = NewVal and Theme.Success or Theme.TextMuted
+                FStroke.Color = NewVal and Theme.Success or Theme.Stroke
+            end
+        }
+        if Entry.UpdateFloatVisual then Entry.UpdateFloatVisual(true) end
+    end
+
+    Internal.SyncToggleExternalsFn = function(KeyName, NewVal)
+        if PinnedMirrorUpdaters[KeyName] then pcall(PinnedMirrorUpdaters[KeyName], NewVal) end
+        local Flt = Internal.FloatingButtons[KeyName]
+        if Flt and Flt.UpdateVisual then pcall(Flt.UpdateVisual, NewVal) end
+    end
+
+    RebuildPinnedPage()
+
+    -- ==========================================
+    -- PATCH 4: ⚡ ACTIVE FEATURES HUD (LIVE MINI PILL)
+    -- ==========================================
+    local ActiveHudFrame = Make("Frame", {
+        Name = "ActiveFeaturesHUD",
+        Size = UDim2.new(0, 250, 0, 26),
+        Position = UDim2.new(0.5, 0, 0, 44),
+        AnchorPoint = Vector2.new(0.5, 0),
+        BackgroundColor3 = Color3.fromRGB(14, 17, 26),
+        BackgroundTransparency = 0.26,
+        Visible = false,
+        ZIndex = 58
+    }, ScreenGui)
+    AddCorner(ActiveHudFrame, 13)
+    AddStroke(ActiveHudFrame, Theme.AccentSecondary, 1.1, 0.35)
+
+    local HudDot = Make("Frame", {
+        Size = UDim2.new(0, 7, 0, 7), Position = UDim2.new(0, 10, 0.5, -3),
+        BackgroundColor3 = Theme.Success, BorderSizePixel = 0, ZIndex = 59
+    }, ActiveHudFrame)
+    AddCorner(HudDot, 7)
+
+    local HudLabel = Make("TextLabel", {
+        Size = UDim2.new(1, -28, 1, 0), Position = UDim2.new(0, 22, 0, 0), BackgroundTransparency = 1,
+        Font = Enum.Font.GothamSemibold, TextSize = 10, TextColor3 = Theme.TextPrimary,
+        TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
+        Text = "ACTIVE: None", ZIndex = 59
+    }, ActiveHudFrame)
+
+    -- Draggable + Tap to Open UI
+    do
+        local Dragging, ActiveIn, StartPos, FrameStart, Moved = false, nil, nil, nil, 0
+        ActiveHudFrame.InputBegan:Connect(function(In)
+            if In.UserInputType == Enum.UserInputType.MouseButton1 or In.UserInputType == Enum.UserInputType.Touch then
+                Dragging = true; ActiveIn = In; StartPos = In.Position; FrameStart = ActiveHudFrame.Position; Moved = 0
+            end
+        end)
+        TrackConn(UserInputService.InputChanged:Connect(function(In)
+            if Dragging and (In == ActiveIn or In.UserInputType == Enum.UserInputType.MouseMovement) then
+                local Delta = In.Position - StartPos
+                Moved = Delta.Magnitude
+                ActiveHudFrame.Position = UDim2.new(FrameStart.X.Scale, FrameStart.X.Offset + Delta.X, FrameStart.Y.Scale, FrameStart.Y.Offset + Delta.Y)
+            end
+        end))
+        TrackConn(UserInputService.InputEnded:Connect(function(In)
+            if Dragging and (In == ActiveIn or In.UserInputType == Enum.UserInputType.MouseButton1 or In.UserInputType == Enum.UserInputType.Touch) then
+                Dragging = false; ActiveIn = nil
+                if Moved < 10 and not IsWindowVisible then AnimateShowUI(false) end
+            end
+        end))
+    end
+
+    Internal.RefreshActiveHudFn = function()
+        local ActiveList = {}
+        for Name, IsOn in pairs(Internal.ActiveToggleStates) do
+            if IsOn == true then table.insert(ActiveList, Name) end
+        end
+        table.sort(ActiveList)
+
+        if LooksState.ShowActiveHUD and #ActiveList > 0 then
+            HudLabel.Text = string.format("ACTIVE (%d): %s", #ActiveList, table.concat(ActiveList, " • "))
+            ActiveHudFrame.Visible = true
+        else
+            ActiveHudFrame.Visible = false
+        end
+    end
+
+    -- ==========================================
+    -- PATCH 5: 🔋 PERMANENT 20-MIN ANTI-AFK + OLED SCREEN SAVER
+    -- ==========================================
+    local VirtualUser = game:GetService("VirtualUser")
+
+    local function SetupAntiAfk()
+        Internal.AntiAfkConn = SafeDisconnect(Internal.AntiAfkConn)
+        if not LooksState.AntiAfkEnabled then return end
+
+        -- Method 1: Official VirtualUser pulse on Idled event (prevents 20-min Roblox kick)
+        Internal.AntiAfkConn = LocalPlayer.Idled:Connect(function()
+            if not LooksState.AntiAfkEnabled then return end
+            pcall(function()
+                VirtualUser:CaptureController()
+                VirtualUser:ClickButton2(Vector2.new())
+            end)
+        end)
+
+        -- Method 2: Backup disable idle-kick listeners if executor supports getconnections
+        pcall(function()
+            if getconnections then
+                for _, conn in ipairs(getconnections(LocalPlayer.Idled)) do
+                    if conn ~= Internal.AntiAfkConn and conn.Disable then
+                        conn:Disable()
+                    end
+                end
+            end
+        end)
+    end
+    SetupAntiAfk()
+
+    -- OLED Black Screen Power Saver Overlay
+    local AfkOverlay = Make("Frame", {
+        Name = "SidAfkPowerSaver",
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundColor3 = Color3.fromRGB(4, 5, 8),
+        BackgroundTransparency = 0,
+        BorderSizePixel = 0,
+        Visible = false,
+        ZIndex = 200
+    }, ScreenGui)
+
+    local AfkTitle = Make("TextLabel", {
+        Size = UDim2.new(1, 0, 0, 24), Position = UDim2.new(0, 0, 0.30, 0), BackgroundTransparency = 1,
+        Font = Enum.Font.GothamBlack, TextSize = 15, TextColor3 = Theme.AccentSecondary,
+        Text = "SID ULTIMATE  •  AFK POWER SAVER", ZIndex = 201
+    }, AfkOverlay)
+    table.insert(Registry.SecondaryTextObjs, AfkTitle)
+
+    local AfkClock = Make("TextLabel", {
+        Size = UDim2.new(1, 0, 0, 48), Position = UDim2.new(0, 0, 0.38, 0), BackgroundTransparency = 1,
+        Font = Enum.Font.GothamBlack, TextSize = 38, TextColor3 = Color3.fromRGB(245, 248, 255),
+        Text = "00:00:00", ZIndex = 201
+    }, AfkOverlay)
+
+    local AfkStats = Make("TextLabel", {
+        Size = UDim2.new(1, 0, 0, 22), Position = UDim2.new(0, 0, 0.54, 0), BackgroundTransparency = 1,
+        Font = Enum.Font.GothamSemibold, TextSize = 12, TextColor3 = Theme.Success,
+        Text = "Anti-AFK: PROTECTED  |  Session: 00:00:00  |  Active: 0", ZIndex = 201
+    }, AfkOverlay)
+
+    local WakeBtn = Make("TextButton", {
+        Size = UDim2.new(0, 160, 0, 36), Position = UDim2.new(0.5, -80, 0.68, 0),
+        BackgroundColor3 = Color3.fromRGB(20, 24, 36), Font = Enum.Font.GothamBold,
+        TextSize = 12, TextColor3 = Theme.TextPrimary, Text = "TAP TO WAKE SCREEN",
+        AutoButtonColor = false, ZIndex = 202
+    }, AfkOverlay)
+    AddCorner(WakeBtn, 18); AddStroke(WakeBtn, Theme.AccentSecondary, 1.3, 0.25)
+
+    local function CloseAfkSaver()
+        PlayUISound("Open", 1.1)
+        AfkOverlay.Visible = false
+        Internal.AfkClockConn = SafeDisconnect(Internal.AfkClockConn)
+        pcall(function() RunService:Set3dRenderingEnabled(true) end)
+    end
+
+    WakeBtn.MouseButton1Click:Connect(CloseAfkSaver)
+
+    Internal.OpenAfkSaverFn = function()
+        PlayUISound("Click", 0.9)
+        AfkOverlay.Visible = true
+        pcall(function() RunService:Set3dRenderingEnabled(false) end)
+
+        Internal.AfkClockConn = SafeDisconnect(Internal.AfkClockConn)
+        local Acc = 1
+        Internal.AfkClockConn = RunService.Heartbeat:Connect(function(dt)
+            if not AfkOverlay.Visible then
+                CloseAfkSaver()
+                return
+            end
+            Acc = Acc + dt
+            if Acc >= 0.5 then
+                Acc = 0
+                AfkClock.Text = os.date("%I:%M:%S %p")
+                local El = math.floor(os.clock() - SESSION_START_TIME)
+                local h, m, s = math.floor(El / 3600), math.floor((El % 3600) / 60), El % 60
+                local OnCount = 0
+                for _, v in pairs(Internal.ActiveToggleStates) do if v then OnCount = OnCount + 1 end end
+                local Ping = 0
+                pcall(function() Ping = math.floor(StatsService.Network.ServerStatsItem["Data Ping"]:GetValue() + 0.5) end)
+                AfkStats.Text = string.format("Anti-AFK: %s  |  Session: %02d:%02d:%02d  |  Active: %d  |  %dms",
+                    LooksState.AntiAfkEnabled and "PROTECTED" or "OFF", h, m, s, OnCount, Ping)
+            end
+        end)
+    end
+
+    -- ==========================================
+    -- PATCH 6B: SHOW UI BUTTON CUSTOMIZER ENGINE (100% OPTIONAL)
+    -- ==========================================
+    local ShowUIPositions = {
+        ["Top-Center (Default)"] = {Pos = UDim2.new(0.5, 0, 0, 10),   Anchor = Vector2.new(0.5, 0)},
+        ["Top-Left"]             = {Pos = UDim2.new(0, 14, 0, 12),    Anchor = Vector2.new(0, 0)},
+        ["Top-Right"]            = {Pos = UDim2.new(1, -14, 0, 12),   Anchor = Vector2.new(1, 0)},
+        ["Middle-Left"]          = {Pos = UDim2.new(0, 12, 0.5, 0),   Anchor = Vector2.new(0, 0.5)},
+        ["Middle-Right"]         = {Pos = UDim2.new(1, -12, 0.5, 0),  Anchor = Vector2.new(1, 0.5)},
+        ["Bottom-Left"]          = {Pos = UDim2.new(0, 14, 1, -14),   Anchor = Vector2.new(0, 1)},
+        ["Bottom-Right"]         = {Pos = UDim2.new(1, -14, 1, -14),  Anchor = Vector2.new(1, 1)},
+    }
+
+    local ShowUIShapes = {
+        ["Pill (Default)"] = {Size = UDim2.new(0, 96, 0, 28), Radius = 14, Short = false},
+        ["Circle (Icon)"]  = {Size = UDim2.new(0, 44, 0, 44), Radius = 22, Short = true},
+        ["Rounded Square"] = {Size = UDim2.new(0, 50, 0, 44), Radius = 12, Short = true},
+        ["Capsule Slim"]   = {Size = UDim2.new(0, 86, 0, 22), Radius = 11, Short = false},
+        ["Sharp Cyber"]    = {Size = UDim2.new(0, 96, 0, 28), Radius = 3,  Short = false},
+    }
+
+    local ShowUIColors = {
+        ["Dark Glass"]    = {Bg = Color3.fromRGB(14, 17, 26),   Text = Color3.fromRGB(245, 248, 255)},
+        ["Neon Cyan"]     = {Bg = Color3.fromRGB(0, 175, 225),  Text = Color3.fromRGB(10, 14, 22)},
+        ["Crimson Red"]   = {Bg = Color3.fromRGB(220, 45, 75),  Text = Color3.fromRGB(255, 255, 255)},
+        ["Royal Gold"]    = {Bg = Color3.fromRGB(235, 175, 35), Text = Color3.fromRGB(15, 16, 22)},
+        ["Emerald Green"] = {Bg = Color3.fromRGB(0, 195, 120),  Text = Color3.fromRGB(10, 18, 16)},
+        ["Pure White"]    = {Bg = Color3.fromRGB(242, 245, 255),Text = Color3.fromRGB(16, 18, 26)},
+    }
+
+    Internal.ApplyShowUIFn = function()
+        if not LooksState.ShowUICustomEnabled then
+            -- Classic Default Mode
+            ShowUIBtn.AnchorPoint = Vector2.new(0.5, 0)
+            ShowUIBtn.Position = UDim2.new(0.5, 0, 0, 10)
+            ShowUIBtn.Size = UDim2.new(0, 96, 0, 28)
+            ShowUICorner.CornerRadius = UDim.new(0, 14)
+            ShowUIScaleObj.Scale = 1.0
+            ShowUIBtn.BackgroundColor3 = Color3.fromRGB(14, 17, 26)
+            ShowUIBtn.BackgroundTransparency = 0.42
+            ShowUIBtn.TextColor3 = Color3.fromRGB(245, 248, 255)
+            ShowUIBtn.Text = "Show UI"
+            ShowUIStroke.Color = Theme.AccentSecondary
+            return
+        end
+
+        -- Apply Shape
+        local Sh = ShowUIShapes[LooksState.ShowUIShape] or ShowUIShapes["Pill (Default)"]
+        ShowUIBtn.Size = Sh.Size
+        ShowUICorner.CornerRadius = UDim.new(0, Sh.Radius)
+
+        -- Apply Position (unless Free Draggable keeps user's dragged spot)
+        local PosSpec = ShowUIPositions[LooksState.ShowUIPosition]
+        if PosSpec then
+            ShowUIBtn.AnchorPoint = PosSpec.Anchor
+            ShowUIBtn.Position = PosSpec.Pos
+        end
+
+        -- Apply Scale & Transparency
+        ShowUIScaleObj.Scale = math.clamp(tonumber(LooksState.ShowUISize) or 1.0, 0.70, 1.50)
+        ShowUIBtn.BackgroundTransparency = math.clamp(tonumber(LooksState.ShowUITransparency) or 0.42, 0, 0.85)
+
+        -- Apply Label Text
+        local RawTxt = tostring(LooksState.ShowUIText or "Show UI")
+        if #RawTxt == 0 then RawTxt = "Show UI" end
+        ShowUIBtn.Text = Sh.Short and string.sub(RawTxt, 1, 2):upper() or RawTxt
+
+        -- Apply Color
+        local Mode = LooksState.ShowUIColorMode
+        if Mode == "Match Theme" then
+            ShowUIBtn.BackgroundColor3 = Color3.fromRGB(14, 17, 26)
+            ShowUIBtn.TextColor3 = Theme.AccentSecondary
+            ShowUIStroke.Color = Theme.AccentSecondary
+        elseif Mode == "Custom Hex" then
+            local Col = ParseColorString(LooksState.ShowUICustomHex) or Theme.Accent
+            ShowUIBtn.BackgroundColor3 = Col
+            ShowUIBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            ShowUIStroke.Color = Col
+        else
+            local C = ShowUIColors[Mode] or ShowUIColors["Dark Glass"]
+            ShowUIBtn.BackgroundColor3 = C.Bg
+            ShowUIBtn.TextColor3 = C.Text
+            ShowUIStroke.Color = C.Bg
+        end
+    end
+
+    -- ==========================================
+    -- PATCH 7: 🎨 CORNER RADIUS, FLOWING BORDER & FONT STUDIO
+    -- ==========================================
+    local FontMap = {
+        ["Gotham (Default)"]   = Enum.Font.GothamSemibold,
+        ["Smooth (Fredoka)"]   = Enum.Font.FredokaOne,
+        ["Cyber Tech (Code)"]  = Enum.Font.Code,
+        ["Hacker (Mono)"]      = Enum.Font.RobotoMono,
+        ["Clean (Ubuntu)"]     = Enum.Font.Ubuntu,
+        ["Light (SourceSans)"] = Enum.Font.SourceSansSemibold,
+    }
+
+    Internal.ApplyRadiusFn = function(Val)
+        local MainR = math.clamp(tonumber(Val) or 18, 0, 24)
+        local CardR = math.clamp(math.floor(MainR * 0.55), 0, 14)
+        LooksState.CornerRadius = MainR
+
+        for _, c in ipairs(Registry.MainCorners) do
+            if c and c.Parent then c.CornerRadius = UDim.new(0, MainR) end
+        end
+        for _, c in ipairs(Registry.CardCorners) do
+            if c and c.Parent then c.CornerRadius = UDim.new(0, CardR) end
+        end
+    end
+
+    Internal.ApplyFontFn = function(FontChoice)
+        local TargetFont = FontMap[FontChoice] or Enum.Font.GothamSemibold
+        LooksState.UIFont = FontChoice
+        for _, Txt in ipairs(Registry.AllTextObjs) do
+            if Txt and Txt.Parent then
+                pcall(function() Txt.Font = TargetFont end)
+            end
+        end
+    end
+
+    Internal.ToggleBorderFlowFn = function(Enabled)
+        LooksState.FlowingBorder = (Enabled == true)
+        Internal.BorderFlowConn = SafeDisconnect(Internal.BorderFlowConn)
+        if not LooksState.FlowingBorder then return end
+
+        Internal.BorderFlowConn = RunService.Heartbeat:Connect(function(dt)
+            if not LooksState.FlowingBorder then return end
+            dt = math.min(dt, 0.05)
+            if MainFrame.Visible and MainStrokeGrad and MainStrokeGrad.Parent then
+                MainStrokeGrad.Rotation = (MainStrokeGrad.Rotation + dt * 85) % 360
+            end
+            if ShowUIBtn.Visible and ShowUIGrad and ShowUIGrad.Parent then
+                ShowUIGrad.Rotation = (ShowUIGrad.Rotation + dt * 85) % 360
+            end
+        end)
+    end
+
     -- Pre-Registered "Looks" Tab (Always Last: LayoutOrder = 9999)
-    local LooksTab, LooksPage = CreateTabInternal("Looks", 9999, true)
+        local LooksTab, LooksPage = CreateTabInternal("✨ Looks", 9999, true)
+    -- Give ✨ Looks sidebar tab a sleek glowing accent border
+    for _, Rec in ipairs(Tabs) do
+        if Rec.Name == "✨ Looks" and Rec.Button then
+            AddStroke(Rec.Button, Theme.AccentSecondary, 1, 0.55)
+        end
+    end
+
     PopulateLooksTab(LooksTab, LooksPage, {
         ApplyScale = function(NewScale)
             if IsWindowVisible then Tween(MainUIScale, 0.14, {Scale = NewScale})
