@@ -1163,7 +1163,7 @@ end
 -- LOAD RAYFIELD
 -- =======================
 local Rayfield = loadstring(
-    game:HttpGet("https://sirius.menu/rayfield")
+    game:HttpGet("https://raw.githubusercontent.com/golu321-xd/Dungeon-Heros/refs/heads/main/CustomUi.lua")
 )()
 
 -- =======================
