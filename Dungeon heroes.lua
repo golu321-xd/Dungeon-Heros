@@ -1943,6 +1943,1689 @@ end
 })
 end
 
+local TargetTab = Window:CreateTab("Daily Quests")
+-- local TargetTab = UtilityTab
+
+TargetTab:CreateSection("Ultimate Auto Daily Quests V2 (Pro)")
+do
+    --====================================================
+    -- DUNGEON HEROES | ULTIMATE AUTO DAILY QUESTS V2
+    -- * Instant Event-Driven Scan & Claim (<0.15s)
+    -- * Auto-Pulls Missing Food / Gem Fragments / Trash from Bank
+    --   (Lowest Rarity First, Exact Count Needed, Auto-Pauses Bank Transfer)
+    -- * Precious Ruby Recipe: Red -> Green -> Red -> Red (24 Frags = 6 Gems)
+    -- * Nightmare (6) Routing: Last Story Dungeon for KillMob, Marthuun for Raid
+    -- * Cross-Teleport Auto ON/OFF: PetKillAura, AutoMobsToggle,
+    --   AutoTapChestUI, AutoPlayAgainToggle, AutoStartDungeonToggle
+    --====================================================
+
+    local Players = game:GetService("Players")
+    local RS = game:GetService("ReplicatedStorage")
+    local TweenService = game:GetService("TweenService")
+    local HttpService = game:GetService("HttpService")
+    local CoreGui = game:GetService("CoreGui")
+
+    local Player = Players.LocalPlayer
+    local Remotes = RS:WaitForChild("Remotes")
+    local ItemBankRemote = Remotes:WaitForChild("ItemBankTransfer")
+
+    local function SafeRequire(Inst)
+        if not Inst then return nil end
+        local ok, mod = pcall(require, Inst)
+        return ok and mod or nil
+    end
+
+    local Sys = {
+        Profile       = SafeRequire(RS.Systems:FindFirstChild("Profile")),
+        Items         = SafeRequire(RS.Systems:FindFirstChild("Items")),
+        Quests        = SafeRequire(RS.Systems:FindFirstChild("Quests")),
+        DailyRewards  = SafeRequire(RS.Systems:FindFirstChild("DailyRewards")),
+        ChestShop     = SafeRequire(RS.Systems:FindFirstChild("ChestShop")),
+        Gemstones     = SafeRequire(RS.Systems:FindFirstChild("Gemstones")),
+        StatRerolling = SafeRequire(RS.Systems:FindFirstChild("StatRerolling")),
+        Pets          = SafeRequire(RS.Systems:FindFirstChild("Pets")),
+        ItemSelling   = SafeRequire(RS.Systems:FindFirstChild("ItemSelling")),
+        Equipment     = SafeRequire(RS.Systems:FindFirstChild("Equipment")),
+        Parties       = SafeRequire(RS.Systems:FindFirstChild("Parties")),
+        QueueRings    = SafeRequire(RS.Systems:FindFirstChild("QueueRings")),
+        Dungeons      = SafeRequire(RS.Systems:FindFirstChild("Dungeons")),
+    }
+
+    -- ==========================================
+    -- COMPACT GLASSMORPHISM NOTIFICATION (TAP TO CLOSE)
+    -- ==========================================
+    local function ShowQuestNotify(TitleText, SubText, AccentColor, Duration)
+        task.spawn(function()
+            pcall(function()
+                local ShowTime = Duration or 2.8
+                local ThemeColor = AccentColor or Color3.fromRGB(0, 235, 160)
+                local ParentGui = (gethui and gethui()) or CoreGui or Player:WaitForChild("PlayerGui")
+
+                local OldGui = ParentGui:FindFirstChild("DH_DailyQuestGlassNotify")
+                if OldGui then OldGui:Destroy() end
+
+                local ScreenGui = Instance.new("ScreenGui")
+                ScreenGui.Name = "DH_DailyQuestGlassNotify"
+                ScreenGui.IgnoreGuiInset = true
+                ScreenGui.DisplayOrder = 999999
+                ScreenGui.Parent = ParentGui
+
+                local Card = Instance.new("Frame")
+                Card.Size = UDim2.new(0, 315, 0, 50)
+                Card.Position = UDim2.new(0.5, -157, 0, -68)
+                Card.BackgroundColor3 = Color3.fromRGB(16, 20, 30)
+                Card.BackgroundTransparency = 0.16
+                Card.BorderSizePixel = 0
+                Card.ClipsDescendants = true
+                Card.Parent = ScreenGui
+
+                local Corner = Instance.new("UICorner")
+                Corner.CornerRadius = UDim.new(0, 14)
+                Corner.Parent = Card
+
+                local Stroke = Instance.new("UIStroke")
+                Stroke.Color = ThemeColor
+                Stroke.Thickness = 1.2
+                Stroke.Transparency = 0.28
+                Stroke.Parent = Card
+
+                local Pill = Instance.new("Frame")
+                Pill.Size = UDim2.new(0, 4, 0, 28)
+                Pill.Position = UDim2.new(0, 9, 0.5, -14)
+                Pill.BackgroundColor3 = ThemeColor
+                Pill.BorderSizePixel = 0
+                Pill.Parent = Card
+
+                local PCorner = Instance.new("UICorner")
+                PCorner.CornerRadius = UDim.new(1, 0)
+                PCorner.Parent = Pill
+
+                local T = Instance.new("TextLabel")
+                T.Size = UDim2.new(1, -28, 0, 18)
+                T.Position = UDim2.new(0, 20, 0, 6)
+                T.BackgroundTransparency = 1
+                T.Font = Enum.Font.GothamBold
+                T.TextSize = 12
+                T.TextColor3 = ThemeColor
+                T.TextXAlignment = Enum.TextXAlignment.Left
+                T.TextTruncate = Enum.TextTruncate.AtEnd
+                T.Text = tostring(TitleText)
+                T.Parent = Card
+
+                local S = Instance.new("TextLabel")
+                S.Size = UDim2.new(1, -28, 0, 16)
+                S.Position = UDim2.new(0, 20, 0, 25)
+                S.BackgroundTransparency = 1
+                S.Font = Enum.Font.GothamMedium
+                S.TextSize = 11
+                S.TextColor3 = Color3.fromRGB(224, 232, 246)
+                S.TextXAlignment = Enum.TextXAlignment.Left
+                S.TextTruncate = Enum.TextTruncate.AtEnd
+                S.Text = tostring(SubText)
+                S.Parent = Card
+
+                local BarBg = Instance.new("Frame")
+                BarBg.Size = UDim2.new(1, 0, 0, 2)
+                BarBg.Position = UDim2.new(0, 0, 1, -2)
+                BarBg.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+                BarBg.BackgroundTransparency = 0.85
+                BarBg.BorderSizePixel = 0
+                BarBg.Parent = Card
+
+                local BarFill = Instance.new("Frame")
+                BarFill.Size = UDim2.new(1, 0, 1, 0)
+                BarFill.BackgroundColor3 = ThemeColor
+                BarFill.BorderSizePixel = 0
+                BarFill.Parent = BarBg
+
+                local DismissBtn = Instance.new("TextButton")
+                DismissBtn.Size = UDim2.new(1, 0, 1, 0)
+                DismissBtn.BackgroundTransparency = 1
+                DismissBtn.Text = ""
+                DismissBtn.ZIndex = 10
+                DismissBtn.Parent = Card
+
+                local Closed = false
+                local function CloseNow()
+                    if Closed then return end
+                    Closed = true
+                    if Card and Card.Parent then
+                        local out = TweenService:Create(Card, TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                            Position = UDim2.new(0.5, -157, 0, -68),
+                            BackgroundTransparency = 1
+                        })
+                        out:Play()
+                        out.Completed:Wait()
+                    end
+                    if ScreenGui and ScreenGui.Parent then ScreenGui:Destroy() end
+                end
+
+                DismissBtn.Activated:Connect(CloseNow)
+                DismissBtn.MouseButton1Click:Connect(CloseNow)
+
+                TweenService:Create(Card, TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+                    Position = UDim2.new(0.5, -157, 0, 14)
+                }):Play()
+                TweenService:Create(BarFill, TweenInfo.new(ShowTime, Enum.EasingStyle.Linear), {
+                    Size = UDim2.new(0, 0, 1, 0)
+                }):Play()
+
+                task.wait(ShowTime)
+                CloseNow()
+            end)
+        end)
+    end
+
+    -- ==========================================
+    -- CONFIG, STATE & FLAG CONTROLLER
+    -- ==========================================
+    local Cfg = {
+        MasterEnabled      = false,
+        AutoClaimEnabled   = true,
+        IncludeWeeklyClaim = true,
+        DoLobbyQuests      = true,
+        AutoPullFromBank   = true,
+        DoTravelStuds      = true,
+        AllowSpendKeys     = true,
+        AllowSpendDust     = true,
+        DoDungeonQueue     = true,
+        AllowRaidQueue     = true,
+        AllowEventQueue    = true,
+        AutoManageCombat   = true,
+        MaxSafeTrashRarity = 3,
+        TargetDailyGoal    = 10,
+    }
+
+    local State = {
+        Busy = false,
+        ClaimBusy = false,
+        ManualOnce = false,
+        FailedCooldown = {},
+        LastQueueAttempt = 0,
+        StatusLabel = nil,
+        HookedQuestObjs = {},
+    }
+
+    -- Exact Flag Names from SidDungeonHeroes/SavedConfig.json
+    local CombatFlags = {
+        "PetKillAura",
+        "AutoMobsToggle",
+        "AutoTapChestUI",
+        "AutoPlayAgainToggle",
+        "AutoStartDungeonToggle",
+    }
+
+    local MARKER_FOLDER = "SidDungeonHeroes"
+    local MARKER_FILE   = MARKER_FOLDER .. "/.daily_combat_state.json"
+
+    local function SetStatus(Msg)
+        if State.StatusLabel and State.StatusLabel.Set then
+            pcall(function() State.StatusLabel:Set("Status: " .. tostring(Msg)) end)
+        end
+    end
+
+    local function GetProfile()
+        return Sys.Profile and Sys.Profile:GetProfile(Player) or nil
+    end
+
+    local function IsInLobby()
+        return (workspace:FindFirstChild("QueueRings") ~= nil) or (workspace:FindFirstChild("MenuRings") ~= nil)
+    end
+
+    -- Direct UI Flag Getter / Setter (Works with Sid Ultimate / Rayfield)
+    local function GetUIFlag(FlagName)
+        local lib = Rayfield or _G.Rayfield
+        if lib and lib.Flags and lib.Flags[FlagName] then
+            return lib.Flags[FlagName].CurrentValue
+        end
+        return nil
+    end
+
+    local function SetUIFlag(FlagName, Value)
+        local lib = Rayfield or _G.Rayfield
+        if lib and lib.Flags and lib.Flags[FlagName] and lib.Flags[FlagName].Set then
+            if lib.Flags[FlagName].CurrentValue ~= Value then
+                pcall(function() lib.Flags[FlagName]:Set(Value) end)
+            end
+            return true
+        end
+        return false
+    end
+
+    -- Cross-Teleport Combat Flag Persistence (Auto ON -> Auto OFF)
+    local function ReadCombatMarker()
+        if not (isfile and readfile) then return nil end
+        local okE, exists = pcall(isfile, MARKER_FILE)
+        if not (okE and exists) then return nil end
+        local okR, raw = pcall(readfile, MARKER_FILE)
+        if not (okR and type(raw) == "string") then return nil end
+        local okJ, dec = pcall(function() return HttpService:JSONDecode(raw) end)
+        return (okJ and type(dec) == "table") and dec or nil
+    end
+
+    local function WriteCombatMarker(Data)
+        if not writefile then return end
+        pcall(function()
+            if makefolder and isfolder and not isfolder(MARKER_FOLDER) then
+                makefolder(MARKER_FOLDER)
+            end
+            writefile(MARKER_FILE, HttpService:JSONEncode(Data))
+        end)
+    end
+
+    local function ClearCombatMarker()
+        if delfile and isfile then
+            pcall(function()
+                if isfile(MARKER_FILE) then delfile(MARKER_FILE) end
+            end)
+        end
+    end
+
+    local function ActivateQuestCombatFlags(QuestId, NeedMultiRun)
+        if not Cfg.AutoManageCombat then return end
+        WriteCombatMarker({
+            active = true,
+            questId = tostring(QuestId or ""),
+            startedAt = os.time(),
+        })
+        SetUIFlag("PetKillAura", true)
+        SetUIFlag("AutoMobsToggle", true)
+        SetUIFlag("AutoTapChestUI", true)
+        SetUIFlag("AutoStartDungeonToggle", true)
+        SetUIFlag("AutoPlayAgainToggle", NeedMultiRun == true)
+
+        -- Force immediate save before dungeon teleport!
+        local lib = Rayfield or _G.Rayfield
+        if lib and lib.SaveConfiguration then
+            pcall(function() lib:SaveConfiguration(nil, true) end)
+        end
+    end
+
+    local function DeactivateQuestCombatFlags(ForceOff)
+        local Marker = ReadCombatMarker()
+        if not Marker and not ForceOff then return end
+
+        for _, FlagName in ipairs(CombatFlags) do
+            SetUIFlag(FlagName, false)
+        end
+        ClearCombatMarker()
+
+        local lib = Rayfield or _G.Rayfield
+        if lib and lib.SaveConfiguration then
+            pcall(function() lib:SaveConfiguration(nil, true) end)
+        end
+    end
+
+    -- Safely pauses user's Auto Bank Transfer while pulling Food / Gem Fragments from Bank
+    local function WithBankPaused(CallbackFn)
+        local WasBankOn = (GetUIFlag("DH_BankMasterToggle") == true)
+        if WasBankOn then
+            SetUIFlag("DH_BankMasterToggle", false)
+            task.wait(0.25)
+        end
+
+        local ok, res = pcall(CallbackFn)
+
+        if WasBankOn then
+            task.wait(0.2)
+            SetUIFlag("DH_BankMasterToggle", true)
+        end
+        return ok and res or false
+    end
+
+    -- ==========================================
+    -- LIVE QUEST READER & FAST PROGRESS WAITER
+    -- ==========================================
+    local function ReadQuests(TrackFilter)
+        local List = {}
+        local Profile = GetProfile()
+        local QV2 = Profile and Profile:FindFirstChild("Quests_V2")
+        if not QV2 then return List, 0, 0 end
+
+        local ActiveFolder = QV2:FindFirstChild("ActiveQuests")
+        local ClaimedFolder = QV2:FindFirstChild("ClaimedQuests")
+        local DailyComp = QV2:FindFirstChild("DailyCompleted") and QV2.DailyCompleted.Value or 0
+        local WeeklyComp = QV2:FindFirstChild("WeeklyCompleted") and QV2.WeeklyCompleted.Value or 0
+        if not ActiveFolder then return List, DailyComp, WeeklyComp end
+
+        for _, ValObj in ipairs(ActiveFolder:GetChildren()) do
+            if ValObj:IsA("IntValue") or ValObj:IsA("NumberValue") then
+                local QId = tostring(ValObj:GetAttribute("QuestId") or ValObj.Name)
+                local Track = tostring(ValObj:GetAttribute("TrackType") or "Daily")
+
+                if not TrackFilter or Track == TrackFilter then
+                    local Goal = tonumber(ValObj:GetAttribute("Goal")) or 1
+                    local Progress = tonumber(ValObj.Value) or 0
+                    local ClaimKey = Track .. ":" .. QId
+                    local Claimed = (ClaimedFolder and ClaimedFolder:FindFirstChild(ClaimKey) ~= nil)
+                    local Completed = (Progress >= Goal) or Claimed
+
+                    table.insert(List, {
+                        ValObj             = ValObj,
+                        Id                 = QId,
+                        TrackType          = Track,
+                        Title              = tostring(ValObj:GetAttribute("Title") or QId),
+                        Description        = tostring(ValObj:GetAttribute("Description") or ""),
+                        Objective          = tostring(ValObj:GetAttribute("Objective") or ""),
+                        Goal               = Goal,
+                        Progress           = Progress,
+                        Completed          = Completed,
+                        Claimed            = Claimed,
+                        SortOrder          = tonumber(ValObj:GetAttribute("SortOrder")) or 50,
+                        RolledStoryDungeon = ValObj:GetAttribute("RolledStoryDungeon"),
+                        MinDifficulty      = tonumber(ValObj:GetAttribute("MinDifficulty")) or 1,
+                        DungeonType        = ValObj:GetAttribute("DungeonType"),
+                        TargetDungeon      = ValObj:GetAttribute("TargetDungeon"),
+                        TargetMobSubstring = ValObj:GetAttribute("TargetMobSubstring"),
+                    })
+                end
+            end
+        end
+
+        table.sort(List, function(a, b) return a.SortOrder < b.SortOrder end)
+        return List, DailyComp, WeeklyComp
+    end
+
+    local function WaitQuestAdvance(ValObj, OldVal, Timeout)
+        local Start = os.clock()
+        local Limit = Timeout or 1.2
+        while os.clock() - Start < Limit do
+            if not ValObj or not ValObj.Parent then return true end
+            if (tonumber(ValObj.Value) or 0) > OldVal then
+                return true
+            end
+            task.wait(0.05)
+        end
+        return false
+    end
+
+    -- ==========================================
+    -- INSTANT AUTO-CLAIM ENGINE (EVENT-DRIVEN)
+    -- ==========================================
+    local function RunAutoClaims(SilentIfZero)
+        if not Cfg.AutoClaimEnabled or State.ClaimBusy then return 0 end
+        State.ClaimBusy = true
+        local ClaimedCount = 0
+
+        pcall(function()
+            local Profile = GetProfile()
+            local QV2 = Profile and Profile:FindFirstChild("Quests_V2")
+
+            if QV2 and Sys.Quests then
+                local AllQuests, DailyComp, WeeklyComp = ReadQuests(nil)
+                for _, Q in ipairs(AllQuests) do
+                    if Q.Completed and not Q.Claimed then
+                        if Q.TrackType == "Daily" or (Cfg.IncludeWeeklyClaim and Q.TrackType == "Weekly") then
+                            pcall(function() Sys.Quests:ClaimQuest(Q.Id) end)
+                            ClaimedCount = ClaimedCount + 1
+                            if Q.TrackType == "Daily" then DailyComp = DailyComp + 1 else WeeklyComp = WeeklyComp + 1 end
+                            task.wait(0.08)
+                        end
+                    end
+                end
+
+                local ClaimedMilestones = QV2:FindFirstChild("ClaimedMilestones")
+                for _, Th in ipairs({2, 4, 6, 8, 10}) do
+                    if DailyComp >= Th and not (ClaimedMilestones and ClaimedMilestones:FindFirstChild("Milestone:Daily:" .. tostring(Th))) then
+                        pcall(function() Sys.Quests:ClaimMilestone("Daily", Th) end)
+                        ClaimedCount = ClaimedCount + 1
+                        task.wait(0.08)
+                    end
+                    if Cfg.IncludeWeeklyClaim and WeeklyComp >= Th and not (ClaimedMilestones and ClaimedMilestones:FindFirstChild("Milestone:Weekly:" .. tostring(Th))) then
+                        pcall(function() Sys.Quests:ClaimMilestone("Weekly", Th) end)
+                        ClaimedCount = ClaimedCount + 1
+                        task.wait(0.08)
+                    end
+                end
+            end
+
+            if Sys.DailyRewards then
+                local okS, st = pcall(function() return Sys.DailyRewards:GetState() end)
+                if okS and type(st) == "table" and st.CanClaim == true and tonumber(st.ClaimIndex) then
+                    pcall(function() Sys.DailyRewards:ClaimDay(st.ClaimIndex) end)
+                    ClaimedCount = ClaimedCount + 1
+                end
+            end
+
+            local DailyFolder = Profile and Profile:FindFirstChild("DailyQuests")
+            local CrystFlag = DailyFolder and DailyFolder:FindFirstChild("DailyCrystalsClaimed")
+            if CrystFlag and CrystFlag.Value == false then
+                local CryRemote = Remotes:FindFirstChild("ClaimFreeCrystals")
+                if CryRemote then
+                    pcall(function() CryRemote:FireServer() end)
+                    ClaimedCount = ClaimedCount + 1
+                end
+            end
+        end)
+
+        if ClaimedCount > 0 then
+            ShowQuestNotify(
+                "Instant Claimed " .. tostring(ClaimedCount) .. " Reward(s)!",
+                "Quests / Milestones / Calendar collected",
+                Color3.fromRGB(0, 235, 160),
+                2.5
+            )
+        end
+
+        State.ClaimBusy = false
+        return ClaimedCount
+    end
+
+    -- Attach real-time listeners to ActiveQuests so claims happen in <0.15s!
+    local function HookQuestChangeListeners()
+        local Profile = GetProfile()
+        local QV2 = Profile and Profile:FindFirstChild("Quests_V2")
+        local ActiveFolder = QV2 and QV2:FindFirstChild("ActiveQuests")
+        if not ActiveFolder then return end
+
+        local function HookOne(ValObj)
+            if State.HookedQuestObjs[ValObj] then return end
+            if not (ValObj:IsA("IntValue") or ValObj:IsA("NumberValue")) then return end
+            State.HookedQuestObjs[ValObj] = true
+
+            ValObj.Changed:Connect(function(NewVal)
+                local Goal = tonumber(ValObj:GetAttribute("Goal")) or 1
+                if (tonumber(NewVal) or 0) >= Goal then
+                    if Cfg.AutoClaimEnabled then
+                        task.spawn(RunAutoClaims)
+                    end
+                    -- If we're inside a dungeon and this was our active tracked combat quest, disable Auto Play Again immediately!
+                    local Marker = ReadCombatMarker()
+                    local QId = tostring(ValObj:GetAttribute("QuestId") or ValObj.Name)
+                    if Marker and Marker.active and Marker.questId == QId and not IsInLobby() then
+                        SetUIFlag("AutoPlayAgainToggle", false)
+                    end
+                end
+            end)
+        end
+
+        for _, Child in ipairs(ActiveFolder:GetChildren()) do
+            HookOne(Child)
+        end
+        ActiveFolder.ChildAdded:Connect(HookOne)
+    end
+
+    -- ==========================================
+    -- ITEM INSPECTORS & BANK AUTO-PULL ENGINE
+    -- ==========================================
+    local function GetItemUID(Item, FallbackKey)
+        if typeof(Item) == "Instance" then
+            local u = Item:GetAttribute("ItemUid") or Item:GetAttribute("Uid") or Item:GetAttribute("UID")
+            if type(u) == "string" and #u > 0 then return u end
+        end
+        local ok1, u1 = pcall(function() return Sys.Items:GetItemUid(Item) end)
+        if ok1 and type(u1) == "string" and #u1 > 0 then return u1 end
+        if type(Item) == "table" then
+            local u = Item.ItemUid or Item.uid or Item.UID or Item.Uid
+            if type(u) == "string" and #u > 0 then return u end
+        end
+        local ok2, ref = pcall(function() return Sys.Items:ItemRefForRemote(Item) end)
+        if ok2 and type(ref) == "string" and #ref > 0 then return ref end
+        return (type(FallbackKey) == "string" and #FallbackKey > 0) and FallbackKey or nil
+    end
+
+    local function GetItemIdAndData(Item)
+        local ID = nil
+        pcall(function() ID = Sys.Items:GetItemId(Item) end)
+        if not ID then
+            if typeof(Item) == "Instance" then ID = Item.Name
+            elseif type(Item) == "table" then ID = Item.id or Item.Id or Item.ItemId or Item.itemId or Item.Name end
+        end
+        if not ID then return nil, nil end
+        local ok, Data = pcall(function() return Sys.Items:GetItemData(ID) end)
+        if ok and type(Data) == "table" then return ID, Data end
+        return ID, nil
+    end
+
+    local function GetSafeRarity(Item)
+        local ok, r = pcall(function() return Sys.Items:GetRarity(Item) end)
+        if ok and tonumber(r) then return tonumber(r) end
+        if typeof(Item) == "Instance" and Item:FindFirstChild("Rarity") then
+            return tonumber(Item.Rarity.Value) or 99
+        elseif type(Item) == "table" and tonumber(Item.rarity or Item.Rarity) then
+            return tonumber(Item.rarity or Item.Rarity)
+        end
+        return 99
+    end
+
+    local function GetSafeLevel(Item)
+        local ok, l = pcall(function() return Sys.Items:GetLevel(Item) end)
+        if ok and tonumber(l) then return tonumber(l) end
+        if typeof(Item) == "Instance" and Item:FindFirstChild("Level") then
+            return tonumber(Item.Level.Value) or 1
+        elseif type(Item) == "table" and tonumber(Item.level or Item.Level) then
+            return tonumber(Item.level or Item.Level)
+        end
+        return 1
+    end
+
+    local function GetItemCount(Item)
+        if typeof(Item) == "Instance" then
+            local c = Item:FindFirstChild("Count")
+            return c and math.max(1, tonumber(c.Value) or 1) or 1
+        elseif type(Item) == "table" then
+            return math.max(1, tonumber(Item.count or Item.Count) or 1)
+        end
+        return 1
+    end
+
+    local function IsItemFavoritedOrLocked(Item)
+        local okFav, isFav = pcall(function() return Sys.Items:ItemIsFavorited(Item) end)
+        if okFav and isFav == true then return true end
+        if typeof(Item) == "Instance" then
+            for _, Key in ipairs({"Favorite", "Favorited", "Starred", "Locked", "Sealed"}) do
+                local c = Item:FindFirstChild(Key)
+                if c and (not c:IsA("ValueBase") or c.Value == true) then return true end
+                if Item:GetAttribute(Key) == true then return true end
+            end
+        elseif type(Item) == "table" then
+            if Item.favorite or Item.Favorite or Item.favorited or Item.Favorited or Item.starred or Item.Starred or Item.sealed or Item.Sealed then
+                return true
+            end
+        end
+        return false
+    end
+
+    local function IsProtectedGear(Item)
+        if not Item then return true end
+        local Rarity = GetSafeRarity(Item)
+        if Rarity == 8 or Rarity > Cfg.MaxSafeTrashRarity then return true end
+        if IsItemFavoritedOrLocked(Item) then return true end
+
+        if typeof(Item) == "Instance" then
+            if Item:FindFirstChild("Gem") then return true end
+            for _, Child in ipairs(Item:GetChildren()) do
+                if string.find(Child.Name, "^GearPreset") then return true end
+            end
+            local Stats = Item:FindFirstChild("Stats")
+            if Stats then
+                local counts = {}
+                for _, st in ipairs(Stats:GetChildren()) do
+                    counts[st.Name] = (counts[st.Name] or 0) + 1
+                    if counts[st.Name] >= 4 then return true end
+                end
+            end
+        elseif type(Item) == "table" then
+            if Item.gem or Item.Gem or Item.GearPreset1 or Item.GearPreset2 or Item.GearPreset3 or Item.presets then
+                return true
+            end
+        end
+        return false
+    end
+
+    local function GetRawBankItems()
+        local List, Seen = {}, {}
+        local function Add(Item, Key)
+            if not Item then return end
+            if typeof(Item) == "Instance" and Item:IsA("Folder") then return end
+            local UID = GetItemUID(Item, Key)
+            if UID and not Seen[UID] then
+                Seen[UID] = true
+                table.insert(List, {Item = Item, UID = UID})
+            end
+        end
+
+        local ok1, T1 = pcall(function() return Sys.Items:GetTableItems(Player, "ItemBank") end)
+        if ok1 and type(T1) == "table" then
+            for k, v in pairs(T1) do Add(v, k) end
+        end
+
+        local ok2, Rec = pcall(function() return Sys.Items:GetRecordContainer(Player, "ItemBank") end)
+        if ok2 and type(Rec) == "table" then
+            local Sub = Rec.Items or Rec.Records or Rec
+            if type(Sub) == "table" then
+                for k, v in pairs(Sub) do
+                    if type(v) == "table" or typeof(v) == "Instance" then Add(v, k) end
+                end
+            end
+        end
+
+        local Profile = GetProfile()
+        local BFolder = Profile and Profile:FindFirstChild("ItemBank")
+        if BFolder then
+            for _, c in ipairs(BFolder:GetChildren()) do Add(c, nil) end
+        end
+
+        return List
+    end
+
+    -- Pulls EXACT needed amount of lowest-rarity matching items from Bank -> Inventory
+    local function PullLowestRarityFromBank(NeedCount, MatcherFn)
+        if not Cfg.AutoPullFromBank or NeedCount <= 0 then return 0 end
+
+        local BankEntries = {}
+        for _, Raw in ipairs(GetRawBankItems()) do
+            if not IsItemFavoritedOrLocked(Raw.Item) then
+                local ID, Data = GetItemIdAndData(Raw.Item)
+                if ID and Data and MatcherFn(Raw.Item, ID, Data) then
+                    table.insert(BankEntries, {
+                        UID    = Raw.UID,
+                        Rarity = GetSafeRarity(Raw.Item),
+                        Level  = GetSafeLevel(Raw.Item),
+                        Count  = GetItemCount(Raw.Item),
+                    })
+                end
+            end
+        end
+
+        if #BankEntries == 0 then return 0 end
+
+        -- Always pick LOWEST rarity first!
+        table.sort(BankEntries, function(a, b)
+            if a.Rarity ~= b.Rarity then return a.Rarity < b.Rarity end
+            if a.Level ~= b.Level then return a.Level < b.Level end
+            return a.Count < b.Count
+        end)
+
+        local PulledUIDs = {}
+        local PulledUnits = 0
+
+        for _, Entry in ipairs(BankEntries) do
+            if PulledUnits >= NeedCount then break end
+            table.insert(PulledUIDs, Entry.UID)
+            PulledUnits = PulledUnits + Entry.Count
+            ItemBankRemote:FireServer(Entry.UID)
+            task.wait(0.08)
+        end
+
+        if #PulledUIDs == 0 then return 0 end
+
+        -- Wait briefly until pulled UIDs arrive in Profile.Inventory
+        local Profile = GetProfile()
+        local Inv = Profile and Profile:FindFirstChild("Inventory")
+        local StartWait = os.clock()
+        while Inv and (os.clock() - StartWait < 1.5) do
+            local FoundAll = true
+            for _, UID in ipairs(PulledUIDs) do
+                local Present = false
+                for _, Child in ipairs(Inv:GetChildren()) do
+                    if GetItemUID(Child, nil) == UID then
+                        Present = true
+                        break
+                    end
+                end
+                if not Present then FoundAll = false; break end
+            end
+            if FoundAll then break end
+            task.wait(0.06)
+        end
+
+        return PulledUnits
+    end
+
+    -- ==========================================
+    -- FRAGMENT CLASSIFIERS (PRECIOUS RUBY: RED-GREEN-RED-RED)
+    -- ==========================================
+    local function IsRawGemFragment(ID, Data)
+        if type(Data) ~= "table" then return false end
+        local Cat = string.lower(tostring(Data.Category or ""))
+        if Cat == "refined gem" then return false end
+        local LowId = string.lower(tostring(ID or ""))
+        local LowDisp = string.lower(tostring(Data.DisplayName or ""))
+        return (Cat == "gem" or Cat == "gemstone" or string.find(Cat, "gem", 1, true) or string.find(LowId, "gem", 1, true) or string.find(LowDisp, "fragment", 1, true))
+    end
+
+    local function IsRedFragment(ID, Data)
+        if not IsRawGemFragment(ID, Data) then return false end
+        local Combined = string.lower(tostring(ID or "") .. " " .. tostring(Data.DisplayName or ""))
+        return (string.find(Combined, "red", 1, true) ~= nil) or (string.find(Combined, "ruby", 1, true) ~= nil)
+    end
+
+    local function IsGreenFragment(ID, Data)
+        if not IsRawGemFragment(ID, Data) then return false end
+        local Combined = string.lower(tostring(ID or "") .. " " .. tostring(Data.DisplayName or ""))
+        return (string.find(Combined, "green", 1, true) ~= nil) or (string.find(Combined, "emerald", 1, true) ~= nil)
+    end
+
+    local function CollectInventoryMatching(MatcherFn)
+        local Profile = GetProfile()
+        local Inv = Profile and Profile:FindFirstChild("Inventory")
+        local Out, TotalUnits = {}, 0
+        if not Inv then return Out, 0 end
+
+        for _, Item in ipairs(Inv:GetChildren()) do
+            if not IsItemFavoritedOrLocked(Item) then
+                local ID, Data = GetItemIdAndData(Item)
+                if ID and Data and MatcherFn(Item, ID, Data) then
+                    local Cnt = GetItemCount(Item)
+                    TotalUnits = TotalUnits + Cnt
+                    table.insert(Out, {Item = Item, Rarity = GetSafeRarity(Item), Level = GetSafeLevel(Item), Count = Cnt})
+                end
+            end
+        end
+
+        table.sort(Out, function(a, b)
+            if a.Rarity ~= b.Rarity then return a.Rarity < b.Rarity end
+            return a.Level < b.Level
+        end)
+        return Out, TotalUnits
+    end
+
+    -- ==========================================
+    -- LOBBY QUEST HANDLERS (AUTO-PULL FROM BANK INCLUDED!)
+    -- ==========================================
+    local Handlers = {}
+
+    -- 1. EatFood (Auto-Pulls Exact Missing Count of Lowest-Rarity Food from Bank!)
+    Handlers.EatFood = function(Q)
+        return WithBankPaused(function()
+            local Need = math.max(1, Q.Goal - (tonumber(Q.ValObj.Value) or 0))
+            local function FoodMatcher(_, _, Data)
+                return Data.Category == "Food" or Data.Type == "Food"
+            end
+
+            local Foods, HaveUnits = CollectInventoryMatching(FoodMatcher)
+            if HaveUnits < Need then
+                SetStatus("Pulling " .. tostring(Need - HaveUnits) .. " low-rarity Food from Bank...")
+                PullLowestRarityFromBank(Need - HaveUnits, FoodMatcher)
+                Foods, HaveUnits = CollectInventoryMatching(FoodMatcher)
+            end
+            if HaveUnits == 0 then return false end
+
+            local EquipFoodRemote = Remotes:FindFirstChild("EquipFood")
+            local Worked = false
+
+            for _ = 1, Need do
+                if not Cfg.MasterEnabled and not State.ManualOnce then break end
+                if (tonumber(Q.ValObj.Value) or 0) >= Q.Goal then break end
+
+                Foods = CollectInventoryMatching(FoodMatcher)
+                local Target = Foods[1] and Foods[1].Item
+                if not Target then break end
+
+                local Before = tonumber(Q.ValObj.Value) or 0
+                if Sys.Equipment and type(Sys.Equipment.EquipFood) == "function" then
+                    pcall(function() Sys.Equipment:EquipFood(Player, Target) end)
+                elseif EquipFoodRemote then
+                    pcall(function() EquipFoodRemote:FireServer(Sys.Items:ItemRefForRemote(Target)) end)
+                end
+
+                if WaitQuestAdvance(Q.ValObj, Before, 1.2) then
+                    Worked = true
+                else
+                    break
+                end
+                task.wait(0.12)
+            end
+            return Worked
+        end)
+    end
+
+    -- 2. CraftGem (Precious Ruby Recipe: Red - Green - Red - Red | Auto-Pulls 3x Red + 1x Green per Gem!)
+    Handlers.CraftGem = function(Q)
+        if not Sys.Gemstones then return false end
+        return WithBankPaused(function()
+            local Need = math.max(1, Q.Goal - (tonumber(Q.ValObj.Value) or 0))
+            local NeedRed = Need * 3
+            local NeedGreen = Need * 1
+
+            local function RedMatch(_, id, data) return IsRedFragment(id, data) end
+            local function GreenMatch(_, id, data) return IsGreenFragment(id, data) end
+
+            local Reds, HaveRed = CollectInventoryMatching(RedMatch)
+            local Greens, HaveGreen = CollectInventoryMatching(GreenMatch)
+
+            if HaveRed < NeedRed then
+                SetStatus("Pulling " .. tostring(NeedRed - HaveRed) .. " Red Fragments from Bank...")
+                PullLowestRarityFromBank(NeedRed - HaveRed, RedMatch)
+            end
+            if HaveGreen < NeedGreen then
+                SetStatus("Pulling " .. tostring(NeedGreen - HaveGreen) .. " Green Fragments from Bank...")
+                PullLowestRarityFromBank(NeedGreen - HaveGreen, GreenMatch)
+            end
+
+            local Worked = false
+            for _ = 1, Need do
+                if not Cfg.MasterEnabled and not State.ManualOnce then break end
+                if (tonumber(Q.ValObj.Value) or 0) >= Q.Goal then break end
+
+                Reds, HaveRed = CollectInventoryMatching(RedMatch)
+                Greens, HaveGreen = CollectInventoryMatching(GreenMatch)
+                if HaveRed < 3 or HaveGreen < 1 then break end
+
+                -- Build 3 Red refs (handles both stacked Count>=3 and 3 separate Count=1 instances!)
+                local RedRefs = {}
+                for _, entry in ipairs(Reds) do
+                    for _ = 1, entry.Count do
+                        table.insert(RedRefs, entry.Item)
+                        if #RedRefs == 3 then break end
+                    end
+                    if #RedRefs == 3 then break end
+                end
+
+                local GreenRef = Greens[1] and Greens[1].Item
+                if #RedRefs < 3 or not GreenRef then break end
+
+                -- Exact Precious Ruby order: Red -> Green -> Red -> Red
+                local Batch = {RedRefs[1], GreenRef, RedRefs[2], RedRefs[3]}
+                local Before = tonumber(Q.ValObj.Value) or 0
+                pcall(function() Sys.Gemstones:CraftGem(Player, Batch, 1) end)
+
+                if WaitQuestAdvance(Q.ValObj, Before, 1.5) then
+                    Worked = true
+                else
+                    break
+                end
+                task.wait(0.15)
+            end
+
+            -- Fallback: if still incomplete, try 4x Refined Gem merge
+            if (tonumber(Q.ValObj.Value) or 0) < Q.Goal then
+                if Handlers.UpgradeGem(Q) then Worked = true end
+            end
+            return Worked
+        end)
+    end
+
+    -- 3. UpgradeGem (4x Same Refined Gem Merge — Auto-Pulls lowest rarity from Bank if needed!)
+    Handlers.UpgradeGem = function(Q)
+        if not Sys.Gemstones then return false end
+        return WithBankPaused(function()
+            local Need = math.max(1, Q.Goal - (tonumber(Q.ValObj.Value) or 0))
+            local function RefGemMatch(_, _, Data) return Data.Category == "Refined Gem" end
+
+            local RefGems, HaveCount = CollectInventoryMatching(RefGemMatch)
+            if HaveCount < Need * 4 then
+                PullLowestRarityFromBank((Need * 4) - HaveCount, RefGemMatch)
+                RefGems = CollectInventoryMatching(RefGemMatch)
+            end
+
+            local Groups = {}
+            for _, Entry in ipairs(RefGems) do
+                if Entry.Rarity <= math.max(Cfg.MaxSafeTrashRarity, 4) then
+                    local ID = GetItemIdAndData(Entry.Item)
+                    local Key = tostring(ID) .. "|" .. tostring(Entry.Rarity)
+                    Groups[Key] = Groups[Key] or {}
+                    table.insert(Groups[Key], Entry.Item)
+                end
+            end
+
+            local Worked = false
+            for _, Group in pairs(Groups) do
+                while #Group >= 4 and (tonumber(Q.ValObj.Value) or 0) < Q.Goal do
+                    local Batch = {table.remove(Group, 1), table.remove(Group, 1), table.remove(Group, 1), table.remove(Group, 1)}
+                    local Before = tonumber(Q.ValObj.Value) or 0
+                    pcall(function() Sys.Gemstones:CraftGem(Player, Batch, 1) end)
+                    if WaitQuestAdvance(Q.ValObj, Before, 1.5) then
+                        Worked = true
+                    else
+                        return Worked
+                    end
+                    task.wait(0.15)
+                end
+            end
+            return Worked
+        end)
+    end
+
+    -- 4. UsePotion
+    Handlers.UsePotion = function(Q)
+        local PotRemote = Remotes:FindFirstChild("UsePotion")
+        if not PotRemote then return false end
+        local Before = tonumber(Q.ValObj.Value) or 0
+        pcall(function() PotRemote:FireServer() end)
+        return WaitQuestAdvance(Q.ValObj, Before, 1.3)
+    end
+
+    -- 5. EquipNecklace (Swaps & Restores Original Necklace!)
+    Handlers.EquipNecklace = function(Q)
+        return WithBankPaused(function()
+            local Profile = GetProfile()
+            local Equipped = Profile and Profile:FindFirstChild("Equipped")
+            local OrigNecklace = Equipped and Equipped:FindFirstChild("Necklace") and Equipped.Necklace:GetChildren()[1]
+
+            local function NeckMatch(_, _, Data) return Data.Category == "Necklace" end
+            local Necks = CollectInventoryMatching(NeckMatch)
+            if #Necks == 0 then
+                PullLowestRarityFromBank(1, NeckMatch)
+                Necks = CollectInventoryMatching(NeckMatch)
+            end
+            local Picked = Necks[1] and Necks[1].Item
+            if not Picked then return false end
+
+            local EquipNeckRemote = Remotes:FindFirstChild("EquipNecklace")
+            local function DoEquip(ItemObj)
+                if Sys.Equipment and type(Sys.Equipment.EquipNecklace) == "function" then
+                    pcall(function() Sys.Equipment:EquipNecklace(Player, ItemObj) end)
+                elseif EquipNeckRemote then
+                    pcall(function() EquipNeckRemote:FireServer(Sys.Items:ItemRefForRemote(ItemObj)) end)
+                end
+            end
+
+            local Before = tonumber(Q.ValObj.Value) or 0
+            DoEquip(Picked)
+            local ok = WaitQuestAdvance(Q.ValObj, Before, 1.4)
+            if OrigNecklace and OrigNecklace.Parent then
+                task.wait(0.2)
+                DoEquip(OrigNecklace)
+            end
+            return ok
+        end)
+    end
+
+    -- 6. EquipCosmetic
+    Handlers.EquipCosmetic = function(Q)
+        local okC, CosTbl = pcall(function() return Sys.Items:GetTableItems(Player, "Cosmetics") end)
+        if not okC or type(CosTbl) ~= "table" then return false end
+        for _, Item in pairs(CosTbl) do
+            local _, Data = GetItemIdAndData(Item)
+            if Data and (Data.Type == "ShirtCosmetic" or Data.Type == "PantsCosmetic") then
+                local Before = tonumber(Q.ValObj.Value) or 0
+                local CosRemote = Remotes:FindFirstChild("EquipCosmetic")
+                if Sys.Equipment and type(Sys.Equipment.EquipCosmetic) == "function" then
+                    pcall(function() Sys.Equipment:EquipCosmetic(Player, Item, Data.Type) end)
+                elseif CosRemote then
+                    pcall(function() CosRemote:FireServer(Sys.Items:ItemRefForRemote(Item), Data.Type) end)
+                end
+                return WaitQuestAdvance(Q.ValObj, Before, 1.5)
+            end
+        end
+        return false
+    end
+
+    -- 7. SellItem (Low-Rarity Trash Only, Pulls Exact Count from Bank if needed!)
+    Handlers.SellItem = function(Q)
+        if not Sys.ItemSelling then return false end
+        return WithBankPaused(function()
+            local Need = math.max(1, Q.Goal - (tonumber(Q.ValObj.Value) or 0))
+            local function TrashMatch(Item, _, Data)
+                return (Data.Category == "Weapon" or Data.Category == "Armor") and not IsProtectedGear(Item)
+            end
+
+            local TrashList = CollectInventoryMatching(TrashMatch)
+            if #TrashList < Need then
+                PullLowestRarityFromBank(Need - #TrashList, TrashMatch)
+                TrashList = CollectInventoryMatching(TrashMatch)
+            end
+            if #TrashList == 0 then return false end
+
+            local ToSell = {}
+            for i = 1, math.min(Need, #TrashList) do
+                table.insert(ToSell, TrashList[i].Item)
+            end
+
+            local Before = tonumber(Q.ValObj.Value) or 0
+            pcall(function() Sys.ItemSelling:SellItem(Player, ToSell, {}) end)
+            return WaitQuestAdvance(Q.ValObj, Before, 1.6)
+        end)
+    end
+
+    -- 8. RerollStats (Trash Gear + Always KeepStats!)
+    Handlers.RerollStats = function(Q)
+        if not Sys.StatRerolling then return false end
+        return WithBankPaused(function()
+            local function TrashMatch(Item, _, Data)
+                return (Data.Category == "Weapon" or Data.Category == "Armor") and not IsProtectedGear(Item)
+            end
+
+            local TrashList = CollectInventoryMatching(TrashMatch)
+            if #TrashList == 0 then
+                PullLowestRarityFromBank(1, TrashMatch)
+                TrashList = CollectInventoryMatching(TrashMatch)
+            end
+            local Trash = TrashList[1] and TrashList[1].Item
+            if not Trash then return false end
+
+            local Need = math.max(1, Q.Goal - (tonumber(Q.ValObj.Value) or 0))
+            local Worked = false
+
+            for _ = 1, Need do
+                if not Cfg.MasterEnabled and not State.ManualOnce then break end
+                local Before = tonumber(Q.ValObj.Value) or 0
+                local okR, res = pcall(function() return Sys.StatRerolling:GetNewStats(Player, Trash, {}) end)
+                task.wait(0.12)
+                pcall(function() Sys.StatRerolling:KeepStats(Player) end)
+                if okR and res and WaitQuestAdvance(Q.ValObj, Before, 1.4) then
+                    Worked = true
+                else
+                    break
+                end
+                task.wait(0.15)
+            end
+            return Worked
+        end)
+    end
+
+    -- 9. InfuseGem (Trash Gear + Lowest-Rarity Refined Gem)
+    Handlers.InfuseGem = function(Q)
+        if not Sys.Gemstones then return false end
+        return WithBankPaused(function()
+            local Need = math.max(1, Q.Goal - (tonumber(Q.ValObj.Value) or 0))
+            local function GearMatch(Item, _, Data)
+                return (Data.Category == "Weapon" or Data.Category == "Armor") and not IsProtectedGear(Item)
+            end
+            local function GemMatch(Item, _, Data)
+                return Data.Category == "Refined Gem" and GetSafeRarity(Item) <= 2
+            end
+
+            local Gears = CollectInventoryMatching(GearMatch)
+            local Gems = CollectInventoryMatching(GemMatch)
+            if #Gears < Need then PullLowestRarityFromBank(Need - #Gears, GearMatch) end
+            if #Gems < Need then PullLowestRarityFromBank(Need - #Gems, GemMatch) end
+
+            local Worked = false
+            for _ = 1, Need do
+                if not Cfg.MasterEnabled and not State.ManualOnce then break end
+                Gears = CollectInventoryMatching(GearMatch)
+                Gems = CollectInventoryMatching(GemMatch)
+                if not (Gears[1] and Gems[1]) then break end
+
+                local Before = tonumber(Q.ValObj.Value) or 0
+                pcall(function() Sys.Gemstones:EquipGem(Player, Gears[1].Item, Gems[1].Item) end)
+                if WaitQuestAdvance(Q.ValObj, Before, 1.5) then Worked = true else break end
+                task.wait(0.18)
+            end
+            return Worked
+        end)
+    end
+
+    -- 10 & 11. OpenChest & SpendKeys
+    Handlers.OpenChest = function(Q)
+        if not Sys.ChestShop then return false end
+        local Need = math.max(1, Q.Goal - (tonumber(Q.ValObj.Value) or 0))
+        local Worked = false
+
+        local function SkillChestMatch(_, id, Data)
+            return Data.Category == "Chest" and string.find(tostring(id), "Skill", 1, true) ~= nil
+        end
+
+        local Chests = CollectInventoryMatching(SkillChestMatch)
+        for _, Entry in ipairs(Chests) do
+            if Need <= 0 then break end
+            local ID = GetItemIdAndData(Entry.Item)
+            local OpenAmt = math.min(Need, Entry.Count)
+            local Before = tonumber(Q.ValObj.Value) or 0
+            pcall(function() Sys.ChestShop:OpenChest(Player, ID, OpenAmt, {Entry.Item}) end)
+            if WaitQuestAdvance(Q.ValObj, Before, 1.8) then
+                Worked = true
+                Need = math.max(0, Q.Goal - (tonumber(Q.ValObj.Value) or 0))
+            end
+            task.wait(0.2)
+        end
+
+        if Need > 0 and Cfg.AllowSpendKeys then
+            local Before = tonumber(Q.ValObj.Value) or 0
+            pcall(function() Sys.ChestShop:OpenChest(Player, "SkillChest", Need) end)
+            if WaitQuestAdvance(Q.ValObj, Before, 1.8) then Worked = true end
+        end
+        return Worked
+    end
+
+    Handlers.SpendKeys = function(Q)
+        if not Cfg.AllowSpendKeys or not Sys.ChestShop then return false end
+        local Profile = GetProfile()
+        local KeysObj = Profile and Profile:FindFirstChild("Currencies") and Profile.Currencies:FindFirstChild("Keys")
+        if (KeysObj and tonumber(KeysObj.Value) or 0) < 50 then return false end
+
+        local Worked = false
+        for _ = 1, 15 do
+            if not Cfg.MasterEnabled and not State.ManualOnce then break end
+            if (tonumber(Q.ValObj.Value) or 0) >= Q.Goal then break end
+            local Before = tonumber(Q.ValObj.Value) or 0
+            pcall(function() Sys.ChestShop:OpenChest(Player, "SkillChest", 1) end)
+            if WaitQuestAdvance(Q.ValObj, Before, 1.6) then Worked = true else break end
+            task.wait(0.18)
+        end
+        return Worked
+    end
+
+    -- 12, 13 & 14. LevelPet, SpendMagicDust & UpgradePet
+    local function FindCheapestPet()
+        local Profile = GetProfile()
+        local PetsFolder = Profile and Profile:FindFirstChild("Pets")
+        if not PetsFolder then return nil end
+        local BestPet, LowestLvl = nil, math.huge
+        for _, Pet in ipairs(PetsFolder:GetChildren()) do
+            local _, Data = GetItemIdAndData(Pet)
+            if Data and Data.Category == "Pet" and not IsItemFavoritedOrLocked(Pet) then
+                local Lvl = GetSafeLevel(Pet)
+                if Lvl < 200 and Lvl < LowestLvl then BestPet = Pet; LowestLvl = Lvl end
+            end
+        end
+        return BestPet
+    end
+
+    Handlers.LevelPet = function(Q)
+        if not Cfg.AllowSpendDust or not Sys.Pets then return false end
+        local Pet = FindCheapestPet()
+        if not Pet then return false end
+        local Need = math.max(1, Q.Goal - (tonumber(Q.ValObj.Value) or 0))
+        local Before = tonumber(Q.ValObj.Value) or 0
+        pcall(function() Sys.Pets:LevelUpPet(Player, Pet, Need, false) end)
+        return WaitQuestAdvance(Q.ValObj, Before, 1.6)
+    end
+
+    Handlers.SpendMagicDust = function(Q)
+        if not Cfg.AllowSpendDust or not Sys.Pets then return false end
+        local Pet = FindCheapestPet()
+        if not Pet then return false end
+        local Worked = false
+        for _ = 1, 10 do
+            if not Cfg.MasterEnabled and not State.ManualOnce then break end
+            if (tonumber(Q.ValObj.Value) or 0) >= Q.Goal then break end
+            local Before = tonumber(Q.ValObj.Value) or 0
+            pcall(function() Sys.Pets:LevelUpPet(Player, Pet, 1, false) end)
+            if WaitQuestAdvance(Q.ValObj, Before, 1.5) then Worked = true else break end
+            task.wait(0.15)
+        end
+        return Worked
+    end
+
+    Handlers.UpgradePet = function(Q)
+        local Profile = GetProfile()
+        local PetsFolder = Profile and Profile:FindFirstChild("Pets")
+        if not PetsFolder or not Sys.Pets then return false end
+
+        local TokenCounts = {}
+        for _, c in ipairs(PetsFolder:GetChildren()) do
+            local id, Data = GetItemIdAndData(c)
+            if Data and Data.Category == "Pet Token" then
+                TokenCounts[id] = (TokenCounts[id] or 0) + GetItemCount(c)
+            end
+        end
+
+        for _, Pet in ipairs(PetsFolder:GetChildren()) do
+            local id, Data = GetItemIdAndData(Pet)
+            if Data and Data.Category == "Pet" and GetSafeRarity(Pet) < 6 then
+                local okReq, req = pcall(function() return Sys.Pets:GetPetTokensRequiredForUpgrade(Pet) end)
+                local Have = TokenCounts[tostring(id) .. "Token"] or TokenCounts[id] or 0
+                if okReq and tonumber(req) and Have >= tonumber(req) then
+                    local Before = tonumber(Q.ValObj.Value) or 0
+                    pcall(function() Sys.Pets:UpgradePet(Player, Pet) end)
+                    if WaitQuestAdvance(Q.ValObj, Before, 1.6) then return true end
+                end
+            end
+        end
+        return false
+    end
+
+    -- 15. TravelStuds (Fast Safe 115-Stud Oscillation)
+    Handlers.TravelStuds = function(Q)
+        if not Cfg.DoTravelStuds then return false end
+        local HRP = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
+        if not HRP then return false end
+
+        local OriginCF = HRP.CFrame
+        local PosA = OriginCF * CFrame.new(0, 6, 0)
+        local PosB = OriginCF * CFrame.new(115, 6, 0)
+        local Side, Stalled, Worked = false, 0, false
+
+        SetStatus("Auto-Traveling: " .. Q.Title)
+        while (Cfg.MasterEnabled or State.ManualOnce) and HRP and HRP.Parent do
+            local Cur = tonumber(Q.ValObj.Value) or 0
+            if Cur >= Q.Goal then Worked = true; break end
+            Side = not Side
+            HRP.AssemblyLinearVelocity = Vector3.zero
+            HRP.CFrame = Side and PosB or PosA
+            task.wait(0.40)
+            if (tonumber(Q.ValObj.Value) or 0) > Cur then
+                Worked = true; Stalled = 0
+            else
+                Stalled = Stalled + 1
+                if Stalled >= 8 then break end
+            end
+        end
+        if HRP and HRP.Parent then HRP.AssemblyLinearVelocity = Vector3.zero; HRP.CFrame = OriginCF end
+        return Worked
+    end
+
+    -- ==========================================
+    -- DYNAMIC LAST STORY DUNGEON & MARTHUUN RAID DETECTOR
+    -- ==========================================
+    local function DetectLastStoryDungeonAndFirstRaid()
+        local LastStoryId, HighestStoryLvl = nil, -1
+        local FirstRaidId, LowestRaidLvl = nil, math.huge
+        local MarthuunRaidId = nil
+
+        local DungTable = nil
+        if Sys.Dungeons then
+            local okL, list = pcall(function()
+                return (Sys.Dungeons.GetDungeonList and Sys.Dungeons:GetDungeonList())
+                    or (Sys.Dungeons.GetDungeons and Sys.Dungeons:GetDungeons())
+                    or Sys.Dungeons.Dungeons
+                    or Sys.Dungeons.List
+            end)
+            if okL and type(list) == "table" then DungTable = list end
+        end
+
+        if type(DungTable) == "table" then
+            for Key, Info in pairs(DungTable) do
+                if type(Info) == "table" then
+                    local DId = tostring(Info.Id or Info.Name or Key)
+                    local Disp = string.lower(tostring(Info.DisplayName or Info.Name or DId))
+                    local DType = string.lower(tostring(Info.Type or Info.DungeonType or ""))
+                    local Lvl = tonumber(Info.LevelRequirement or Info.MinLevel or Info.Level or 0) or 0
+
+                    -- Match Marthuun / First Raid
+                    local IsRaid = (DType == "raid") or (Info.IsRaid == true) or (string.find(string.lower(DId), "raid", 1, true) ~= nil)
+                    if IsRaid then
+                        if string.find(Disp, "marth", 1, true) or string.find(string.lower(DId), "marth", 1, true) then
+                            MarthuunRaidId = DId
+                        end
+                        if Lvl < LowestRaidLvl then
+                            LowestRaidLvl = Lvl
+                            FirstRaidId = DId
+                        end
+                    elseif DType ~= "event" and DType ~= "gauntlet" and DType ~= "daily"
+                        and not string.find(string.lower(DId), "event", 1, true)
+                        and not string.find(string.lower(DId), "daily", 1, true)
+                        and not string.find(string.lower(DId), "gauntlet", 1, true) then
+                        if Lvl > HighestStoryLvl then
+                            HighestStoryLvl = Lvl
+                            LastStoryId = DId
+                        end
+                    end
+                end
+            end
+        end
+
+        -- Fallback scan via QueueRings if Dungeons table didn't expose story list
+        if not LastStoryId and workspace:FindFirstChild("QueueRings") then
+            for _, Ring in ipairs(workspace.QueueRings:GetChildren()) do
+                local n = Ring.Name
+                if string.find(n, "Dungeon", 1, true) and not string.find(n, "Event", 1, true) and not string.find(n, "Daily", 1, true) then
+                    LastStoryId = n
+                end
+            end
+        end
+
+        return LastStoryId or "FrostDungeon", MarthuunRaidId or FirstRaidId or "MarthunRaid"
+    end
+
+    local function PickBestDungeonQuest(DailyQuests)
+        local LastStoryDungeon, MarthuunRaid = DetectLastStoryDungeonAndFirstRaid()
+        local NIGHTMARE = 6
+
+        -- 1. Specific Story Dungeon Quest (e.g. CathedralDungeon) -> Nightmare (6)
+        for _, Q in ipairs(DailyQuests) do
+            if not Q.Completed then
+                if Q.RolledStoryDungeon and #tostring(Q.RolledStoryDungeon) > 0 then
+                    return Q, tostring(Q.RolledStoryDungeon), math.max(NIGHTMARE, Q.MinDifficulty or 1), false
+                end
+                if Q.TargetDungeon and #tostring(Q.TargetDungeon) > 0 then
+                    return Q, tostring(Q.TargetDungeon), NIGHTMARE, true
+                end
+            end
+        end
+
+        -- 2. Daily Challenge Boss -> Nightmare (6)
+        for _, Q in ipairs(DailyQuests) do
+            if not Q.Completed and Q.Objective == "ClearDailyChallenge" then
+                return Q, "DailyBossDungeon", NIGHTMARE, false
+            end
+        end
+
+        -- 3. KillMob / NoHit / Speedrun / DealDamage / Any Clear -> LAST STORY DUNGEON (Nightmare 6)!
+        for _, Q in ipairs(DailyQuests) do
+            if not Q.Completed then
+                local Obj = Q.Objective
+                if Obj == "KillMob" or Obj == "NoHitBossClear" or Obj == "ClearDungeonInMinutes"
+                    or Obj == "DealDamage" or Obj == "HealDamage"
+                    or (Obj == "ClearDungeon" and Q.DungeonType ~= "Raid" and Q.DungeonType ~= "Event") then
+                    local MultiRun = (Obj == "KillMob") or (Q.Goal > 1)
+                    return Q, LastStoryDungeon, NIGHTMARE, MultiRun
+                end
+            end
+        end
+
+        -- 4. Raid Quest -> MARTHUUN (1st Raid) on Nightmare (6)!
+        if Cfg.AllowRaidQueue then
+            for _, Q in ipairs(DailyQuests) do
+                if not Q.Completed and Q.DungeonType == "Raid" then
+                    return Q, MarthuunRaid, NIGHTMARE, (Q.Goal > 1)
+                end
+            end
+        end
+
+        -- 5. Event Dungeon -> Nightmare (6)
+        if Cfg.AllowEventQueue then
+            for _, Q in ipairs(DailyQuests) do
+                if not Q.Completed and Q.DungeonType == "Event" then
+                    return Q, "EventDungeon", NIGHTMARE, (Q.Goal > 1)
+                end
+            end
+        end
+
+        return nil, nil, nil, false
+    end
+
+    local function LaunchDungeonRun(QuestObj, DungeonId, Difficulty, NeedMultiRun)
+        if os.clock() - State.LastQueueAttempt < 7 then return false end
+        State.LastQueueAttempt = os.clock()
+
+        -- Auto-Enable Pet Aura, Auto Mobs, Auto Claim All, Auto Start & Auto Play Again BEFORE teleporting!
+        ActivateQuestCombatFlags(QuestObj.Id, NeedMultiRun)
+
+        SetStatus(string.format("Launching %s (Nightmare %d)...", DungeonId, Difficulty))
+        ShowQuestNotify(
+            "Auto Launching: " .. tostring(DungeonId),
+            "Nightmare | Pet Aura, Auto Mobs & Claim All ON",
+            Color3.fromRGB(0, 210, 255),
+            3.0
+        )
+
+        if Sys.Parties and type(Sys.Parties.CreateParty) == "function" then
+            pcall(function()
+                Sys.Parties:CreateParty(Player, DungeonId, Difficulty, 1, true, false, {}, true)
+            end)
+            task.wait(0.6)
+            local LaunchRemote = Remotes:FindFirstChild("LaunchParty")
+            if LaunchRemote then
+                pcall(function() LaunchRemote:FireServer() end)
+            elseif type(Sys.Parties.LaunchParty) == "function" then
+                pcall(function() Sys.Parties:LaunchParty(Player) end)
+            end
+            return true
+        end
+
+        if Sys.QueueRings and type(Sys.QueueRings.TeleportToRing) == "function" then
+            pcall(function() Sys.QueueRings:TeleportToRing(Player, DungeonId) end)
+            return true
+        end
+        return false
+    end
+
+    -- ==========================================
+    -- MASTER EXECUTION LOOP (FAST 0.5s TICK)
+    -- ==========================================
+    local function RunLobbyQuestsPass(IsManualOnce)
+        if State.Busy then return end
+        State.Busy = true
+        State.ManualOnce = IsManualOnce == true
+
+        pcall(function()
+            RunAutoClaims(true)
+
+            local DailyQuests = ReadQuests("Daily")
+            local Now = os.clock()
+
+            -- 1. Instant Lobby Quests (Auto-Pulls Missing Food / Gem Fragments / Trash from Bank!)
+            if Cfg.DoLobbyQuests then
+                for _, Q in ipairs(DailyQuests) do
+                    if not Cfg.MasterEnabled and not State.ManualOnce then break end
+                    if not Q.Completed then
+                        local CooldownUntil = State.FailedCooldown[Q.Id] or 0
+                        local Handler = Handlers[Q.Objective]
+                        if Handler and Q.Objective ~= "TravelStuds" and Now >= CooldownUntil then
+                            SetStatus("Doing: " .. Q.Title .. " (" .. Q.Progress .. "/" .. Q.Goal .. ")")
+                            local ok = Handler(Q)
+                            if not ok then
+                                State.FailedCooldown[Q.Id] = os.clock() + 30
+                            else
+                                RunAutoClaims(true)
+                            end
+                            task.wait(0.18)
+                        end
+                    end
+                end
+            end
+
+            -- 2. TravelStuds
+            if Cfg.DoTravelStuds and (Cfg.MasterEnabled or State.ManualOnce) then
+                local AllQ = ReadQuests(Cfg.IncludeWeeklyClaim and nil or "Daily")
+                for _, Q in ipairs(AllQ) do
+                    if not Cfg.MasterEnabled and not State.ManualOnce then break end
+                    if not Q.Completed and Q.Objective == "TravelStuds" and os.clock() >= (State.FailedCooldown[Q.Id] or 0) then
+                        local ok = Handlers.TravelStuds(Q)
+                        if not ok then State.FailedCooldown[Q.Id] = os.clock() + 45 else RunAutoClaims(true) end
+                    end
+                end
+            end
+
+            RunAutoClaims(true)
+
+            -- 3. Queue Dungeon/Raid OR Auto-Disable Combat Flags when done!
+            local FreshDaily, FreshComp = ReadQuests("Daily")
+            if not IsManualOnce and Cfg.MasterEnabled and Cfg.DoDungeonQueue and IsInLobby() then
+                if FreshComp >= Cfg.TargetDailyGoal then
+                    DeactivateQuestCombatFlags(false)
+                    SetStatus(string.format("Daily Goal Complete! (%d/12) | Combat Flags OFF", FreshComp))
+                else
+                    local TargetQ, DungId, Diff, MultiRun = PickBestDungeonQuest(FreshDaily)
+                    if TargetQ and DungId then
+                        LaunchDungeonRun(TargetQ, DungId, Diff, MultiRun)
+                    else
+                        DeactivateQuestCombatFlags(false)
+                        SetStatus(string.format("Done (%d/12) | Remaining need Co-op | Combat OFF", FreshComp))
+                    end
+                end
+            else
+                if IsInLobby() and FreshComp >= Cfg.TargetDailyGoal then
+                    DeactivateQuestCombatFlags(false)
+                end
+                SetStatus(string.format("Ready | Daily Progress: %d/12", FreshComp))
+            end
+        end)
+
+        State.ManualOnce = false
+        State.Busy = false
+    end
+
+    -- In-Dungeon Monitor: Turns OFF AutoPlayAgain & returns to Lobby as soon as quest completes!
+    local function RunInDungeonMonitor()
+        local Marker = ReadCombatMarker()
+        if not Marker or not Marker.active then return end
+
+        local DailyQuests, DailyComp = ReadQuests("Daily")
+        local TrackedFinished = true
+        for _, Q in ipairs(DailyQuests) do
+            if Q.Id == Marker.questId and not Q.Completed then
+                TrackedFinished = false
+                break
+            end
+        end
+
+        if TrackedFinished or DailyComp >= Cfg.TargetDailyGoal then
+            SetUIFlag("AutoPlayAgainToggle", false)
+            RunAutoClaims(true)
+
+            local ClearedGui = Player:FindFirstChild("PlayerGui") and Player.PlayerGui:FindFirstChild("DungeonCleared")
+            if ClearedGui and ClearedGui.Enabled then
+                if DailyComp >= Cfg.TargetDailyGoal then
+                    DeactivateQuestCombatFlags(true)
+                end
+                task.wait(0.8)
+                local ExitChoice = Remotes:FindFirstChild("SetExitChoice")
+                if ExitChoice then pcall(function() ExitChoice:FireServer("Lobby") end) end
+            end
+        end
+    end
+
+    -- ==========================================
+    -- UI CONTROLS (ALL WITH UNIQUE FLAGS)
+    -- ==========================================
+    State.StatusLabel = TargetTab:CreateLabel("Status: Fast Engine Ready")
+
+    TargetTab:CreateToggle({
+        Name = "Auto Complete Daily Quests (Master Switch)",
+        CurrentValue = false,
+        Flag = "DH_AutoDailyMaster",
+        Callback = function(Val)
+            Cfg.MasterEnabled = (Val == true)
+            if Val then
+                table.clear(State.FailedCooldown)
+                SetStatus("Active — Instant Scan Running...")
+            else
+                DeactivateQuestCombatFlags(false)
+                SetStatus("Paused | Auto Combat Flags Restored OFF")
+            end
+        end
+    })
+
+    TargetTab:CreateToggle({
+        Name = "Instant Auto-Claim (Quests, Milestones 2-10 & Calendar)",
+        CurrentValue = true,
+        Flag = "DH_AutoDailyClaim",
+        Callback = function(Val) Cfg.AutoClaimEnabled = (Val == true) end
+    })
+
+    TargetTab:CreateButton({
+        Name = "Scan Today's 12 Daily Quests (Instant)",
+        Callback = function()
+            local DailyQ, DailyComp = ReadQuests("Daily")
+            local LobbyLeft, DungLeft, CoopLeft = 0, 0, 0
+            local NextTitle = "All Daily Quests Completed!"
+            local LastDung, FirstRaid = DetectLastStoryDungeonAndFirstRaid()
+
+            for _, Q in ipairs(DailyQ) do
+                if not Q.Completed then
+                    if NextTitle == "All Daily Quests Completed!" then
+                        NextTitle = Q.Title .. " (" .. Q.Progress .. "/" .. Q.Goal .. ")"
+                    end
+                    if Handlers[Q.Objective] then LobbyLeft = LobbyLeft + 1
+                    elseif Q.Objective == "ClearDungeonWithOtherPlayer" or Q.Objective == "PerfectDodge" then CoopLeft = CoopLeft + 1
+                    else DungLeft = DungLeft + 1 end
+                end
+            end
+
+            ShowQuestNotify(
+                string.format("Daily: %d/12 | Lobby:%d Dung:%d Co-op:%d", DailyComp, LobbyLeft, DungLeft, CoopLeft),
+                string.format("Next: %s | Last:%s | Raid:%s", NextTitle, LastDung, FirstRaid),
+                (LobbyLeft + DungLeft == 0) and Color3.fromRGB(0, 235, 160) or Color3.fromRGB(0, 210, 255),
+                4.0
+            )
+            SetStatus(string.format("%d/12 | Next: %s", DailyComp, NextTitle))
+        end
+    })
+
+    TargetTab:CreateButton({
+        Name = "Run Lobby Quests (Auto-Pull Bank + Claim) Now",
+        Callback = function()
+            task.spawn(function()
+                table.clear(State.FailedCooldown)
+                RunLobbyQuestsPass(true)
+            end)
+        end
+    })
+
+    TargetTab:CreateButton({
+        Name = "Claim All Ready Rewards Now",
+        Callback = function()
+            task.spawn(function() RunAutoClaims(false) end)
+        end
+    })
+
+    TargetTab:CreateSection("Automation & Safety Settings")
+
+    TargetTab:CreateToggle({
+        Name = "Auto-Pull Missing Food / Gem Frags / Trash from Bank",
+        CurrentValue = true,
+        Flag = "DH_AutoDailyPullBank",
+        Callback = function(Val) Cfg.AutoPullFromBank = (Val == true) end
+    })
+
+    TargetTab:CreateToggle({
+        Name = "Auto Toggle Combat Flags ON/OFF (PetAura/Mobs/Claim/Replay)",
+        CurrentValue = true,
+        Flag = "DH_AutoDailyManageCombat",
+        Callback = function(Val) Cfg.AutoManageCombat = (Val == true) end
+    })
+
+    TargetTab:CreateSlider({
+        Name = "Stop Dungeon Queue At X Daily Quests Done",
+        Range = {2, 12},
+        Increment = 2,
+        Suffix = " / 12",
+        CurrentValue = 10,
+        Flag = "DH_AutoDailyTargetGoal",
+        Callback = function(Val) Cfg.TargetDailyGoal = tonumber(Val) or 10 end
+    })
+
+    TargetTab:CreateToggle({
+        Name = "Auto Lobby Quests (Food, Ruby Gems, Reroll, Sell)",
+        CurrentValue = true,
+        Flag = "DH_AutoDailyLobby",
+        Callback = function(Val) Cfg.DoLobbyQuests = (Val == true) end
+    })
+
+    TargetTab:CreateToggle({
+        Name = "Auto Travel Distance (TravelStuds)",
+        CurrentValue = true,
+        Flag = "DH_AutoDailyTravel",
+        Callback = function(Val) Cfg.DoTravelStuds = (Val == true) end
+    })
+
+    TargetTab:CreateToggle({
+        Name = "Allow Spending Keys (Skill Chests & SpendKeys)",
+        CurrentValue = true,
+        Flag = "DH_AutoDailySpendKeys",
+        Callback = function(Val) Cfg.AllowSpendKeys = (Val == true) end
+    })
+
+    TargetTab:CreateToggle({
+        Name = "Allow Spending Magic Dust (Pet Level & SpendDust)",
+        CurrentValue = true,
+        Flag = "DH_AutoDailySpendDust",
+        Callback = function(Val) Cfg.AllowSpendDust = (Val == true) end
+    })
+
+    TargetTab:CreateToggle({
+        Name = "Auto Queue Nightmare Dungeons (Last Dungeon for Kills)",
+        CurrentValue = true,
+        Flag = "DH_AutoDailyDungeonQueue",
+        Callback = function(Val) Cfg.DoDungeonQueue = (Val == true) end
+    })
+
+    TargetTab:CreateToggle({
+        Name = "Auto Queue Marthuun Raid (Nightmare)",
+        CurrentValue = true,
+        Flag = "DH_AutoDailyRaidDung",
+        Callback = function(Val) Cfg.AllowRaidQueue = (Val == true) end
+    })
+
+    TargetTab:CreateToggle({
+        Name = "Include Event Dungeon Quests",
+        CurrentValue = true,
+        Flag = "DH_AutoDailyEventDung",
+        Callback = function(Val) Cfg.AllowEventQueue = (Val == true) end
+    })
+
+    TargetTab:CreateToggle({
+        Name = "Include Weekly Quests Auto-Claim & Travel",
+        CurrentValue = true,
+        Flag = "DH_AutoDailyWeeklyToo",
+        Callback = function(Val) Cfg.IncludeWeeklyClaim = (Val == true) end
+    })
+
+    TargetTab:CreateSlider({
+        Name = "Max Safe Trash Rarity (Sell / Reroll / Infuse)",
+        Range = {1, 4},
+        Increment = 1,
+        Suffix = " MaxRar",
+        CurrentValue = 3,
+        Flag = "DH_AutoDailyMaxTrashRar",
+        Callback = function(Val) Cfg.MaxSafeTrashRarity = tonumber(Val) or 3 end
+    })
+
+    -- ==========================================
+    -- INIT LISTENERS & FAST BACKGROUND LOOP (0.5s)
+    -- ==========================================
+    task.spawn(function()
+        task.wait(0.4)
+        HookQuestChangeListeners()
+        if Cfg.AutoClaimEnabled then RunAutoClaims(true) end
+
+        while true do
+            task.wait(0.5)
+            HookQuestChangeListeners()
+
+            if Cfg.MasterEnabled then
+                if IsInLobby() then
+                    if not State.Busy then
+                        RunLobbyQuestsPass(false)
+                    end
+                else
+                    RunInDungeonMonitor()
+                    if Cfg.AutoClaimEnabled then pcall(RunAutoClaims, true) end
+                end
+            elseif Cfg.AutoClaimEnabled then
+                pcall(RunAutoClaims, true)
+                task.wait(1.5)
+            end
+        end
+    end)
+end
+
 -- ==========================================
 -- SPEED CONTROLS (TOGGLE + SLIDER + MANUAL INPUT)
 -- ==========================================
