@@ -143,15 +143,29 @@ local ColorPresets = {
 }
 
 local SurfaceModes = {
+    -- Ultra Transparent & Glassy Styles
+    ["Ultra Phantom"]   = {Main = 0.72, Card = 0.68, Input = 0.60, Stroke = 0.08, MainBg = Color3.fromRGB(10, 12, 20), GradA = Color3.fromRGB(22, 26, 44), GradB = Color3.fromRGB(8, 10, 18)},
     ["Crystal Glass"]   = {Main = 0.54, Card = 0.58, Input = 0.50, Stroke = 0.14, MainBg = Color3.fromRGB(18, 22, 36), GradA = Color3.fromRGB(38, 46, 72), GradB = Color3.fromRGB(16, 20, 32)},
     ["Transparent"]     = {Main = 0.42, Card = 0.48, Input = 0.42, Stroke = 0.24, MainBg = Color3.fromRGB(12, 14, 22), GradA = Color3.fromRGB(24, 28, 44), GradB = Color3.fromRGB(11, 13, 20)},
+    ["Liquid Glass"]    = {Main = 0.36, Card = 0.42, Input = 0.34, Stroke = 0.10, MainBg = Color3.fromRGB(24, 34, 54), GradA = Color3.fromRGB(62, 82, 118), GradB = Color3.fromRGB(18, 24, 42)},
+    ["Cyber Haze"]      = {Main = 0.32, Card = 0.38, Input = 0.32, Stroke = 0.15, MainBg = Color3.fromRGB(8, 24, 34),  GradA = Color3.fromRGB(16, 52, 68), GradB = Color3.fromRGB(6, 16, 24)},
     ["Frosted Mist"]    = {Main = 0.28, Card = 0.34, Input = 0.28, Stroke = 0.20, MainBg = Color3.fromRGB(28, 33, 48), GradA = Color3.fromRGB(48, 56, 80), GradB = Color3.fromRGB(22, 26, 40)},
+    ["Holo Prism"]      = {Main = 0.26, Card = 0.34, Input = 0.26, Stroke = 0.12, MainBg = Color3.fromRGB(26, 16, 44), GradA = Color3.fromRGB(58, 28, 92), GradB = Color3.fromRGB(12, 36, 56)},
+    ["Acrylic Frost"]   = {Main = 0.22, Card = 0.30, Input = 0.22, Stroke = 0.24, MainBg = Color3.fromRGB(20, 24, 34), GradA = Color3.fromRGB(36, 42, 58), GradB = Color3.fromRGB(15, 18, 26)},
+
+    -- Balanced Translucent & Tinted Styles
     ["Translucent"]     = {Main = 0.16, Card = 0.24, Input = 0.18, Stroke = 0.28, MainBg = Color3.fromRGB(12, 14, 21), GradA = Color3.fromRGB(22, 26, 40), GradB = Color3.fromRGB(10, 12, 19)},
+    ["Crimson Velvet"]  = {Main = 0.15, Card = 0.22, Input = 0.16, Stroke = 0.20, MainBg = Color3.fromRGB(28, 10, 18), GradA = Color3.fromRGB(56, 16, 30), GradB = Color3.fromRGB(16, 6, 12)},
     ["Midnight Glass"]  = {Main = 0.14, Card = 0.20, Input = 0.15, Stroke = 0.22, MainBg = Color3.fromRGB(10, 14, 34), GradA = Color3.fromRGB(20, 28, 62), GradB = Color3.fromRGB(8, 10, 24)},
+
+    -- Stealth, Dark & Solid Styles
+    ["Carbon Stealth"]  = {Main = 0.08, Card = 0.14, Input = 0.10, Stroke = 0.36, MainBg = Color3.fromRGB(16, 17, 20), GradA = Color3.fromRGB(26, 28, 32), GradB = Color3.fromRGB(12, 13, 16)},
     ["Smoked Obsidian"] = {Main = 0.06, Card = 0.12, Input = 0.08, Stroke = 0.32, MainBg = Color3.fromRGB(9, 10, 15),  GradA = Color3.fromRGB(16, 18, 28), GradB = Color3.fromRGB(7, 8, 12)},
     ["Neon Dark"]       = {Main = 0.03, Card = 0.07, Input = 0.04, Stroke = 0.06, MainBg = Color3.fromRGB(5, 6, 10),   GradA = Color3.fromRGB(12, 14, 22), GradB = Color3.fromRGB(4, 5, 8)},
+    ["Deep Void"]       = {Main = 0.01, Card = 0.05, Input = 0.02, Stroke = 0.14, MainBg = Color3.fromRGB(2, 2, 4),    GradA = Color3.fromRGB(6, 6, 10),   GradB = Color3.fromRGB(0, 0, 2)},
     ["Opaque Solid"]    = {Main = 0.00, Card = 0.00, Input = 0.00, Stroke = 0.34, MainBg = Color3.fromRGB(13, 15, 22), GradA = Color3.fromRGB(20, 24, 36), GradB = Color3.fromRGB(11, 13, 20)},
 }
+
 
 local Theme = {
     MainBg = Color3.fromRGB(12, 14, 21),
@@ -845,6 +859,8 @@ end
 -- ==========================================
 -- 10 LIVE BACKGROUND ANIMATIONS ENGINE
 -- ==========================================
+
+        
 local function CreateBackgroundEngine(MainFrame)
     local BgAnimLayer = Make("Frame", {
         Name = "BgAnimLayer",
@@ -1059,6 +1075,144 @@ local function CreateBackgroundEngine(MainFrame)
                     SpeedY = math.random(180, 360) / 1000, UseSecondary = UseSec
                 })
             end
+
+        elseif Style == "Shooting Comets" then
+            for i = 1, 10 do
+                local Len = math.random(32, 62)
+                local UseSec = (i % 2 == 0)
+                local Comet = Make("Frame", {
+                    Size = UDim2.new(0, Len, 0, 2),
+                    Position = UDim2.new(math.random(), 0, math.random(), 0),
+                    Rotation = 24,
+                    BackgroundColor3 = UseSec and Theme.AccentSecondary or Theme.Accent,
+                    BackgroundTransparency = 0.18, BorderSizePixel = 0, ZIndex = 1
+                }, BgAnimLayer)
+                AddCorner(Comet, 2)
+                Make("UIGradient", {
+                    Transparency = NumberSequence.new({
+                        NumberSequenceKeypoint.new(0, 1),
+                        NumberSequenceKeypoint.new(0.7, 0.25),
+                        NumberSequenceKeypoint.new(1, 0)
+                    })
+                }, Comet)
+                table.insert(ActiveParticles, {
+                    Obj = Comet, X = math.random(), Y = math.random(),
+                    Speed = math.random(320, 560) / 1000, UseSecondary = UseSec
+                })
+            end
+
+        elseif Style == "Orbiting Vortex" then
+            for i = 1, 18 do
+                local Sz = math.random(3, 6)
+                local UseSec = (i % 2 == 0)
+                local Dot = Make("Frame", {
+                    Size = UDim2.new(0, Sz, 0, Sz),
+                    Position = UDim2.new(0.5, 0, 0.5, 0),
+                    AnchorPoint = Vector2.new(0.5, 0.5),
+                    BackgroundColor3 = UseSec and Theme.AccentSecondary or Theme.Accent,
+                    BackgroundTransparency = 0.25, BorderSizePixel = 0, ZIndex = 1
+                }, BgAnimLayer)
+                AddCorner(Dot, Sz)
+                table.insert(ActiveParticles, {
+                    Obj = Dot, Angle = (i / 18) * math.pi * 2,
+                    Radius = 0.08 + ((i % 6) * 0.072),
+                    AngSpeed = (i % 2 == 0 and 1 or -1) * (0.55 + (i % 4) * 0.25),
+                    UseSecondary = UseSec
+                })
+            end
+
+        elseif Style == "Radar Sweep" then
+            for r = 1, 3 do
+                local RingSz = r * 86
+                local Ring = Make("Frame", {
+                    Size = UDim2.new(0, RingSz, 0, RingSz),
+                    Position = UDim2.new(0.5, 0, 0.5, 0),
+                    AnchorPoint = Vector2.new(0.5, 0.5),
+                    BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 1
+                }, BgAnimLayer)
+                AddCorner(Ring, RingSz)
+                local Stk = AddStroke(Ring, (r % 2 == 0) and Theme.AccentSecondary or Theme.Accent, 1, 0.72)
+                table.insert(ActiveParticles, {Obj = Ring, Stroke = Stk, IsRing = true, UseSecondary = (r % 2 == 0)})
+            end
+
+            local Sweep = Make("Frame", {
+                Size = UDim2.new(0, 290, 0, 3),
+                Position = UDim2.new(0.5, 0, 0.5, 0),
+                AnchorPoint = Vector2.new(0.5, 0.5),
+                BackgroundColor3 = Theme.AccentSecondary,
+                BackgroundTransparency = 0.25, BorderSizePixel = 0, ZIndex = 1
+            }, BgAnimLayer)
+            Make("UIGradient", {
+                Transparency = NumberSequence.new({
+                    NumberSequenceKeypoint.new(0, 1),
+                    NumberSequenceKeypoint.new(0.49, 1),
+                    NumberSequenceKeypoint.new(0.50, 0.15),
+                    NumberSequenceKeypoint.new(1, 0.85)
+                })
+            }, Sweep)
+            table.insert(ActiveParticles, {Obj = Sweep, IsSweep = true, UseSecondary = true})
+
+        elseif Style == "Sound Equalizer" then
+            local BarCount = 20
+            for i = 1, BarCount do
+                local UseSec = (i % 2 == 0)
+                local Bar = Make("Frame", {
+                    Size = UDim2.new(1 / BarCount, -6, 0, 20),
+                    Position = UDim2.new((i - 0.5) / BarCount, 0, 1, 0),
+                    AnchorPoint = Vector2.new(0.5, 1),
+                    BackgroundColor3 = UseSec and Theme.AccentSecondary or Theme.Accent,
+                    BackgroundTransparency = 0.68, BorderSizePixel = 0, ZIndex = 1
+                }, BgAnimLayer)
+                AddCorner(Bar, 4)
+                Make("UIGradient", {
+                    Rotation = 90,
+                    Transparency = NumberSequence.new({
+                        NumberSequenceKeypoint.new(0, 0.1),
+                        NumberSequenceKeypoint.new(1, 0.85)
+                    })
+                }, Bar)
+                table.insert(ActiveParticles, {
+                    Obj = Bar, Phase = i * 0.45,
+                    Speed = 2.4 + (i % 4) * 0.55,
+                    MaxH = 38 + (i % 5) * 16, UseSecondary = UseSec
+                })
+            end
+
+        elseif Style == "Rising Embers" then
+            for i = 1, 22 do
+                local Sz = math.random(2, 5)
+                local UseSec = (i % 3 == 0)
+                local Spark = Make("Frame", {
+                    Size = UDim2.new(0, Sz, 0, Sz),
+                    Position = UDim2.new(math.random(), 0, math.random(), 0),
+                    BackgroundColor3 = UseSec and Theme.AccentSecondary or Theme.Accent,
+                    BackgroundTransparency = 0.2, BorderSizePixel = 0, ZIndex = 1
+                }, BgAnimLayer)
+                AddCorner(Spark, Sz)
+                table.insert(ActiveParticles, {
+                    Obj = Spark, BaseX = math.random(), Y = math.random(),
+                    SpeedY = math.random(85, 190) / 1000, SwayAmp = math.random(15, 38) / 1000,
+                    Phase = math.random() * 6.28, UseSecondary = UseSec
+                })
+            end
+
+        elseif Style == "Warp Speed" then
+            for i = 1, 22 do
+                local UseSec = (i % 2 == 0)
+                local Star = Make("Frame", {
+                    Size = UDim2.new(0, 2, 0, 2),
+                    Position = UDim2.new(0.5, 0, 0.5, 0),
+                    AnchorPoint = Vector2.new(0.5, 0.5),
+                    BackgroundColor3 = UseSec and Theme.AccentSecondary or Color3.fromRGB(255, 255, 255),
+                    BackgroundTransparency = 0.2, BorderSizePixel = 0, ZIndex = 1
+                }, BgAnimLayer)
+                AddCorner(Star, 4)
+                table.insert(ActiveParticles, {
+                    Obj = Star, Angle = math.random() * math.pi * 2,
+                    Dist = math.random() * 0.55, Speed = math.random(30, 65) / 100,
+                    UseSecondary = UseSec
+                })
+            end
         end
 
         local TimeAcc = 0
@@ -1075,12 +1229,14 @@ local function CreateBackgroundEngine(MainFrame)
                     P.Obj.Position = UDim2.new(P.X, 0, P.Y, 0)
                     P.Obj.BackgroundTransparency = 0.30 + 0.45 * (0.5 + 0.5 * math.sin(TimeAcc * 2.8 + P.Phase))
                 end
+
             elseif Style == "Floating Particles" then
                 for _, P in ipairs(ActiveParticles) do
                     P.Y = P.Y - P.SpeedY * dt
                     if P.Y < -0.05 then P.Y = 1.05; P.BaseX = math.random() end
                     P.Obj.Position = UDim2.new(P.BaseX + math.sin(TimeAcc * 1.8 + P.Phase) * P.SwayAmp, 0, P.Y, 0)
                 end
+
             elseif Style == "Cyber Rain" or Style == "Matrix Grid" then
                 for _, P in ipairs(ActiveParticles) do
                     P.Y = P.Y + P.SpeedY * dt
@@ -1090,6 +1246,7 @@ local function CreateBackgroundEngine(MainFrame)
                     end
                     P.Obj.Position = UDim2.new(P.X, 0, P.Y, 0)
                 end
+
             elseif Style == "Glow Orbs" then
                 for _, P in ipairs(ActiveParticles) do
                     P.X = P.X + P.VX * dt; P.Y = P.Y + P.VY * dt
@@ -1098,9 +1255,11 @@ local function CreateBackgroundEngine(MainFrame)
                     P.Obj.Position = UDim2.new(P.X, 0, P.Y, 0)
                     P.Obj.BackgroundTransparency = 0.78 + 0.12 * math.sin(TimeAcc * 1.5 + P.Phase)
                 end
+
             elseif Style == "Aurora Wave" and AuroraGrad then
                 AuroraGrad.Rotation = (TimeAcc * 32) % 360
                 AuroraGrad.Offset = Vector2.new(math.sin(TimeAcc * 0.9) * 0.25, math.cos(TimeAcc * 0.7) * 0.15)
+
             elseif Style == "Pulse Rings" then
                 for _, P in ipairs(ActiveParticles) do
                     P.Progress = P.Progress + P.Speed * dt
@@ -1112,24 +1271,82 @@ local function CreateBackgroundEngine(MainFrame)
                     P.Obj.Size = UDim2.new(0, Sz, 0, Sz)
                     P.Stroke.Transparency = 0.25 + (P.Progress * 0.75)
                 end
+
             elseif Style == "Diagonal Beams" then
                 for _, P in ipairs(ActiveParticles) do
                     P.X = P.X + P.Speed * dt
                     if P.X > 1.35 then P.X = -0.35 end
                     P.Obj.Position = UDim2.new(P.X, 0, 0.5, 0)
                 end
+
             elseif Style == "Snowfall Drift" then
                 for _, P in ipairs(ActiveParticles) do
                     P.Y = P.Y + P.SpeedY * dt
                     if P.Y > 1.05 then P.Y = -0.05; P.BaseX = math.random() end
                     P.Obj.Position = UDim2.new(P.BaseX + math.sin(TimeAcc * 1.4 + P.Phase) * P.SwayAmp, 0, P.Y, 0)
                 end
+
             elseif Style == "Firefly Swarm" then
                 for _, P in ipairs(ActiveParticles) do
                     local px = P.CX + math.sin(TimeAcc * P.FreqX + P.Phase) * P.RX
                     local py = P.CY + math.cos(TimeAcc * P.FreqY + P.Phase) * P.RY
                     P.Obj.Position = UDim2.new(px, 0, py, 0)
                     P.Obj.BackgroundTransparency = 0.20 + 0.65 * (0.5 + 0.5 * math.sin(TimeAcc * 3.4 + P.Phase))
+                end
+
+            elseif Style == "Shooting Comets" then
+                for _, P in ipairs(ActiveParticles) do
+                    P.X = P.X + P.Speed * dt
+                    P.Y = P.Y + (P.Speed * 0.45) * dt
+                    if P.X > 1.15 or P.Y > 1.15 then
+                        P.X = -0.15; P.Y = math.random(-20, 80) / 100
+                    end
+                    P.Obj.Position = UDim2.new(P.X, 0, P.Y, 0)
+                end
+
+            elseif Style == "Orbiting Vortex" then
+                for _, P in ipairs(ActiveParticles) do
+                    P.Angle = P.Angle + P.AngSpeed * dt
+                    local px = 0.5 + math.cos(P.Angle) * P.Radius
+                    local py = 0.5 + math.sin(P.Angle) * (P.Radius * 1.35)
+                    P.Obj.Position = UDim2.new(px, 0, py, 0)
+                end
+
+            elseif Style == "Radar Sweep" then
+                for _, P in ipairs(ActiveParticles) do
+                    if P.IsSweep then
+                        P.Obj.Rotation = (TimeAcc * 75) % 360
+                    end
+                end
+
+            elseif Style == "Sound Equalizer" then
+                for _, P in ipairs(ActiveParticles) do
+                    local wave = 0.5 + 0.5 * math.sin(TimeAcc * P.Speed + P.Phase)
+                    local h = math.floor(10 + wave * P.MaxH)
+                    P.Obj.Size = UDim2.new(1 / #ActiveParticles, -6, 0, h)
+                end
+
+            elseif Style == "Rising Embers" then
+                for _, P in ipairs(ActiveParticles) do
+                    P.Y = P.Y - P.SpeedY * dt
+                    if P.Y < -0.05 then P.Y = 1.05; P.BaseX = math.random() end
+                    local x = P.BaseX + math.sin(TimeAcc * 3.2 + P.Phase) * P.SwayAmp
+                    P.Obj.Position = UDim2.new(x, 0, P.Y, 0)
+                    P.Obj.BackgroundTransparency = math.clamp((1 - P.Y) * 0.78 + 0.15 * math.sin(TimeAcc * 7 + P.Phase), 0.1, 0.92)
+                end
+
+            elseif Style == "Warp Speed" then
+                for _, P in ipairs(ActiveParticles) do
+                    P.Dist = P.Dist + (P.Speed * (0.25 + P.Dist * 2.2)) * dt
+                    if P.Dist > 0.72 then
+                        P.Dist = 0.02; P.Angle = math.random() * math.pi * 2
+                    end
+                    local px = 0.5 + math.cos(P.Angle) * P.Dist
+                    local py = 0.5 + math.sin(P.Angle) * P.Dist
+                    local sz = math.clamp(math.floor(2 + P.Dist * 7), 2, 6)
+                    P.Obj.Position = UDim2.new(px, 0, py, 0)
+                    P.Obj.Size = UDim2.new(0, sz, 0, sz)
+                    P.Obj.BackgroundTransparency = math.clamp(0.85 - P.Dist * 1.1, 0.12, 0.85)
                 end
             end
         end)
@@ -2213,9 +2430,12 @@ local function PopulateLooksTab(LooksTab, LooksPage, Controls)
     LooksTab:CreateDropdown({
         Name = "UI Background Surface Style",
         Options = {
-            "Crystal Glass", "Transparent", "Frosted Mist", "Translucent",
-            "Midnight Glass", "Smoked Obsidian", "Neon Dark", "Opaque Solid"
+            "Ultra Phantom", "Crystal Glass", "Transparent", "Liquid Glass",
+            "Cyber Haze", "Frosted Mist", "Holo Prism", "Acrylic Frost",
+            "Translucent", "Crimson Velvet", "Midnight Glass", "Carbon Stealth",
+            "Smoked Obsidian", "Neon Dark", "Deep Void", "Opaque Solid"
         },
+
         CurrentOption = {"Translucent"},
         MultipleOptions = false,
         Flag = "SidUI_LooksSurfaceStyle",
@@ -2275,12 +2495,14 @@ local function PopulateLooksTab(LooksTab, LooksPage, Controls)
     })
 
     LooksTab:CreateDropdown({
-        Name = "Live Background Animation (10 Styles)",
+       Name = "Live Background Animation (16 Styles)",
         Options = {
             "Moving Stars", "Floating Particles", "Cyber Rain", "Glow Orbs",
             "Aurora Wave", "Pulse Rings", "Diagonal Beams", "Snowfall Drift",
-            "Firefly Swarm", "Matrix Grid", "None"
+            "Firefly Swarm", "Matrix Grid", "Shooting Comets", "Orbiting Vortex",
+            "Radar Sweep", "Sound Equalizer", "Rising Embers", "Warp Speed", "None"
         },
+
         CurrentOption = {"Moving Stars"},
         MultipleOptions = false,
         Flag = "SidUI_LooksBgAnimStyle",
@@ -2294,11 +2516,13 @@ local function PopulateLooksTab(LooksTab, LooksPage, Controls)
     })
 
     LooksTab:CreateDropdown({
-        Name = "Window Open/Close Style (8 Styles)",
+        Name = "Window Open/Close Style (12 Styles)",
         Options = {
             "Pop & Scale", "Slide From Top", "Slide From Bottom", "Slide From Left",
-            "Slide From Right", "Fade & Glide", "Elastic Bounce", "Flip & Zoom"
+            "Slide From Right", "Fade & Glide", "Elastic Bounce", "Flip & Zoom",
+            "Horizon Unfold", "Curtain Split", "Spin Portal", "Drop & Bounce"
         },
+
         CurrentOption = {"Pop & Scale"},
         MultipleOptions = false,
         Flag = "SidUI_LooksAnimStyle",
@@ -2744,6 +2968,8 @@ function Library:CreateWindow(Config)
     -- ==========================================
     -- 8-STYLE OPEN / CLOSE ANIMATION ENGINE
     -- ==========================================
+    
+    local DefaultWinSize = UDim2.new(0, 565, 0, 315)
     local LastSavedPos = CenterPos
     local IsWindowVisible = true
     local AnimToken = 0
@@ -2754,6 +2980,7 @@ function Library:CreateWindow(Config)
         ShowUIBtn.Visible = false
         MainFrame.Visible = true
         MainFrame.Rotation = 0
+        MainFrame.Size = DefaultWinSize
         if not Silent then PlayUISound("Open", 1.05) end
 
         local TargetScale = LooksState.UIScale
@@ -2803,6 +3030,23 @@ function Library:CreateWindow(Config)
             MainFrame.Rotation = -7
             Tween(MainUIScale, 0.28, {Scale = TargetScale}, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
             Tween(MainFrame, 0.28, {Rotation = 0}, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+        elseif Style == "Horizon Unfold" then
+            MainUIScale.Scale = TargetScale; MainFrame.Position = TargetPos; MainFrame.BackgroundTransparency = TargetTrans
+            MainFrame.Size = UDim2.new(0, 565, 0, 4)
+            Tween(MainFrame, 0.30, {Size = DefaultWinSize}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+        elseif Style == "Curtain Split" then
+            MainUIScale.Scale = TargetScale; MainFrame.Position = TargetPos; MainFrame.BackgroundTransparency = TargetTrans
+            MainFrame.Size = UDim2.new(0, 6, 0, 315)
+            Tween(MainFrame, 0.30, {Size = DefaultWinSize}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+        elseif Style == "Spin Portal" then
+            MainFrame.Position = TargetPos; MainFrame.BackgroundTransparency = TargetTrans
+            MainUIScale.Scale = TargetScale * 0.45; MainFrame.Rotation = -18
+            Tween(MainUIScale, 0.32, {Scale = TargetScale}, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+            Tween(MainFrame, 0.32, {Rotation = 0}, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+        elseif Style == "Drop & Bounce" then
+            MainUIScale.Scale = TargetScale; MainFrame.BackgroundTransparency = TargetTrans
+            MainFrame.Position = UDim2.new(TargetPos.X.Scale, TargetPos.X.Offset, -0.35, 0)
+            Tween(MainFrame, 0.48, {Position = TargetPos}, Enum.EasingStyle.Bounce, Enum.EasingDirection.Out)
         end
     end
 
@@ -2823,7 +3067,7 @@ function Library:CreateWindow(Config)
         local Style = LooksState.WindowAnimStyle
         local DoneTween = nil
 
-        if Style == "Slide From Top" then
+        if Style == "Slide From Top" or Style == "Drop & Bounce" then
             DoneTween = Tween(MainFrame, 0.20, {Position = UDim2.new(LastSavedPos.X.Scale, LastSavedPos.X.Offset, -0.35, 0)}, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
         elseif Style == "Slide From Bottom" then
             DoneTween = Tween(MainFrame, 0.20, {Position = UDim2.new(LastSavedPos.X.Scale, LastSavedPos.X.Offset, 1.35, 0)}, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
@@ -2836,9 +3080,13 @@ function Library:CreateWindow(Config)
                 Position = UDim2.new(LastSavedPos.X.Scale, LastSavedPos.X.Offset, LastSavedPos.Y.Scale, LastSavedPos.Y.Offset + 22),
                 BackgroundTransparency = 1
             }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-        elseif Style == "Flip & Zoom" then
-            Tween(MainFrame, 0.16, {Rotation = 7}, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-            DoneTween = Tween(MainUIScale, 0.16, {Scale = LooksState.UIScale * 0.78}, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+        elseif Style == "Horizon Unfold" then
+            DoneTween = Tween(MainFrame, 0.18, {Size = UDim2.new(0, 565, 0, 4)}, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+        elseif Style == "Curtain Split" then
+            DoneTween = Tween(MainFrame, 0.18, {Size = UDim2.new(0, 6, 0, 315)}, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+        elseif Style == "Flip & Zoom" or Style == "Spin Portal" then
+            Tween(MainFrame, 0.18, {Rotation = (Style == "Spin Portal") and 18 or 7}, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+            DoneTween = Tween(MainUIScale, 0.18, {Scale = LooksState.UIScale * 0.55}, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
         else
             DoneTween = Tween(MainUIScale, 0.16, {Scale = LooksState.UIScale * 0.82}, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
         end
@@ -2848,6 +3096,7 @@ function Library:CreateWindow(Config)
                 if AnimToken == MyToken and not IsWindowVisible then
                     MainFrame.Visible = false
                     MainFrame.Rotation = 0
+                    MainFrame.Size = DefaultWinSize
                     MainUIScale.Scale = LooksState.UIScale
                     MainFrame.Position = LastSavedPos
                     ShowUIBtn.Visible = true
