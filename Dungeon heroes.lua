@@ -307,7 +307,7 @@ end
 -- ========================================  
 local function startHeartbeat()  
     task.spawn(function()  
-        local isFirst = true -- Variable to track first run  
+        local isFirst = true
           
         while true do  
             -- Data Prepare  
@@ -7076,7 +7076,6 @@ end
 -- ============================================================================
 -- 5. RAYFIELD UI CONTROLS (DROPDOWN, SLIDERS, BUTTON / TOGGLE)
 -- ============================================================================
-ChestTab:CreateSection("Dungeon Skill Shop (Remote Buyer)")
 
 	ChestTab:CreateDropdown({
 		Name = "Select Dungeon Skill Chest (1 to 15)",
