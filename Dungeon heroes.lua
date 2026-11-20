@@ -1223,12 +1223,14 @@ local AutoGrindTab = Window:CreateTab("⚡ Grind", 4483362458)
 local UtilityTab = Window:CreateTab("⚡ Utility", 4483362458)
 local ChestTab = Window:CreateTab("⚡ Chest", 4483362458)
 local MiscellaneousTab = Window:CreateTab("⚡ Miscellaneous", 4483362458)
-local TargetTab = Window:CreateTab("⚡ Daily Quest", 4483362458)
 
 -- ==================== =================================
 -- ==================== =================================
 -- ==================== =================================
 -- ==================== =================================
+
+local TargetTab = Window:CreateTab("Daily Quests")
+-- local TargetTab = UtilityTab
 
 TargetTab:CreateSection("Ultimate Auto Daily Quests V2 (Pro)")
 do
