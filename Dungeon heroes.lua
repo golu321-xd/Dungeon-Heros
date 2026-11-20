@@ -1,10 +1,3 @@
--- Script By Sid (Rayfield UI Edition - WalkSpeed + Follow
--- Player + Emote V2)
-
--- Game aur Character load hone ka wait (Auto-Execute ke liye zaroori)
-
--- Dungeon Heroes | Safe Initialization Gate
-
 if not game:IsLoaded() then
 game.Loaded:Wait()
 end
@@ -68,12 +61,8 @@ local player = Players.LocalPlayer
 -- ROBLOX OFFICIAL PREMIUM DISCONNECT UI (V4 - FIXED STOP)
 -- ========================================
 
--- =============================================================
---  FIXED SCRIPT: WRAPPED IN 'DO' BLOCK TO FIX 200 LIMIT ERROR
--- =============================================================
-
-do  -- << YE 'do' BLOCK SABSE ZAROORI HAI, ISSE REMOVE MAT KARNA >>
-
+do  
+	
 -- Saare Services aur Variables is Block ke andar rahenge  
 local HttpService = game:GetService("HttpService")  
 local Players = game:GetService("Players")  
