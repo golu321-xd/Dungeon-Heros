@@ -2913,53 +2913,271 @@ do
 end
 
 -- ==========================================
--- SPEED CONTROLS (TOGGLE + SLIDER + MANUAL INPUT)
+-- SPEED CONTROLS (SYNCED TOGGLE + SLIDER + MANUAL INPUT)
 -- ==========================================
 MainTab:CreateSection("WalkSpeed Controls")
+do
+    local Players = game:GetService("Players")
+    local Player = Players.LocalPlayer
 
-MainTab:CreateToggle({
-Name = "Enable WalkSpeed",
-CurrentValue = false,
-Flag = "WalkSpeedToggle",
-Callback = function(Value)
-isToggled = Value
-UpdateSpeed()
-end,
-})
+    local maxSpeed = 200
+    local isToggled = false
+    local currentSpeed = 50
+    local defaultGameSpeed = 16
+    local hasCapturedDefault = false
+    local isSyncingSpeed = false
 
-local SpeedSlider
-SpeedSlider = MainTab:CreateSlider({
-Name = "Speed Slider (Max: 200)",
-Range = {0, maxSpeed},
-Increment = 1,
-Suffix = "Speed",
-CurrentValue = 50,
-Flag = "WalkSpeedSlider",
-Callback = function(Value)
-currentSpeed = Value
-UpdateSpeed()
-end,
-})
+    local SpeedSlider = nil
+    local SpeedInput = nil
+    local SpeedLockConn = nil
 
-MainTab:CreateInput({
-Name = "Manual Speed Input (0 - 200)",
-CurrentValue = "80",
-PlaceholderText = "Enter Speed (0 - 200)",
-RemoveTextAfterFocusLost = false,
-Flag = "WalkSpeedInput",
-Callback = function(Text)
-local num = tonumber(Text)
-if num then
-currentSpeed = math.clamp(math.floor(num), 0, maxSpeed)
-if SpeedSlider and SpeedSlider.Set then
-pcall(function()
-SpeedSlider:Set(currentSpeed)
-end)
+    local function GetHumanoid()
+        local Char = Player.Character
+        return Char and Char:FindFirstChildOfClass("Humanoid") or nil
+    end
+
+    local function DisconnectSpeedLock()
+        if SpeedLockConn then
+            pcall(function() SpeedLockConn:Disconnect() end)
+            SpeedLockConn = nil
+        end
+    end
+
+    local function UpdateSpeed()
+        local Hum = GetHumanoid()
+        DisconnectSpeedLock()
+
+        if isToggled then
+            if Hum then
+                -- Toggle ON hone se pehle game ki asli default speed capture kar lo
+                if not hasCapturedDefault then
+                    defaultGameSpeed = Hum.WalkSpeed
+                    hasCapturedDefault = true
+                end
+
+                Hum.WalkSpeed = currentSpeed
+
+                -- Agar game speed reset kare toh custom speed lock rakhega jab tak toggle ON hai
+                SpeedLockConn = Hum:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
+                    if isToggled and Hum and Hum.Parent and Hum.WalkSpeed ~= currentSpeed then
+                        Hum.WalkSpeed = currentSpeed
+                    end
+                end)
+            end
+        else
+            -- Toggle OFF -> Game ki original default speed restore karke control wapas game ko de do
+            if Hum and hasCapturedDefault then
+                Hum.WalkSpeed = defaultGameSpeed
+            end
+            hasCapturedDefault = false
+        end
+    end
+
+    -- Respawn hone par nayi character ki default speed save karke agar ON hai toh speed lagao
+    Player.CharacterAdded:Connect(function(Char)
+        local Hum = Char:WaitForChild("Humanoid", 10)
+        if not Hum then return end
+        task.wait(0.15)
+        defaultGameSpeed = Hum.WalkSpeed
+        if isToggled then
+            hasCapturedDefault = true
+            UpdateSpeed()
+        else
+            hasCapturedDefault = false
+        end
+    end)
+
+    MainTab:CreateToggle({
+        Name = "Enable WalkSpeed",
+        CurrentValue = false,
+        Flag = "WalkSpeedToggle",
+        Callback = function(Value)
+            isToggled = (Value == true)
+            UpdateSpeed()
+        end,
+    })
+
+    SpeedSlider = MainTab:CreateSlider({
+        Name = "Speed Slider (Max: 200)",
+        Range = {0, maxSpeed},
+        Increment = 1,
+        Suffix = "Speed",
+        CurrentValue = 50,
+        Flag = "WalkSpeedSlider",
+        Callback = function(Value)
+            local num = tonumber(Value)
+            if not num then return end
+            currentSpeed = math.clamp(math.floor(num), 0, maxSpeed)
+
+            -- Slider hilte hi TextBox live sync hoga
+            if not isSyncingSpeed and SpeedInput and SpeedInput.Set and tostring(SpeedInput.CurrentValue) ~= tostring(currentSpeed) then
+                isSyncingSpeed = true
+                pcall(function()
+                    SpeedInput:Set(tostring(currentSpeed))
+                end)
+                isSyncingSpeed = false
+            end
+
+            UpdateSpeed()
+        end,
+    })
+
+    SpeedInput = MainTab:CreateInput({
+        Name = "Manual Speed Input (0 - 200)",
+        CurrentValue = "50",
+        PlaceholderText = "Enter Speed (0 - 200)",
+        RemoveTextAfterFocusLost = false,
+        Flag = "WalkSpeedInput",
+        Callback = function(Text)
+            local num = tonumber(Text)
+            if num then
+                currentSpeed = math.clamp(math.floor(num), 0, maxSpeed)
+
+                -- TextBox badalte hi Slider live sync hoga
+                if not isSyncingSpeed and SpeedSlider and SpeedSlider.Set and tonumber(SpeedSlider.CurrentValue) ~= currentSpeed then
+                    isSyncingSpeed = true
+                    pcall(function()
+                        SpeedSlider:Set(currentSpeed)
+                    end)
+                    isSyncingSpeed = false
+                end
+
+                UpdateSpeed()
+            else
+                -- Galat text type hone par box me valid currentSpeed wapas likh dega
+                if not isSyncingSpeed and SpeedInput and SpeedInput.Set then
+                    isSyncingSpeed = true
+                    pcall(function()
+                        SpeedInput:Set(tostring(currentSpeed))
+                    end)
+                    isSyncingSpeed = false
+                end
+            end
+        end,
+    })
 end
-UpdateSpeed()
+
+
+-- ==========================================
+-- SAFE MODE (1-TAP PAUSE ALL / RESTORE ALL — NO FLAG)
+-- ==========================================
+MainTab:CreateSection("Safe Mode")
+do
+    local SafeModeActive = false
+    local SavedActiveFlags = {}
+
+    -- Pure UI Looks & passive filter/protection flags ko skip karega
+    -- taaki Safe Mode me UI theme ya protection shields na udein
+    local IgnoredPatterns = {
+        "^SidUI_",
+        "Protect",
+        "Rarity",
+        "SpaceGuard",
+        "AutoStop",
+        "AutoReturn",
+        "DuplicateSell",
+        "LevelToggle",
+        "UseMaxLevel",
+        "PrivateToggle",
+        "PullBank",
+        "ManageCombat",
+        "SpendKeys",
+        "SpendDust",
+        "DailyLobby",
+        "DailyTravel",
+        "DailyDungeonQueue",
+        "DailyEventDung",
+        "DailyRaidDung",
+        "DailyWeeklyToo",
+    }
+
+    local function ShouldSkipFlag(FlagName)
+        local NameStr = tostring(FlagName)
+        for _, Pattern in ipairs(IgnoredPatterns) do
+            if string.find(NameStr, Pattern) then
+                return true
+            end
+        end
+        return false
+    end
+
+    local function RunWithoutConfigOverwrite(Fn)
+        local Lib = Rayfield
+        local OrigSave = Lib and Lib.SaveConfiguration
+        if Lib and type(OrigSave) == "function" then
+            Lib.SaveConfiguration = function() end
+        end
+
+        pcall(Fn)
+
+        if Lib and type(OrigSave) == "function" then
+            Lib.SaveConfiguration = OrigSave
+        end
+    end
+
+    MainTab:CreateToggle({
+        Name = "Safe Mode (Pause & Restore All Features)",
+        CurrentValue = false,
+        -- Intentionally NO Flag here!
+        Callback = function(Value)
+            SafeModeActive = (Value == true)
+            local Flags = Rayfield and Rayfield.Flags
+            if type(Flags) ~= "table" then return end
+
+            if SafeModeActive then
+                table.clear(SavedActiveFlags)
+                local PausedCount = 0
+
+                RunWithoutConfigOverwrite(function()
+                    for FlagName, Obj in pairs(Flags) do
+                        if not ShouldSkipFlag(FlagName)
+                            and type(Obj) == "table"
+                            and type(Obj.CurrentValue) == "boolean"
+                            and Obj.CurrentValue == true
+                            and type(Obj.Set) == "function" then
+
+                            table.insert(SavedActiveFlags, FlagName)
+                            pcall(function() Obj:Set(false) end)
+                            PausedCount = PausedCount + 1
+                        end
+                    end
+                end)
+
+                if Rayfield.Notify then
+                    Rayfield:Notify({
+                        Title = "Safe Mode: ON",
+                        Content = string.format("%d active feature(s) paused safely.", PausedCount),
+                        Color = Color3.fromRGB(255, 185, 50),
+                        Duration = 2.6
+                    })
+                end
+            else
+                local RestoredCount = 0
+
+                RunWithoutConfigOverwrite(function()
+                    for _, FlagName in ipairs(SavedActiveFlags) do
+                        local Obj = Flags[FlagName]
+                        if type(Obj) == "table" and type(Obj.Set) == "function" then
+                            pcall(function() Obj:Set(true) end)
+                            RestoredCount = RestoredCount + 1
+                        end
+                    end
+                end)
+
+                table.clear(SavedActiveFlags)
+
+                if Rayfield.Notify then
+                    Rayfield:Notify({
+                        Title = "Safe Mode: OFF",
+                        Content = string.format("%d previous feature(s) restored!", RestoredCount),
+                        Color = Color3.fromRGB(0, 232, 155),
+                        Duration = 2.6
+                    })
+                end
+            end
+        end,
+    })
 end
-end,
-})
 
 --====================================================
 -- DUNGEON HEROES | BLOCK LAGGY INCOMING REMOTES
