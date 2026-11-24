@@ -4495,8 +4495,8 @@ function Library:CreateWindow(Config)
         end
     end
 
-    -- ==========================================
-    -- PATCH 3: ⭐ PINNED TAB + FLOATING QUICK-TOGGLES
+     -- ==========================================
+    -- PATCH 3: ⭐ PINNED TAB (HOLD-TO-REORDER) + FLOATING QUICK-TOGGLES
     -- ==========================================
     local _, PinnedPage = CreateTabInternal("⭐ Pinned", 0, true)
 
@@ -4508,12 +4508,184 @@ function Library:CreateWindow(Config)
     }, ScreenGui)
 
     local PinnedMirrorUpdaters = {}
+    local PinnedCardList = {}
+    local PinnedFlagObj = {CurrentValue = {}}
+
+    local DragState = {
+        Active = false,
+        Item = nil,
+        InputObj = nil,
+        HoldToken = 0,
+        StartPos = nil,
+        PendingItem = nil,
+        MovedOrder = false,
+        LastDragEnd = 0,
+    }
+
+    local function SwapPinnedOrder(IdxA, IdxB)
+        local ItemA = PinnedCardList[IdxA]
+        local ItemB = PinnedCardList[IdxB]
+        if not ItemA or not ItemB then return end
+
+        -- Swap in UI card list & update LayoutOrder live
+        PinnedCardList[IdxA] = ItemB
+        PinnedCardList[IdxB] = ItemA
+        ItemA.Card.LayoutOrder = IdxB
+        ItemB.Card.LayoutOrder = IdxA
+
+        -- Swap in Internal.PinnedKeys for config persistence
+        local KeyIdxA = table.find(Internal.PinnedKeys, ItemA.Key)
+        local KeyIdxB = table.find(Internal.PinnedKeys, ItemB.Key)
+        if KeyIdxA and KeyIdxB then
+            Internal.PinnedKeys[KeyIdxA], Internal.PinnedKeys[KeyIdxB] = Internal.PinnedKeys[KeyIdxB], Internal.PinnedKeys[KeyIdxA]
+        end
+
+        DragState.MovedOrder = true
+    end
+
+    -- Single shared drag controller (zero memory leak across rebuilds)
+    TrackConn(UserInputService.InputChanged:Connect(function(In)
+        if not DragState.PendingItem and not DragState.Active then return end
+        if In ~= DragState.InputObj and In.UserInputType ~= Enum.UserInputType.MouseMovement then return end
+
+        -- Cancel hold if user drags finger before 0.30s (allows normal scrolling)
+        if not DragState.Active and DragState.PendingItem and DragState.StartPos then
+            if (In.Position - DragState.StartPos).Magnitude > 10 then
+                DragState.HoldToken = DragState.HoldToken + 1
+                DragState.PendingItem = nil
+                DragState.InputObj = nil
+            end
+            return
+        end
+
+        if DragState.Active and DragState.Item then
+            local CurY = In.Position.Y
+            local CurIdx = table.find(PinnedCardList, DragState.Item)
+            if not CurIdx then return end
+
+            -- Auto-scroll PinnedPage near top/bottom edges
+            local PageTop = PinnedPage.AbsolutePosition.Y
+            local PageBot = PageTop + PinnedPage.AbsoluteSize.Y
+            if CurY < PageTop + 26 then
+                PinnedPage.CanvasPosition = Vector2.new(0, math.max(0, PinnedPage.CanvasPosition.Y - 12))
+            elseif CurY > PageBot - 26 then
+                PinnedPage.CanvasPosition = Vector2.new(0, PinnedPage.CanvasPosition.Y + 12)
+            end
+
+            -- Swap UP
+            if CurIdx > 1 then
+                local Above = PinnedCardList[CurIdx - 1]
+                if Above and Above.Card and Above.Card.Parent then
+                    local AboveCenterY = Above.Card.AbsolutePosition.Y + (Above.Card.AbsoluteSize.Y * 0.5)
+                    if CurY < AboveCenterY then
+                        SwapPinnedOrder(CurIdx, CurIdx - 1)
+                        PlayUISound("Click", 1.28)
+                        return
+                    end
+                end
+            end
+
+            -- Swap DOWN
+            if CurIdx < #PinnedCardList then
+                local Below = PinnedCardList[CurIdx + 1]
+                if Below and Below.Card and Below.Card.Parent then
+                    local BelowCenterY = Below.Card.AbsolutePosition.Y + (Below.Card.AbsoluteSize.Y * 0.5)
+                    if CurY > BelowCenterY then
+                        SwapPinnedOrder(CurIdx, CurIdx + 1)
+                        PlayUISound("Click", 1.12)
+                        return
+                    end
+                end
+            end
+        end
+    end))
+
+    TrackConn(UserInputService.InputEnded:Connect(function(In)
+        if not DragState.PendingItem and not DragState.Active then return end
+        if In ~= DragState.InputObj
+            and In.UserInputType ~= Enum.UserInputType.MouseButton1
+            and In.UserInputType ~= Enum.UserInputType.Touch then
+            return
+        end
+
+        DragState.HoldToken = DragState.HoldToken + 1
+
+        if DragState.Active and DragState.Item then
+            local Grabbed = DragState.Item
+            if Grabbed.Card and Grabbed.Card.Parent then
+                Grabbed.Card.ZIndex = 7
+                Tween(Grabbed.Card, 0.14, {BackgroundColor3 = Theme.CardBg})
+            end
+            if Grabbed.Stroke and Grabbed.Stroke.Parent then
+                Grabbed.Stroke.Thickness = 1
+                if Grabbed.RestoreStrokeFn then Grabbed.RestoreStrokeFn() end
+            end
+            if Grabbed.Grip and Grabbed.Grip.Parent then
+                Grabbed.Grip.TextColor3 = Theme.TextMuted
+            end
+
+            PinnedPage.ScrollingEnabled = true
+            DragState.LastDragEnd = os.clock()
+
+            if DragState.MovedOrder then
+                PinnedFlagObj.CurrentValue = Internal.PinnedKeys
+                Library:SaveConfiguration(nil, true)
+                PlayUISound("Toggle", 1.15)
+            end
+        end
+
+        DragState.Active = false
+        DragState.Item = nil
+        DragState.PendingItem = nil
+        DragState.InputObj = nil
+        DragState.MovedOrder = false
+    end))
+
+    local function AttachHoldReorder(CardEntry)
+        CardEntry.Card.InputBegan:Connect(function(In)
+            if In.UserInputType == Enum.UserInputType.MouseButton1 or In.UserInputType == Enum.UserInputType.Touch then
+                DragState.HoldToken = DragState.HoldToken + 1
+                local MyToken = DragState.HoldToken
+                DragState.InputObj = In
+                DragState.StartPos = In.Position
+                DragState.PendingItem = CardEntry
+                DragState.MovedOrder = false
+
+                task.delay(0.30, function()
+                    if DragState.HoldToken == MyToken and DragState.PendingItem == CardEntry
+                        and CardEntry.Card and CardEntry.Card.Parent then
+                        DragState.Active = true
+                        DragState.Item = CardEntry
+                        PinnedPage.ScrollingEnabled = false
+                        PlayUISound("Open", 1.25)
+
+                        CardEntry.Card.ZIndex = 12
+                        Tween(CardEntry.Card, 0.10, {BackgroundColor3 = Theme.CardHover})
+                        if CardEntry.Stroke then
+                            CardEntry.Stroke.Color = Theme.AccentSecondary
+                            CardEntry.Stroke.Thickness = 2
+                        end
+                        if CardEntry.Grip then
+                            CardEntry.Grip.TextColor3 = Theme.AccentSecondary
+                        end
+                    end
+                end)
+            end
+        end)
+    end
 
     local function RebuildPinnedPage()
+        DragState.HoldToken = DragState.HoldToken + 1
+        DragState.Active = false
+        DragState.Item = nil
+        DragState.PendingItem = nil
+        PinnedPage.ScrollingEnabled = true
+
         for _, Child in ipairs(PinnedPage:GetChildren()) do
             if Child:IsA("GuiObject") then Child:Destroy() end
         end
         table.clear(PinnedMirrorUpdaters)
+        table.clear(PinnedCardList)
 
         local Count = 0
         for _, KeyName in ipairs(Internal.PinnedKeys) do
@@ -4525,6 +4697,7 @@ function Library:CreateWindow(Config)
                     local State = Entry.GetState()
                     local Card = Make("TextButton", {
                         Size = UDim2.new(1, 0, 0, 36),
+                        LayoutOrder = Count,
                         BackgroundColor3 = Theme.CardBg,
                         BackgroundTransparency = GetSurfaceSpec(LooksState.SurfaceMode).Card,
                         Text = "", AutoButtonColor = false, ZIndex = 7
@@ -4533,8 +4706,14 @@ function Library:CreateWindow(Config)
                     local Stroke = AddStroke(Card, State and Theme.Accent or Theme.Stroke, 1, 0.35)
                     table.insert(Registry.Cards, Card)
 
+                    local Grip = Make("TextLabel", {
+                        Size = UDim2.new(0, 14, 1, 0), Position = UDim2.new(0, 6, 0, 0), BackgroundTransparency = 1,
+                        Font = Enum.Font.GothamBold, TextSize = 13, TextColor3 = Theme.TextMuted,
+                        Text = "≡", ZIndex = 8
+                    }, Card)
+
                     Make("TextLabel", {
-                        Size = UDim2.new(1, -102, 1, 0), Position = UDim2.new(0, 12, 0, 0), BackgroundTransparency = 1,
+                        Size = UDim2.new(1, -114, 1, 0), Position = UDim2.new(0, 22, 0, 0), BackgroundTransparency = 1,
                         Font = Enum.Font.GothamSemibold, TextSize = 12, TextColor3 = Theme.TextPrimary,
                         TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
                         Text = Entry.Name, ZIndex = 8
@@ -4563,14 +4742,31 @@ function Library:CreateWindow(Config)
                     PinnedMirrorUpdaters[KeyName] = function(NewVal)
                         Tween(SwitchBg, 0.14, {BackgroundColor3 = NewVal and Theme.Accent or Theme.ToggleOff})
                         Tween(Knob, 0.14, {Position = NewVal and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7)})
-                        Tween(Stroke, 0.14, {Color = NewVal and Theme.Accent or Theme.Stroke})
+                        if not (DragState.Active and DragState.Item and DragState.Item.Key == KeyName) then
+                            Tween(Stroke, 0.14, {Color = NewVal and Theme.Accent or Theme.Stroke})
+                        end
                     end
 
+                    local CardEntry = {
+                        Key = KeyName,
+                        Card = Card,
+                        Stroke = Stroke,
+                        Grip = Grip,
+                        RestoreStrokeFn = function()
+                            Stroke.Color = Entry.GetState() and Theme.Accent or Theme.Stroke
+                        end
+                    }
+                    table.insert(PinnedCardList, CardEntry)
+                    AttachHoldReorder(CardEntry)
+
                     Card.MouseButton1Click:Connect(function()
+                        if DragState.Active or (os.clock() - DragState.LastDragEnd < 0.28) then return end
                         PlayUISound("Toggle", Entry.GetState() and 0.95 or 1.2)
                         Entry.Toggle()
                     end)
                     UnpinBtn.MouseButton1Click:Connect(function()
+                        DragState.HoldToken = DragState.HoldToken + 1
+                        DragState.PendingItem = nil
                         PlayUISound("Click", 0.9)
                         Internal.TogglePinItemFn(KeyName)
                     end)
@@ -4578,16 +4774,23 @@ function Library:CreateWindow(Config)
                 elseif Entry.Kind == "Button" then
                     local Btn = Make("TextButton", {
                         Size = UDim2.new(1, 0, 0, 34),
+                        LayoutOrder = Count,
                         BackgroundColor3 = Theme.CardBg,
                         BackgroundTransparency = GetSurfaceSpec(LooksState.SurfaceMode).Card,
                         Text = "", AutoButtonColor = false, ZIndex = 7
                     }, PinnedPage)
                     AddCorner(Btn, 9)
-                    AddStroke(Btn, Theme.Stroke, 1, 0.35)
+                    local Stroke = AddStroke(Btn, Theme.Stroke, 1, 0.35)
                     table.insert(Registry.Cards, Btn)
 
+                    local Grip = Make("TextLabel", {
+                        Size = UDim2.new(0, 14, 1, 0), Position = UDim2.new(0, 6, 0, 0), BackgroundTransparency = 1,
+                        Font = Enum.Font.GothamBold, TextSize = 13, TextColor3 = Theme.TextMuted,
+                        Text = "≡", ZIndex = 8
+                    }, Btn)
+
                     Make("TextLabel", {
-                        Size = UDim2.new(1, -94, 1, 0), Position = UDim2.new(0, 12, 0, 0), BackgroundTransparency = 1,
+                        Size = UDim2.new(1, -106, 1, 0), Position = UDim2.new(0, 22, 0, 0), BackgroundTransparency = 1,
                         Font = Enum.Font.GothamSemibold, TextSize = 12, TextColor3 = Theme.TextPrimary,
                         TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
                         Text = Entry.Name, ZIndex = 8
@@ -4607,8 +4810,25 @@ function Library:CreateWindow(Config)
                     }, Btn)
                     AddCorner(RunTag, 6)
 
-                    Btn.Activated:Connect(function() Entry.Fire() end)
+                    local CardEntry = {
+                        Key = KeyName,
+                        Card = Btn,
+                        Stroke = Stroke,
+                        Grip = Grip,
+                        RestoreStrokeFn = function()
+                            Stroke.Color = Theme.Stroke
+                        end
+                    }
+                    table.insert(PinnedCardList, CardEntry)
+                    AttachHoldReorder(CardEntry)
+
+                    Btn.Activated:Connect(function()
+                        if DragState.Active or (os.clock() - DragState.LastDragEnd < 0.28) then return end
+                        Entry.Fire()
+                    end)
                     UnpinBtn.MouseButton1Click:Connect(function()
+                        DragState.HoldToken = DragState.HoldToken + 1
+                        DragState.PendingItem = nil
                         PlayUISound("Click", 0.9)
                         Internal.TogglePinItemFn(KeyName)
                     end)
@@ -4618,20 +4838,19 @@ function Library:CreateWindow(Config)
 
         if Count == 0 then
             local Empty = Make("Frame", {
-                Size = UDim2.new(1, 0, 0, 62), BackgroundColor3 = Theme.CardBg,
+                Size = UDim2.new(1, 0, 0, 66), BackgroundColor3 = Theme.CardBg,
                 BackgroundTransparency = GetSurfaceSpec(LooksState.SurfaceMode).Card, ZIndex = 7
             }, PinnedPage)
             AddCorner(Empty, 9); AddStroke(Empty, Theme.Stroke, 1, 0.45)
             Make("TextLabel", {
                 Size = UDim2.new(1, -20, 1, 0), Position = UDim2.new(0, 10, 0, 0), BackgroundTransparency = 1,
                 Font = Enum.Font.GothamMedium, TextSize = 11, TextColor3 = Theme.TextMuted, TextWrapped = true,
-                Text = "Koi feature pinned nahi hai.\nKisi bhi Toggle ya Button par 'PIN' tap karo — wo yahan save ho jayega!", ZIndex = 8
+                Text = "Koi feature pinned nahi hai.\nKisi bhi Toggle ya Button par 'PIN' tap karo — aur Pinned tab me 0.3s hold karke upar/neeche set karo!", ZIndex = 8
             }, Empty)
         end
     end
 
-    -- Persist Pinned Items in Config Automatically
-    local PinnedFlagObj = {CurrentValue = {}}
+    -- Persist Pinned Items & Custom Order in Config Automatically
     function PinnedFlagObj:Set(SavedList)
         table.clear(Internal.PinnedKeys)
         if type(SavedList) == "table" then
