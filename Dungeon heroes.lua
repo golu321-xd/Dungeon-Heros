@@ -3173,6 +3173,255 @@ do
         end,
     })
 end
+
+-- ==========================================
+-- DASH SPEED CONTROLS (SYNCED TOGGLE + SLIDER + MANUAL INPUT)
+-- ==========================================
+MainTab:CreateSection("Dash Speed Controls")
+do
+    local Players = game:GetService("Players")
+    local RunService = game:GetService("RunService")
+    local Player = Players.LocalPlayer
+
+    local minMult = 1.0
+    local maxMult = 5.0
+    local dashEnabled = false
+    local dashMultiplier = 2.0
+    local isSyncingDash = false
+
+    local DashSlider = nil
+    local DashInput = nil
+    local CharConns = {}
+    local LastMoverDash = 0
+    local LastFallbackDash = 0
+
+    local function ClearCharConns()
+        for _, c in ipairs(CharConns) do
+            pcall(function() c:Disconnect() end)
+        end
+        table.clear(CharConns)
+    end
+
+    local function Track(conn)
+        if conn then table.insert(CharConns, conn) end
+        return conn
+    end
+
+    local function ScaleVectorXZ(vec, mult)
+        return Vector3.new(vec.X * mult, vec.Y, vec.Z * mult)
+    end
+
+    -- Case 1: Boost LinearVelocity / BodyVelocity / VectorForce created during Dash
+    local function HandleDashMover(obj)
+        if not dashEnabled or dashMultiplier <= 1.01 then return end
+
+        if obj:IsA("LinearVelocity") then
+            LastMoverDash = os.clock()
+            local scaling = false
+
+            local function ApplyLV()
+                if scaling or not dashEnabled or not obj.Parent then return end
+                scaling = true
+                pcall(function()
+                    if obj.MaxForce < math.huge then
+                        obj.MaxForce = math.max(obj.MaxForce * dashMultiplier, 50000)
+                    end
+                    if obj.VelocityConstraintMode == Enum.VelocityConstraintMode.Vector then
+                        obj.VectorVelocity = ScaleVectorXZ(obj.VectorVelocity, dashMultiplier)
+                    elseif obj.VelocityConstraintMode == Enum.VelocityConstraintMode.Plane then
+                        obj.PlaneVelocity = obj.PlaneVelocity * dashMultiplier
+                    elseif obj.VelocityConstraintMode == Enum.VelocityConstraintMode.Line then
+                        obj.LineVelocity = obj.LineVelocity * dashMultiplier
+                    end
+                end)
+                scaling = false
+            end
+
+            task.defer(ApplyLV)
+            obj:GetPropertyChangedSignal("VectorVelocity"):Connect(ApplyLV)
+            obj:GetPropertyChangedSignal("PlaneVelocity"):Connect(ApplyLV)
+            obj:GetPropertyChangedSignal("LineVelocity"):Connect(ApplyLV)
+
+        elseif obj:IsA("BodyVelocity") then
+            LastMoverDash = os.clock()
+            local scaling = false
+
+            local function ApplyBV()
+                if scaling or not dashEnabled or not obj.Parent then return end
+                scaling = true
+                pcall(function()
+                    obj.MaxForce = Vector3.new(
+                        math.max(obj.MaxForce.X * dashMultiplier, 50000),
+                        obj.MaxForce.Y,
+                        math.max(obj.MaxForce.Z * dashMultiplier, 50000)
+                    )
+                    obj.Velocity = ScaleVectorXZ(obj.Velocity, dashMultiplier)
+                end)
+                scaling = false
+            end
+
+            task.defer(ApplyBV)
+            obj:GetPropertyChangedSignal("Velocity"):Connect(ApplyBV)
+
+        elseif obj:IsA("VectorForce") then
+            LastMoverDash = os.clock()
+            local scaling = false
+
+            local function ApplyVF()
+                if scaling or not dashEnabled or not obj.Parent then return end
+                scaling = true
+                pcall(function()
+                    obj.Force = ScaleVectorXZ(obj.Force, dashMultiplier)
+                end)
+                scaling = false
+            end
+
+            task.defer(ApplyVF)
+            obj:GetPropertyChangedSignal("Force"):Connect(ApplyVF)
+        end
+    end
+
+    -- Case 2: Fallback horizontal velocity boost (if game dashes without a physics mover)
+    local function TriggerFallbackDashBoost(Char, Hum, HRP)
+        if not dashEnabled or dashMultiplier <= 1.01 then return end
+        local now = os.clock()
+        if (now - LastFallbackDash) < 0.28 then return end
+        LastFallbackDash = now
+
+        task.delay(0.04, function()
+            -- Agar physics mover already boost ho chuka hai toh double-boost mat karo
+            if not dashEnabled or (os.clock() - LastMoverDash) < 0.25 then return end
+            if not (Char and Char.Parent and Hum and Hum.Parent and HRP and HRP.Parent) then return end
+
+            local dir = Hum.MoveDirection
+            if dir.Magnitude < 0.05 then
+                local lv = HRP.CFrame.LookVector
+                dir = Vector3.new(lv.X, 0, lv.Z)
+            end
+            if dir.Magnitude < 0.05 then return end
+            dir = dir.Unit
+
+            local curVel = HRP.AssemblyLinearVelocity
+            local baseHoriz = math.max(Vector3.new(curVel.X, 0, curVel.Z).Magnitude, Hum.WalkSpeed * 1.8, 35)
+            local targetSpeed = math.clamp(baseHoriz * dashMultiplier, 35, 260)
+
+            local t0 = os.clock()
+            local boostConn
+            boostConn = RunService.Heartbeat:Connect(function()
+                if not dashEnabled or not HRP or not HRP.Parent or (os.clock() - t0) >= 0.16 then
+                    if boostConn then boostConn:Disconnect() end
+                    return
+                end
+                local v = HRP.AssemblyLinearVelocity
+                HRP.AssemblyLinearVelocity = Vector3.new(dir.X * targetSpeed, v.Y, dir.Z * targetSpeed)
+            end)
+        end)
+    end
+
+    local function BindDashCharacter(Char)
+        ClearCharConns()
+        if not Char then return end
+
+        local Hum = Char:FindFirstChildOfClass("Humanoid") or Char:WaitForChild("Humanoid", 10)
+        local HRP = Char:FindFirstChild("HumanoidRootPart") or Char:WaitForChild("HumanoidRootPart", 10)
+        if not (Hum and HRP) then return end
+
+        -- Catch physics movers & Dash SFX added to HumanoidRootPart
+        Track(HRP.ChildAdded:Connect(function(child)
+            if child:IsA("LinearVelocity") or child:IsA("BodyVelocity") or child:IsA("VectorForce") then
+                HandleDashMover(child)
+            elseif child:IsA("Sound") and string.find(string.lower(child.Name), "dash", 1, true) then
+                TriggerFallbackDashBoost(Char, Hum, HRP)
+            end
+        end))
+
+        -- Catch Dash / Dodge animation as backup trigger
+        local Animator = Hum:FindFirstChildOfClass("Animator") or Hum:WaitForChild("Animator", 5)
+        if Animator then
+            Track(Animator.AnimationPlayed:Connect(function(track)
+                if not dashEnabled then return end
+                local animName = string.lower(tostring(track.Name or ""))
+                local animObjName = track.Animation and string.lower(tostring(track.Animation.Name or "")) or ""
+                if string.find(animName, "dash", 1, true)
+                    or string.find(animName, "dodge", 1, true)
+                    or string.find(animObjName, "dash", 1, true)
+                    or string.find(animObjName, "dodge", 1, true) then
+                    TriggerFallbackDashBoost(Char, Hum, HRP)
+                end
+            end))
+        end
+    end
+
+    if Player.Character then
+        task.spawn(BindDashCharacter, Player.Character)
+    end
+    Player.CharacterAdded:Connect(function(Char)
+        task.wait(0.1)
+        BindDashCharacter(Char)
+    end)
+
+    MainTab:CreateToggle({
+        Name = "Enable Dash Speed",
+        CurrentValue = false,
+        Flag = "DashSpeedToggle",
+        Callback = function(Value)
+            dashEnabled = (Value == true)
+        end,
+    })
+
+    DashSlider = MainTab:CreateSlider({
+        Name = "Dash Speed Multiplier (1x - 5x)",
+        Range = {minMult, maxMult},
+        Increment = 0.1,
+        Suffix = "x",
+        CurrentValue = 2.0,
+        Flag = "DashSpeedSlider",
+        Callback = function(Value)
+            local num = tonumber(Value)
+            if not num then return end
+            dashMultiplier = math.clamp(math.floor(num * 10 + 0.5) / 10, minMult, maxMult)
+
+            if not isSyncingDash and DashInput and DashInput.Set and tostring(DashInput.CurrentValue) ~= tostring(dashMultiplier) then
+                isSyncingDash = true
+                pcall(function()
+                    DashInput:Set(tostring(dashMultiplier))
+                end)
+                isSyncingDash = false
+            end
+        end,
+    })
+
+    DashInput = MainTab:CreateInput({
+        Name = "Manual Dash Speed (1.0 - 5.0)",
+        CurrentValue = "2",
+        PlaceholderText = "Enter Multiplier (1.0 - 5.0)",
+        RemoveTextAfterFocusLost = false,
+        Flag = "DashSpeedInput",
+        Callback = function(Text)
+            local num = tonumber(Text)
+            if num then
+                dashMultiplier = math.clamp(math.floor(num * 10 + 0.5) / 10, minMult, maxMult)
+
+                if not isSyncingDash and DashSlider and DashSlider.Set and tonumber(DashSlider.CurrentValue) ~= dashMultiplier then
+                    isSyncingDash = true
+                    pcall(function()
+                        DashSlider:Set(dashMultiplier)
+                    end)
+                    isSyncingDash = false
+                end
+            else
+                if not isSyncingDash and DashInput and DashInput.Set then
+                    isSyncingDash = true
+                    pcall(function()
+                        DashInput:Set(tostring(dashMultiplier))
+                    end)
+                    isSyncingDash = false
+                end
+            end
+        end,
+    })
+end
+
          
 -- ==========================================
 -- SAFE MODE (CROSS-TELEPORT PERSISTENT — NO FLAG)
