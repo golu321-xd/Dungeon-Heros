@@ -3057,17 +3057,21 @@ do
     })
 end
 
-
 -- ==========================================
--- SAFE MODE (1-TAP PAUSE ALL / RESTORE ALL — NO FLAG)
+-- SAFE MODE (CROSS-TELEPORT PERSISTENT — NO FLAG)
 -- ==========================================
 MainTab:CreateSection("Safe Mode")
 do
+    local HttpService = game:GetService("HttpService")
+    local BACKUP_FOLDER = "SidDungeonHeroes"
+    local BACKUP_FILE = BACKUP_FOLDER .. "/.safemode_backup.json"
+
     local SafeModeActive = false
     local SavedActiveFlags = {}
+    local OrigSaveConfig = nil
+    local IsSyncingFromBackup = false
+    local SafeModeToggle = nil
 
-    -- Pure UI Looks & passive filter/protection flags ko skip karega
-    -- taaki Safe Mode me UI theme ya protection shields na udein
     local IgnoredPatterns = {
         "^SidUI_",
         "Protect",
@@ -3101,21 +3105,72 @@ do
         return false
     end
 
-    local function RunWithoutConfigOverwrite(Fn)
+    -- Safe Mode ON rehne tak config overwrite ko completely lock rakhega
+    local function LockConfigSave()
         local Lib = Rayfield
-        local OrigSave = Lib and Lib.SaveConfiguration
-        if Lib and type(OrigSave) == "function" then
+        if Lib and type(Lib.SaveConfiguration) == "function" and not OrigSaveConfig then
+            OrigSaveConfig = Lib.SaveConfiguration
             Lib.SaveConfiguration = function() end
-        end
-
-        pcall(Fn)
-
-        if Lib and type(OrigSave) == "function" then
-            Lib.SaveConfiguration = OrigSave
         end
     end
 
-    MainTab:CreateToggle({
+    local function UnlockConfigSave()
+        local Lib = Rayfield
+        if Lib and type(OrigSaveConfig) == "function" then
+            Lib.SaveConfiguration = OrigSaveConfig
+            OrigSaveConfig = nil
+        end
+    end
+
+    local function WriteBackup(Active, FlagsList)
+        if not writefile then return end
+        pcall(function()
+            if makefolder and isfolder and not isfolder(BACKUP_FOLDER) then
+                makefolder(BACKUP_FOLDER)
+            end
+            writefile(BACKUP_FILE, HttpService:JSONEncode({
+                active = Active == true,
+                flags = FlagsList or {}
+            }))
+        end)
+    end
+
+    local function ReadBackup()
+        if not (isfile and readfile) then return nil end
+        local okE, exists = pcall(isfile, BACKUP_FILE)
+        if not (okE and exists) then return nil end
+        local okR, raw = pcall(readfile, BACKUP_FILE)
+        if not (okR and type(raw) == "string") then return nil end
+        local okJ, dec = pcall(function() return HttpService:JSONDecode(raw) end)
+        if okJ and type(dec) == "table" and type(dec.flags) == "table" then
+            return dec
+        end
+        return nil
+    end
+
+    local function ClearBackup()
+        if delfile and isfile then
+            pcall(function()
+                if isfile(BACKUP_FILE) then delfile(BACKUP_FILE) end
+            end)
+        end
+    end
+
+    local function PauseFlagsList(FlagsTable, TargetList)
+        local Count = 0
+        for _, FlagName in ipairs(TargetList) do
+            local Obj = FlagsTable[FlagName]
+            if type(Obj) == "table" and type(Obj.Set) == "function" then
+                if Obj.CurrentValue == true then
+                    pcall(function() Obj:Set(false) end)
+                end
+                Count = Count + 1
+            end
+        end
+        return Count
+    end
+
+    SafeModeToggle = MainTab:CreateToggle({
         Name = "Safe Mode (Pause & Restore All Features)",
         CurrentValue = false,
         -- Intentionally NO Flag here!
@@ -3124,24 +3179,45 @@ do
             local Flags = Rayfield and Rayfield.Flags
             if type(Flags) ~= "table" then return end
 
+            -- TP ke baad auto-resume hote waqt purana backup overwrite nahi karega
+            if IsSyncingFromBackup then
+                if SafeModeActive then
+                    LockConfigSave()
+                    PauseFlagsList(Flags, SavedActiveFlags)
+                end
+                return
+            end
+
             if SafeModeActive then
-                table.clear(SavedActiveFlags)
-                local PausedCount = 0
+                LockConfigSave()
 
-                RunWithoutConfigOverwrite(function()
-                    for FlagName, Obj in pairs(Flags) do
-                        if not ShouldSkipFlag(FlagName)
-                            and type(Obj) == "table"
-                            and type(Obj.CurrentValue) == "boolean"
-                            and Obj.CurrentValue == true
-                            and type(Obj.Set) == "function" then
-
-                            table.insert(SavedActiveFlags, FlagName)
-                            pcall(function() Obj:Set(false) end)
-                            PausedCount = PausedCount + 1
-                        end
+                local FreshList = {}
+                for FlagName, Obj in pairs(Flags) do
+                    if not ShouldSkipFlag(FlagName)
+                        and type(Obj) == "table"
+                        and type(Obj.CurrentValue) == "boolean"
+                        and Obj.CurrentValue == true
+                        and type(Obj.Set) == "function" then
+                        table.insert(FreshList, FlagName)
                     end
-                end)
+                end
+
+                -- Agar kuch active mila toh naya backup banao; warna purana disk backup safe rakho
+                if #FreshList > 0 then
+                    SavedActiveFlags = FreshList
+                    WriteBackup(true, SavedActiveFlags)
+                else
+                    local Existing = ReadBackup()
+                    if Existing and #Existing.flags > 0 then
+                        SavedActiveFlags = Existing.flags
+                        WriteBackup(true, SavedActiveFlags)
+                    else
+                        SavedActiveFlags = {}
+                        WriteBackup(true, {})
+                    end
+                end
+
+                local PausedCount = PauseFlagsList(Flags, SavedActiveFlags)
 
                 if Rayfield.Notify then
                     Rayfield:Notify({
@@ -3152,19 +3228,33 @@ do
                     })
                 end
             else
-                local RestoredCount = 0
-
-                RunWithoutConfigOverwrite(function()
-                    for _, FlagName in ipairs(SavedActiveFlags) do
-                        local Obj = Flags[FlagName]
-                        if type(Obj) == "table" and type(Obj.Set) == "function" then
-                            pcall(function() Obj:Set(true) end)
-                            RestoredCount = RestoredCount + 1
-                        end
+                -- Agar RAM khali ho (TP ke baad) toh disk backup se exact flags uthao
+                if #SavedActiveFlags == 0 then
+                    local Existing = ReadBackup()
+                    if Existing and #Existing.flags > 0 then
+                        SavedActiveFlags = Existing.flags
                     end
-                end)
+                end
+
+                local RestoredCount = 0
+                LockConfigSave()
+
+                for _, FlagName in ipairs(SavedActiveFlags) do
+                    local Obj = Flags[FlagName]
+                    if type(Obj) == "table" and type(Obj.Set) == "function" then
+                        pcall(function() Obj:Set(true) end)
+                        RestoredCount = RestoredCount + 1
+                    end
+                end
 
                 table.clear(SavedActiveFlags)
+                ClearBackup()
+                UnlockConfigSave()
+
+                -- Restored settings ko clean save kar do
+                if Rayfield and type(Rayfield.SaveConfiguration) == "function" then
+                    pcall(function() Rayfield:SaveConfiguration(nil, true) end)
+                end
 
                 if Rayfield.Notify then
                     Rayfield:Notify({
@@ -3177,7 +3267,35 @@ do
             end
         end,
     })
+
+    -- ==========================================
+    -- AUTO-RESUME SAFE MODE AFTER TELEPORT
+    -- ==========================================
+    local PendingBackup = ReadBackup()
+    if PendingBackup and PendingBackup.active == true then
+        SavedActiveFlags = PendingBackup.flags
+        SafeModeActive = true
+        LockConfigSave()
+
+        local function ApplyResumedPause()
+            if not SafeModeActive then return end
+            local Flags = Rayfield and Rayfield.Flags
+            if type(Flags) ~= "table" then return end
+
+            IsSyncingFromBackup = true
+            if SafeModeToggle and SafeModeToggle.CurrentValue ~= true and SafeModeToggle.Set then
+                pcall(function() SafeModeToggle:Set(true) end)
+            end
+            PauseFlagsList(Flags, SavedActiveFlags)
+            IsSyncingFromBackup = false
+        end
+
+        -- LoadConfiguration ke baad 2 passes me lock kar dega taaki koi feature leak na ho
+        task.delay(0.55, ApplyResumedPause)
+        task.delay(1.30, ApplyResumedPause)
+    end
 end
+
 
 --====================================================
 -- DUNGEON HEROES | BLOCK LAGGY INCOMING REMOTES
