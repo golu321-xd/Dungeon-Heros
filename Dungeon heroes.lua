@@ -4412,102 +4412,162 @@ end
 
 UtilityTab:CreateSection("Auto Booster")
 
--- Dungeon Heroes | Auto Booster
--- Auto Refresh + Favorite Protection
+-- ==========================================
+-- AUTO ACTIVATE BOOSTERS (FIXED + FAVORITE SAFE)
+-- ==========================================
+do
+    local Players = game:GetService("Players")
+    local RS = game:GetService("ReplicatedStorage")
 
-local Players = game:GetService("Players")
-local RS = game:GetService("ReplicatedStorage")
+    local Player = Players.LocalPlayer
+    local Items = require(RS.Systems.Items)
+    local ProfileSys = require(RS.Systems.Profile)
+    local ActivateBooster = RS:WaitForChild("Remotes"):WaitForChild("ActivateBooster")
 
-local Player = Players.LocalPlayer
-local Items = require(RS.Systems.Items)
+    local AutoEnabled = false
+    local WorkerId = 0
+    local CooldownMap = {} -- Temporary 10s cooldown if server rejects (never permanently locks!)
 
-local ActivateBooster = RS:WaitForChild("Remotes"):WaitForChild("ActivateBooster")
+    local function GetInventoryFolder()
+        local ok, folder = pcall(function()
+            return Items:GetPlayerItemFolder(Player, "Inventory")
+        end)
+        if ok and folder then return folder end
 
-local AutoEnabled = false
-local WorkerId = 0
-local SentCount = {}
+        local okP, prof = pcall(function()
+            return ProfileSys:GetProfile(Player)
+        end)
+        if okP and prof then
+            return prof:FindFirstChild("Inventory")
+        end
+        return nil
+    end
 
--- Get Inventory
-local function GetInventory()
-return Items:GetPlayerItemFolder(Player, "Inventory")
+    local function GetItemIdSafe(item)
+        local ok, id = pcall(function()
+            return Items:GetItemId(item)
+        end)
+        if ok and type(id) == "string" and id ~= "" then
+            return id
+        end
+        return item.Name
+    end
+
+    local function IsBoosterItem(item, itemId, itemData)
+        if type(itemData) == "table" then
+            local cat = string.lower(tostring(itemData.Category or ""))
+            local typ = string.lower(tostring(itemData.Type or ""))
+            if cat == "booster" or typ == "booster" or string.find(cat, "boost", 1, true) then
+                return true
+            end
+        end
+        local lowId = string.lower(tostring(itemId or ""))
+        return string.find(lowId, "booster", 1, true) ~= nil and not string.find(lowId, "chest", 1, true)
+    end
+
+    local function IsProtectedFavorite(item)
+        local ok, fav = pcall(function()
+            return Items:ItemIsFavorited(item)
+        end)
+        if ok and fav == true then return true end
+        for _, key in ipairs({"Favorite", "Favorited", "Starred", "Locked"}) do
+            local c = item:FindFirstChild(key)
+            if c and (not c:IsA("ValueBase") or c.Value == true) then return true end
+            if item:GetAttribute(key) == true then return true end
+        end
+        return false
+    end
+
+    local function GetCountNow(item)
+        if not item or not item.Parent then return 0 end
+        local c = item:FindFirstChild("Count")
+        return c and tonumber(c.Value) or 1
+    end
+
+    local function ScanBoosters()
+        local Inventory = GetInventoryFolder()
+        if not Inventory then return end
+
+        local Now = os.clock()
+        for _, item in ipairs(Inventory:GetChildren()) do
+            if not AutoEnabled then break end
+
+            local ok, err = pcall(function()
+                if not item or not item.Parent then return end
+
+                local itemId = GetItemIdSafe(item)
+                local itemData = Items:GetItemData(itemId)
+                if not IsBoosterItem(item, itemId, itemData) then return end
+                if IsProtectedFavorite(item) then return end
+
+                local ref = Items:ItemRefForRemote(item)
+                if ref == nil or ref == "" then return end
+
+                local cdKey = tostring(ref)
+                if (CooldownMap[cdKey] or 0) > Now then return end
+
+                local fails = 0
+                while AutoEnabled and item and item.Parent do
+                    if IsProtectedFavorite(item) then break end
+
+                    local beforeCount = GetCountNow(item)
+                    if beforeCount <= 0 then break end
+
+                    ActivateBooster:FireServer(ref)
+
+                    -- Wait up to 0.75s to confirm Count actually decreased or item was consumed
+                    local consumed = false
+                    local t0 = os.clock()
+                    while os.clock() - t0 < 0.75 do
+                        if not item or not item.Parent or GetCountNow(item) < beforeCount then
+                            consumed = true
+                            break
+                        end
+                        task.wait(0.08)
+                    end
+
+                    if consumed then
+                        fails = 0
+                        task.wait(0.25)
+                    else
+                        fails += 1
+                        if fails >= 2 then
+                            -- Booster cap / cooldown active on server -> retry after 10s
+                            CooldownMap[cdKey] = os.clock() + 10
+                            break
+                        end
+                        task.wait(0.35)
+                    end
+                end
+            end)
+
+            if not ok then
+                warn("[Auto Booster]", err)
+            end
+        end
+    end
+
+    UtilityTab:CreateToggle({
+        Name = "Auto Activate Boosters",
+        CurrentValue = false,
+        Flag = "AutoBooster",
+        Callback = function(Value)
+            AutoEnabled = (Value == true)
+            WorkerId += 1
+            table.clear(CooldownMap)
+
+            if AutoEnabled then
+                local thisWorker = WorkerId
+                task.spawn(function()
+                    while AutoEnabled and WorkerId == thisWorker do
+                        ScanBoosters()
+                        task.wait(1)
+                    end
+                end)
+            end
+        end
+    })
 end
-
--- Scan Boosters
-local function ScanBoosters()
-local Inventory = GetInventory()
-if not Inventory then return end
-
-for _, item in ipairs(Inventory:GetChildren()) do  
-    if not AutoEnabled then break end  
-
-    local success, err = pcall(function()  
-        local itemData = Items:GetItemData(item.Name)  
-
-        if not itemData or itemData.Category ~= "Booster" then  
-            return  
-        end  
-
-        -- Favorite Protection  
-        if Items:ItemIsFavorited(item) then  
-            return  
-        end  
-
-        -- Get UID  
-        local uid = Items:ItemRefForRemote(item)  
-
-        if typeof(uid) ~= "string" or uid == "" then  
-            return  
-        end  
-
-        -- Get Count  
-        local countObject = item:FindFirstChild("Count")  
-        local totalCount = countObject and countObject.Value or 1  
-
-        local alreadySent = SentCount[uid] or 0  
-
-        while alreadySent < totalCount and AutoEnabled do  
-            if Items:ItemIsFavorited(item) then  
-                break  
-            end  
-
-            ActivateBooster:FireServer(uid)  
-
-            alreadySent += 1  
-            SentCount[uid] = alreadySent  
-
-            task.wait(0.5)  
-        end  
-    end)  
-
-    if not success then  
-        warn("[Auto Booster]", err)  
-    end  
-end
-
-end
-
-UtilityTab:CreateToggle({
-Name = "Auto Activate Boosters",
-CurrentValue = false,
-Flag = "AutoBooster",
-
-Callback = function(Value)  
-    AutoEnabled = Value  
-    WorkerId += 1  
-
-    if Value then  
-        local thisWorker = WorkerId  
-
-        task.spawn(function()  
-            while AutoEnabled and WorkerId == thisWorker do  
-                ScanBoosters()  
-                task.wait(1)  
-            end  
-        end)  
-    end  
-end
-
-})
 
 
 --====================================================
