@@ -2912,79 +2912,191 @@ do
     end)
 end
 
--- ==========================================
--- SPEED CONTROLS (SYNCED TOGGLE + SLIDER + MANUAL INPUT)
+
+   -- ==========================================
+-- SPEED CONTROLS (SYNCED + LIVE REAL SPEED BADGE)
 -- ==========================================
 MainTab:CreateSection("WalkSpeed Controls")
 do
     local Players = game:GetService("Players")
+    local CoreGui = game:GetService("CoreGui")
     local Player = Players.LocalPlayer
 
     local maxSpeed = 200
     local isToggled = false
     local currentSpeed = 50
-    local defaultGameSpeed = 16
-    local hasCapturedDefault = false
+    local realGameSpeed = 16
     local isSyncingSpeed = false
+    local isApplyingCustom = false
 
     local SpeedSlider = nil
     local SpeedInput = nil
-    local SpeedLockConn = nil
+    local WalkSpeedConn = nil
+    local BadgeLabels = {}
+
+    local function FormatSpeed(val)
+        local num = math.floor((tonumber(val) or 0) * 10 + 0.5) / 10
+        if num == math.floor(num) then
+            return tostring(math.floor(num))
+        end
+        return string.format("%.1f", num)
+    end
+
+    local function RefreshSpeedBadges()
+        local txt = FormatSpeed(realGameSpeed)
+        for i = #BadgeLabels, 1, -1 do
+            local lbl = BadgeLabels[i]
+            if lbl and lbl.Parent then
+                lbl.Text = txt
+            else
+                table.remove(BadgeLabels, i)
+            end
+        end
+    end
+
+    local function AttachBadgeToToggleCard(TitleLbl)
+        if not (TitleLbl and TitleLbl:IsA("TextLabel") and TitleLbl.Text == "Enable WalkSpeed") then return end
+        local Card = TitleLbl.Parent
+        if not (Card and Card:IsA("GuiObject")) then return end
+        if Card:FindFirstChild("RealWalkSpeedBadge") then return end
+
+        -- Right-side controls (FLT / PIN / DEL / Switch) ke exact left me place karega taaki overlap na ho
+        local minRightOffset = -50
+        for _, child in ipairs(Card:GetChildren()) do
+            if child:IsA("GuiObject") and child ~= TitleLbl and child.Position.X.Scale == 1 then
+                if child.Position.X.Offset < minRightOffset then
+                    minRightOffset = child.Position.X.Offset
+                end
+            end
+        end
+
+        local Badge = Instance.new("TextLabel")
+        Badge.Name = "RealWalkSpeedBadge"
+        Badge.Size = UDim2.new(0, 36, 0, 18)
+        Badge.Position = UDim2.new(1, minRightOffset - 42, 0.5, -9)
+        Badge.BackgroundColor3 = Color3.fromRGB(15, 18, 27)
+        Badge.BackgroundTransparency = 0.2
+        Badge.Font = Enum.Font.GothamBold
+        Badge.TextSize = 10
+        Badge.TextColor3 = Color3.fromRGB(0, 224, 255)
+        Badge.Text = FormatSpeed(realGameSpeed)
+        Badge.ZIndex = 9
+        Badge.Parent = Card
+
+        local Corner = Instance.new("UICorner")
+        Corner.CornerRadius = UDim.new(0, 6)
+        Corner.Parent = Badge
+
+        local Stroke = Instance.new("UIStroke")
+        Stroke.Color = Color3.fromRGB(0, 224, 255)
+        Stroke.Thickness = 1
+        Stroke.Transparency = 0.45
+        Stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        Stroke.Parent = Badge
+
+        TitleLbl.Size = UDim2.new(1, minRightOffset - 56, 1, 0)
+        table.insert(BadgeLabels, Badge)
+    end
+
+    local function FindSidGui()
+        local okHui, hui = pcall(function() return gethui and gethui() end)
+        if okHui and hui and hui:FindFirstChild("SidUltimateUI") then
+            return hui:FindFirstChild("SidUltimateUI")
+        end
+        local inCore = pcall(function() return CoreGui:FindFirstChild("SidUltimateUI") end) and CoreGui:FindFirstChild("SidUltimateUI")
+        if inCore then return inCore end
+        local pGui = Player:FindFirstChild("PlayerGui")
+        return pGui and pGui:FindFirstChild("SidUltimateUI") or nil
+    end
+
+    local function HookLiveBadgeOnUI()
+        local SidGui = FindSidGui()
+        if not SidGui then return end
+
+        for _, obj in ipairs(SidGui:GetDescendants()) do
+            if obj:IsA("TextLabel") and obj.Text == "Enable WalkSpeed" then
+                AttachBadgeToToggleCard(obj)
+            end
+        end
+
+        -- Agar baad me ⭐ Pinned tab me pin/rebuild ho toh wahan bhi badge auto-attach ho jayega
+        SidGui.DescendantAdded:Connect(function(obj)
+            if obj:IsA("TextLabel") then
+                task.defer(function()
+                    if obj and obj.Parent and obj.Text == "Enable WalkSpeed" then
+                        AttachBadgeToToggleCard(obj)
+                    end
+                end)
+            end
+        end)
+    end
 
     local function GetHumanoid()
         local Char = Player.Character
         return Char and Char:FindFirstChildOfClass("Humanoid") or nil
     end
 
-    local function DisconnectSpeedLock()
-        if SpeedLockConn then
-            pcall(function() SpeedLockConn:Disconnect() end)
-            SpeedLockConn = nil
-        end
-    end
-
-    local function UpdateSpeed()
+    local function ApplyWalkSpeedState()
         local Hum = GetHumanoid()
-        DisconnectSpeedLock()
+        if not Hum then return end
+
+        isApplyingCustom = true
+        if isToggled then
+            Hum.WalkSpeed = currentSpeed
+        else
+            Hum.WalkSpeed = realGameSpeed
+        end
+        isApplyingCustom = false
+    end
+
+    local function BindCharacter(Char)
+        if WalkSpeedConn then
+            pcall(function() WalkSpeedConn:Disconnect() end)
+            WalkSpeedConn = nil
+        end
+        if not Char then return end
+
+        local Hum = Char:FindFirstChildOfClass("Humanoid") or Char:WaitForChild("Humanoid", 10)
+        if not Hum then return end
+
+        -- Real game speed capture karo
+        if not isToggled or math.abs(Hum.WalkSpeed - currentSpeed) > 0.01 then
+            realGameSpeed = Hum.WalkSpeed
+            RefreshSpeedBadges()
+        end
+
+        -- Real-time listener: skill / buff / game speed change hote hi instant capture hoga
+        WalkSpeedConn = Hum:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
+            if isApplyingCustom or not Hum or not Hum.Parent then return end
+
+            local incoming = Hum.WalkSpeed
+            if isToggled then
+                -- Game ya buff ne WalkSpeed change ki -> pehle real value save & show karo, phir custom lock wapas lagao
+                if math.abs(incoming - currentSpeed) > 0.01 then
+                    realGameSpeed = incoming
+                    RefreshSpeedBadges()
+                end
+                isApplyingCustom = true
+                Hum.WalkSpeed = currentSpeed
+                isApplyingCustom = false
+            else
+                -- Toggle OFF hai -> direct real game speed update karo
+                realGameSpeed = incoming
+                RefreshSpeedBadges()
+            end
+        end)
 
         if isToggled then
-            if Hum then
-                -- Toggle ON hone se pehle game ki asli default speed capture kar lo
-                if not hasCapturedDefault then
-                    defaultGameSpeed = Hum.WalkSpeed
-                    hasCapturedDefault = true
-                end
-
-                Hum.WalkSpeed = currentSpeed
-
-                -- Agar game speed reset kare toh custom speed lock rakhega jab tak toggle ON hai
-                SpeedLockConn = Hum:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
-                    if isToggled and Hum and Hum.Parent and Hum.WalkSpeed ~= currentSpeed then
-                        Hum.WalkSpeed = currentSpeed
-                    end
-                end)
-            end
-        else
-            -- Toggle OFF -> Game ki original default speed restore karke control wapas game ko de do
-            if Hum and hasCapturedDefault then
-                Hum.WalkSpeed = defaultGameSpeed
-            end
-            hasCapturedDefault = false
+            ApplyWalkSpeedState()
         end
     end
 
-    -- Respawn hone par nayi character ki default speed save karke agar ON hai toh speed lagao
+    if Player.Character then
+        task.spawn(BindCharacter, Player.Character)
+    end
     Player.CharacterAdded:Connect(function(Char)
-        local Hum = Char:WaitForChild("Humanoid", 10)
-        if not Hum then return end
-        task.wait(0.15)
-        defaultGameSpeed = Hum.WalkSpeed
-        if isToggled then
-            hasCapturedDefault = true
-            UpdateSpeed()
-        else
-            hasCapturedDefault = false
-        end
+        task.wait(0.1)
+        BindCharacter(Char)
     end)
 
     MainTab:CreateToggle({
@@ -2993,9 +3105,13 @@ do
         Flag = "WalkSpeedToggle",
         Callback = function(Value)
             isToggled = (Value == true)
-            UpdateSpeed()
+            ApplyWalkSpeedState()
+            RefreshSpeedBadges()
         end,
     })
+
+    -- Toggle banne ke turant baad side badge attach kar do
+    task.defer(HookLiveBadgeOnUI)
 
     SpeedSlider = MainTab:CreateSlider({
         Name = "Speed Slider (Max: 200)",
@@ -3009,7 +3125,6 @@ do
             if not num then return end
             currentSpeed = math.clamp(math.floor(num), 0, maxSpeed)
 
-            -- Slider hilte hi TextBox live sync hoga
             if not isSyncingSpeed and SpeedInput and SpeedInput.Set and tostring(SpeedInput.CurrentValue) ~= tostring(currentSpeed) then
                 isSyncingSpeed = true
                 pcall(function()
@@ -3018,7 +3133,9 @@ do
                 isSyncingSpeed = false
             end
 
-            UpdateSpeed()
+            if isToggled then
+                ApplyWalkSpeedState()
+            end
         end,
     })
 
@@ -3033,7 +3150,6 @@ do
             if num then
                 currentSpeed = math.clamp(math.floor(num), 0, maxSpeed)
 
-                -- TextBox badalte hi Slider live sync hoga
                 if not isSyncingSpeed and SpeedSlider and SpeedSlider.Set and tonumber(SpeedSlider.CurrentValue) ~= currentSpeed then
                     isSyncingSpeed = true
                     pcall(function()
@@ -3042,9 +3158,10 @@ do
                     isSyncingSpeed = false
                 end
 
-                UpdateSpeed()
+                if isToggled then
+                    ApplyWalkSpeedState()
+                end
             else
-                -- Galat text type hone par box me valid currentSpeed wapas likh dega
                 if not isSyncingSpeed and SpeedInput and SpeedInput.Set then
                     isSyncingSpeed = true
                     pcall(function()
@@ -3056,7 +3173,7 @@ do
         end,
     })
 end
-
+         
 -- ==========================================
 -- SAFE MODE (CROSS-TELEPORT PERSISTENT — NO FLAG)
 -- ==========================================
