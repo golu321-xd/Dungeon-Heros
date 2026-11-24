@@ -4866,8 +4866,9 @@ Player.CharacterAdded:Connect(function()
 end)
                     
 --====================================================
--- DUNGEON HEROES | AUTO SKILL AURA + LIVE SKILL FILTER (SLOTS 1-5)
--- Crash-Proof Non-Blocking Setup + Live Auto-Detect
+-- DUNGEON HEROES | AUTO SKILL AURA + INSTANT (<0.1s) SKILL FILTER
+-- Multi-Layer Detector (SkillsSystem + Equipped Deep Scan + ItemList + Mastery Ult)
+-- Crash-Proof | Auto-Refreshes in 0.05s on Skill / Preset Change
 --====================================================
 do
     local Players = game:GetService("Players")
@@ -4875,7 +4876,7 @@ do
     local LocalPlayer = Players.LocalPlayer
 
     local function SafeRequire(Inst)
-        if not Inst then return nil end
+        if not Inst or not Inst:IsA("ModuleScript") then return nil end
         local ok, mod = pcall(require, Inst)
         return ok and mod or nil
     end
@@ -4892,6 +4893,13 @@ do
     local Items = Systems and SafeRequire(Systems:FindFirstChild("Items"))
     local SkillsSystem = Systems and SafeRequire(Systems:FindFirstChild("Skills"))
     local MasteriesSystem = Systems and SafeRequire(Systems:FindFirstChild("Masteries"))
+
+    local ItemList = nil
+    pcall(function()
+        local wm = ReplicatedStorage:FindFirstChild("WorldModules")
+        local itm = wm and wm:FindFirstChild("Items")
+        ItemList = SafeRequire(itm and itm:FindFirstChild("ItemList"))
+    end)
 
     local SKILL_AURA_CONFIG = {
         KillRange = 200,
@@ -4917,6 +4925,50 @@ do
         return (f and tonumber(f.CurrentValue)) or SKILL_AURA_CONFIG.AttackSpeed
     end
 
+    local function GetProfileSafe()
+        local p = nil
+        if ProfileSystem and type(ProfileSystem.GetProfile) == "function" then
+            pcall(function() p = ProfileSystem:GetProfile(LocalPlayer) end)
+        end
+        if typeof(p) == "Instance" then return p end
+        local pGui = LocalPlayer:FindFirstChild("PlayerGui")
+        return pGui and pGui:FindFirstChild("Profile") or nil
+    end
+
+    local function GetItemDataSafe(ItemId)
+        if type(ItemId) ~= "string" or #ItemId == 0 then return nil end
+        if Items and type(Items.GetItemData) == "function" then
+            local ok, d = pcall(function() return Items:GetItemData(ItemId) end)
+            if ok and type(d) == "table" then return d end
+        end
+        if type(ItemList) == "table" and type(ItemList[ItemId]) == "table" then
+            return ItemList[ItemId]
+        end
+        return nil
+    end
+
+    local function ResolveItemId(Obj)
+        if typeof(Obj) == "Instance" then
+            if Items and type(Items.GetItemId) == "function" then
+                local ok, id = pcall(function() return Items:GetItemId(Obj) end)
+                if ok and type(id) == "string" and #id > 0 then return id end
+            end
+            for _, attrName in ipairs({"ItemId", "Id", "Skill", "SkillId"}) do
+                local v = Obj:GetAttribute(attrName)
+                if type(v) == "string" and #v > 0 then return v end
+            end
+            if Obj:IsA("StringValue") and #Obj.Value > 0 then return Obj.Value end
+            if Obj:IsA("ObjectValue") and Obj.Value then return Obj.Value.Name end
+            return Obj.Name
+        elseif type(Obj) == "table" then
+            local v = Obj.ItemId or Obj.itemId or Obj.Id or Obj.id or Obj.Skill or Obj.SkillId or Obj.abilityId or Obj.Name
+            if type(v) == "string" and #v > 0 then return v end
+        elseif type(Obj) == "string" and #Obj > 0 then
+            return Obj
+        end
+        return nil
+    end
+
     -- ==========================================
     -- CLEAN SKILL DISPLAY NAME RESOLVER
     -- ==========================================
@@ -4930,7 +4982,7 @@ do
     local function GetSkillDisplayName(SkillId, ItemName, IsUlt)
         local NiceName = nil
 
-        if SkillsSystem then
+        if SkillsSystem and type(SkillsSystem.GetSkillData) == "function" then
             local OkS, SkillData = pcall(function()
                 return SkillsSystem:GetSkillData(SkillId)
             end)
@@ -4943,12 +4995,17 @@ do
             end
         end
 
-        if not NiceName and Items and type(ItemName) == "string" and #ItemName > 0 then
-            local OkI, ItemData = pcall(function()
-                return Items:GetItemData(ItemName)
-            end)
-            if OkI and type(ItemData) == "table" and type(ItemData.DisplayName) == "string" and #ItemData.DisplayName > 0 then
+        if not NiceName and type(ItemName) == "string" and #ItemName > 0 then
+            local ItemData = GetItemDataSafe(ItemName)
+            if type(ItemData) == "table" and type(ItemData.DisplayName) == "string" and #ItemData.DisplayName > 0 then
                 NiceName = ItemData.DisplayName
+            end
+        end
+
+        if not NiceName then
+            local DirectData = GetItemDataSafe(SkillId)
+            if type(DirectData) == "table" and type(DirectData.DisplayName) == "string" and #DirectData.DisplayName > 0 then
+                NiceName = DirectData.DisplayName
             end
         end
 
@@ -4962,110 +5019,152 @@ do
     end
 
     -- ==========================================
-    -- LIVE AUTO-DETECTION FOR SLOTS 1-4 & SLOT 5 (ULTIMATE)
+    -- FAST MULTI-LAYER SKILL DETECTOR (< 0.01s)
     -- ==========================================
     local function GetAllActiveSkills()
         local ActiveSkills = {}
         local Seen = {}
+        local SkillIdToItemName = {}
+
+        local function AddSkill(SkillId, IsUlt, ItemName, ForcedDisplay)
+            if type(SkillId) ~= "string" or #SkillId == 0 or Seen[SkillId] then return end
+            Seen[SkillId] = true
+            local Display = ForcedDisplay or GetSkillDisplayName(SkillId, ItemName or SkillIdToItemName[SkillId], IsUlt == true)
+            table.insert(ActiveSkills, {
+                Name = SkillId,
+                DisplayName = Display,
+                IsUltimate = IsUlt == true
+            })
+        end
+
+        local function TryExtractSkillItem(Obj)
+            local ItemId = ResolveItemId(Obj)
+            if not ItemId then return end
+            local Data = GetItemDataSafe(ItemId)
+            if type(Data) == "table" then
+                local SkillId = Data.Skill or Data.SkillId or Data.Ability or Data.AbilityId
+                if type(SkillId) == "string" and #SkillId > 0 then
+                    SkillIdToItemName[SkillId] = ItemId
+                    AddSkill(SkillId, false, ItemId)
+                    return
+                elseif Data.Category == "Skill" then
+                    SkillIdToItemName[ItemId] = ItemId
+                    AddSkill(ItemId, false, ItemId)
+                    return
+                end
+            end
+            -- Direct SkillId match via SkillsSystem if not in ItemList
+            if SkillsSystem and type(SkillsSystem.GetSkillData) == "function" then
+                local okD, sData = pcall(function() return SkillsSystem:GetSkillData(ItemId) end)
+                if okD and type(sData) == "table" then
+                    AddSkill(ItemId, false, nil)
+                end
+            end
+        end
 
         pcall(function()
-            local Profile = nil
-            if ProfileSystem then
-                pcall(function()
-                    Profile = ProfileSystem:GetProfile(LocalPlayer)
-                end)
-            end
-            if not Profile then
-                local pGui = LocalPlayer:FindFirstChild("PlayerGui")
-                Profile = pGui and pGui:FindFirstChild("Profile")
-            end
+            local Profile = GetProfileSafe()
+            local Equipped = Profile and Profile:FindFirstChild("Equipped")
 
-            local SkillIdToItemName = {}
-            local Equipped = (typeof(Profile) == "Instance") and Profile:FindFirstChild("Equipped") or nil
-
-            if Equipped and Items then
+            -- LAYER 1: Official SkillsSystem:GetSkillInActiveSlot (Slots 1-4)
+            if SkillsSystem and type(SkillsSystem.GetSkillInActiveSlot) == "function" then
                 for Slot = 1, 4 do
-                    local SlotFolder = Equipped:FindFirstChild("Skill" .. tostring(Slot))
-                    if SlotFolder then
-                        for _, Child in ipairs(SlotFolder:GetChildren()) do
-                            local OkData, ItemData = pcall(function()
-                                return Items:GetItemData(Child.Name)
-                            end)
-                            if OkData and type(ItemData) == "table" and type(ItemData.Skill) == "string" then
-                                SkillIdToItemName[ItemData.Skill] = Child.Name
-                            end
-                        end
-                    end
-                end
-            end
-
-            local function AddSkill(SkillId, IsUlt, ItemName)
-                if type(SkillId) == "string" and #SkillId > 0 and not Seen[SkillId] then
-                    Seen[SkillId] = true
-                    local Display = GetSkillDisplayName(SkillId, ItemName or SkillIdToItemName[SkillId], IsUlt == true)
-                    table.insert(ActiveSkills, {
-                        Name = SkillId,
-                        DisplayName = Display,
-                        IsUltimate = IsUlt == true
-                    })
-                end
-            end
-
-            -- 1. SLOTS 1 TO 4: Official Skills:GetSkillInActiveSlot
-            if SkillsSystem then
-                for Slot = 1, 4 do
-                    local Ok, SkillName = pcall(function()
+                    local ok, res = pcall(function()
                         return SkillsSystem:GetSkillInActiveSlot(LocalPlayer, Slot)
                     end)
-                    if Ok and type(SkillName) == "string" and #SkillName > 0 then
-                        AddSkill(SkillName, false, SkillIdToItemName[SkillName])
+                    if (not ok or res == nil) then
+                        ok, res = pcall(function()
+                            return SkillsSystem:GetSkillInActiveSlot(Slot)
+                        end)
+                    end
+                    if ok and res ~= nil then
+                        if type(res) == "string" and #res > 0 then
+                            AddSkill(res, false, nil)
+                        else
+                            TryExtractSkillItem(res)
+                        end
                     end
                 end
             end
 
-            -- 2. SLOTS 1 TO 4 FALLBACK: Profile.Equipped.Skill1..4
-            if Equipped and Items then
+            -- LAYER 2: Profile.Equipped Skill Slots (Skill1..4 / Slot1..4 / Deep Scan)
+            if Equipped then
                 for Slot = 1, 4 do
                     local SlotFolder = Equipped:FindFirstChild("Skill" .. tostring(Slot))
+                        or Equipped:FindFirstChild("ActiveSkill" .. tostring(Slot))
+                        or Equipped:FindFirstChild("Slot" .. tostring(Slot))
                     if SlotFolder then
-                        for _, Child in ipairs(SlotFolder:GetChildren()) do
-                            local OkData, ItemData = pcall(function()
-                                return Items:GetItemData(Child.Name)
-                            end)
-                            if OkData and type(ItemData) == "table" and type(ItemData.Skill) == "string" then
-                                AddSkill(ItemData.Skill, false, Child.Name)
+                        if SlotFolder:IsA("StringValue") or SlotFolder:IsA("ObjectValue") then
+                            TryExtractSkillItem(SlotFolder)
+                        else
+                            for _, Child in ipairs(SlotFolder:GetChildren()) do
+                                TryExtractSkillItem(Child)
+                            end
+                        end
+                    end
+                end
+
+                -- Fallback: scan any remaining skill item inside Equipped
+                if #ActiveSkills < 4 then
+                    for _, Desc in ipairs(Equipped:GetDescendants()) do
+                        if not Desc:IsA("Folder") then
+                            local id = ResolveItemId(Desc)
+                            local d = id and GetItemDataSafe(id)
+                            if type(d) == "table" and (d.Category == "Skill" or type(d.Skill) == "string") then
+                                TryExtractSkillItem(Desc)
                             end
                         end
                     end
                 end
             end
 
-            -- 3. SLOT 5 (MASTERY ULTIMATE)
-            local UltAdded = false
-            if MasteriesSystem then
-                local OkUlt, UltTable = pcall(function()
-                    return MasteriesSystem:GetEquippedUltimate(LocalPlayer)
-                end)
-
-                if OkUlt and type(UltTable) == "table" and type(UltTable.abilityId) == "string" and #UltTable.abilityId > 0 then
-                    local UltLabel = (type(UltTable.name) == "string" and #UltTable.name > 0) and UltTable.name or nil
-                    if UltLabel and not string.find(string.lower(UltLabel), "ult", 1, true) then
-                        UltLabel = UltLabel .. " (Ult)"
+            -- LAYER 3: Table/Record Store fallback (Items:GetTableItems / GetRecordContainer)
+            if #ActiveSkills == 0 and Items then
+                for _, ContainerName in ipairs({"Equipped", "EquippedSkills", "Skills"}) do
+                    if type(Items.GetTableItems) == "function" then
+                        local okT, tbl = pcall(function() return Items:GetTableItems(LocalPlayer, ContainerName) end)
+                        if okT and type(tbl) == "table" then
+                            for _, v in pairs(tbl) do
+                                TryExtractSkillItem(v)
+                            end
+                        end
                     end
-                    Seen[UltTable.abilityId] = true
-                    table.insert(ActiveSkills, {
-                        Name = UltTable.abilityId,
-                        DisplayName = UltLabel or GetSkillDisplayName(UltTable.abilityId, nil, true),
-                        IsUltimate = true
-                    })
-                    UltAdded = true
                 end
             end
 
-            if not UltAdded and typeof(Profile) == "Instance" and Profile:FindFirstChild("Masteries") then
-                local ActiveMastery = Profile.Masteries:FindFirstChild("ActiveMastery")
-                if ActiveMastery and ActiveMastery:IsA("StringValue") and #ActiveMastery.Value > 0 then
-                    AddSkill(ActiveMastery.Value .. "Ultimate", true, nil)
+            -- LAYER 4: Slot 5 Mastery Ultimate
+            local UltAdded = false
+            if MasteriesSystem and type(MasteriesSystem.GetEquippedUltimate) == "function" then
+                local okU, ultRes = pcall(function()
+                    return MasteriesSystem:GetEquippedUltimate(LocalPlayer)
+                end)
+                if okU and ultRes ~= nil then
+                    if type(ultRes) == "table" then
+                        local ultId = ultRes.abilityId or ultRes.AbilityId or ultRes.Skill or ultRes.id or ultRes.Id
+                        if type(ultId) == "string" and #ultId > 0 then
+                            local ultLabel = (type(ultRes.name) == "string" and #ultRes.name > 0) and ultRes.name or nil
+                            if ultLabel and not string.find(string.lower(ultLabel), "ult", 1, true) then
+                                ultLabel = ultLabel .. " (Ult)"
+                            end
+                            AddSkill(ultId, true, nil, ultLabel)
+                            UltAdded = true
+                        end
+                    elseif type(ultRes) == "string" and #ultRes > 0 then
+                        AddSkill(ultRes, true, nil)
+                        UltAdded = true
+                    end
+                end
+            end
+
+            if not UltAdded and Profile then
+                local Masteries = Profile:FindFirstChild("Masteries")
+                if Masteries then
+                    local ActiveM = Masteries:FindFirstChild("ActiveMastery")
+                    local mName = (ActiveM and ActiveM:IsA("StringValue") and ActiveM.Value)
+                        or Masteries:GetAttribute("ActiveMastery")
+                    if type(mName) == "string" and #mName > 0 then
+                        AddSkill(mName .. "Ultimate", true, nil)
+                    end
                 end
             end
         end)
@@ -5084,13 +5183,13 @@ do
     end
 
     local function SyncSkillDropdown(Force)
-        if not SkillDropdown or not SkillDropdown.Refresh then return end
+        if not SkillDropdown or not SkillDropdown.Refresh then return false end
         local SkillsNow = GetAllActiveSkills()
         local OptionNames = BuildSkillOptionNames(SkillsNow)
-        if #OptionNames == 0 then return end
+        if #OptionNames == 0 then return false end
 
         local Sig = table.concat(OptionNames, "|")
-        if not Force and Sig == LastOptionsSig then return end
+        if not Force and Sig == LastOptionsSig then return true end
         LastOptionsSig = Sig
 
         local KeptSelections = {}
@@ -5107,12 +5206,13 @@ do
         pcall(function()
             SkillDropdown:Refresh(OptionNames, (#KeptSelections > 0) and KeptSelections or nil)
         end)
+        return true
     end
 
     local function QueueSkillSync()
         if RefreshPending then return end
         RefreshPending = true
-        task.delay(0.25, function()
+        task.delay(0.05, function()
             RefreshPending = false
             SyncSkillDropdown(false)
         end)
@@ -5265,7 +5365,7 @@ do
     end
 
     -- ==========================================
-    -- UI CONTROLS ON MAINTAB (CREATED FIRST, NON-BLOCKING!)
+    -- UI CONTROLS ON MAINTAB (INSTANT 0.01s POPULATE!)
     -- ==========================================
     MainTab:CreateToggle({
         Name = "Skill Aura",
@@ -5294,10 +5394,14 @@ do
         end
     })
 
+    -- Instant synchronous detection BEFORE creating dropdown (< 0.01s)
+    local InitialOptions = BuildSkillOptionNames(GetAllActiveSkills())
+    LastOptionsSig = table.concat(InitialOptions, "|")
+
     local okDrop, dropRes = pcall(function()
         return MainTab:CreateDropdown({
             Name = "Select Skills to Use",
-            Options = {"Detecting Equipped Skills..."},
+            Options = (#InitialOptions > 0) and InitialOptions or {"Detecting Equipped Skills..."},
             CurrentOption = {},
             MultipleOptions = true,
             Flag = "SkillAuraSelectedSkills",
@@ -5320,22 +5424,23 @@ do
         warn("[Skill Aura Dropdown Error]:", dropRes)
     end
 
-    -- Auto-watch Equipped Skills & Mastery AFTER SkillDropdown is created!
+    MainTab:CreateButton({
+        Name = "Refresh Equipped Skills",
+        Callback = function()
+            SyncSkillDropdown(true)
+        end
+    })
+
+    -- Fast 0.1s retry loop (if profile wasn't ready at 0.0s) + instant live watchers
     task.spawn(function()
-        local Profile = nil
-        for _ = 1, 20 do
-            if ProfileSystem then
-                pcall(function() Profile = ProfileSystem:GetProfile(LocalPlayer) end)
+        if #InitialOptions == 0 then
+            for _ = 1, 50 do -- up to 5 seconds, checking every 0.1s
+                if SyncSkillDropdown(true) then break end
+                task.wait(0.1)
             end
-            if not Profile then
-                local pGui = LocalPlayer:FindFirstChild("PlayerGui")
-                Profile = pGui and pGui:FindFirstChild("Profile")
-            end
-            if Profile then break end
-            task.wait(0.3)
         end
 
-        SyncSkillDropdown(true)
+        local Profile = GetProfileSafe()
         if typeof(Profile) ~= "Instance" then return end
 
         local Equipped = Profile:FindFirstChild("Equipped")
@@ -5350,6 +5455,7 @@ do
             if ActiveM and ActiveM:IsA("ValueBase") then
                 ActiveM.Changed:Connect(QueueSkillSync)
             end
+            Masteries:GetAttributeChangedSignal("ActiveMastery"):Connect(QueueSkillSync)
         end
 
         local PresetVal = Profile:FindFirstChild("CurrentGearPreset")
