@@ -2915,6 +2915,29 @@ function Library:CreateWindow(Config)
         Internal.ConfigSettings.FileName = "Game_" .. tostring(game.PlaceId)
     end
 
+    -- Pre-load saved UI Scale & Anim state BEFORE creating UI so auto-execute opens at exact saved size
+    if Internal.ConfigSettings.Enabled and readfile and isfile then
+        pcall(function()
+            local _, JsonPath = GetConfigPath()
+            if isfile(JsonPath) then
+                local Decoded = HttpService:JSONDecode(readfile(JsonPath))
+                if type(Decoded) == "table" then
+                    local SavedScale = Decoded["SidUI_LooksUIScale"]
+                    if type(SavedScale) == "table" then SavedScale = SavedScale.CurrentValue end
+                    if tonumber(SavedScale) then
+                        LooksState.UIScale = math.clamp(tonumber(SavedScale), 0.70, 1.25)
+                    end
+
+                    local SavedAnim = Decoded["SidUI_LooksAnimEnabled"]
+                    if type(SavedAnim) == "table" then SavedAnim = SavedAnim.CurrentValue end
+                    if type(SavedAnim) == "boolean" then
+                        LooksState.AnimationsEnabled = SavedAnim
+                    end
+                end
+            end
+        end)
+    end
+
     local ScreenGui = Make("ScreenGui", {
         Name = "SidUltimateUI",
         IgnoreGuiInset = true,
@@ -2943,6 +2966,40 @@ function Library:CreateWindow(Config)
     AddCorner(MainFrame, 18)
 
     local MainUIScale = Make("UIScale", {Scale = LooksState.UIScale}, MainFrame)
+
+    -- Fixes ScrollingFrame bottom cut-off at small UI scales (compensates UIScale)
+    local function BindScaledCanvas(ScrollFrame, Layout, ExtraPad)
+        local function UpdateCanvas()
+            if not (ScrollFrame and ScrollFrame.Parent and Layout and Layout.Parent) then return end
+            local CurScale = math.max(MainUIScale.Scale, 0.25)
+            local UnscaledY = math.ceil(Layout.AbsoluteContentSize.Y / CurScale)
+            ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, UnscaledY + (ExtraPad or 28))
+        end
+        Layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(UpdateCanvas)
+        MainUIScale:GetPropertyChangedSignal("Scale"):Connect(function()
+            task.defer(UpdateCanvas)
+        end)
+        ScrollFrame:GetPropertyChangedSignal("Visible"):Connect(function()
+            if ScrollFrame.Visible then task.defer(UpdateCanvas) end
+        end)
+        task.defer(UpdateCanvas)
+        return UpdateCanvas
+    end
+
+    -- Prevents startup/open tween from overwriting saved UI Scale
+    local ActiveScaleTween = nil
+    local function SetWindowScale(TargetScale, Duration, Style, Dir)
+        if ActiveScaleTween then
+            pcall(function() ActiveScaleTween:Cancel() end)
+            ActiveScaleTween = nil
+        end
+        if not Duration or Duration <= 0 or not LooksState.AnimationsEnabled or Internal.IsLoadingConfig then
+            MainUIScale.Scale = TargetScale
+            return nil
+        end
+        ActiveScaleTween = Tween(MainUIScale, Duration, {Scale = TargetScale}, Style, Dir)
+        return ActiveScaleTween
+    end
 
     -- Blocks all taps/clicks inside MainFrame from passing through to game UI behind it
     Make("TextButton", {
@@ -3019,7 +3076,7 @@ function Library:CreateWindow(Config)
     local IsWindowVisible = true
     local AnimToken = 0
 
-    local function AnimateShowUI(Silent)
+        local function AnimateShowUI(Silent)
         AnimToken = AnimToken + 1
         IsWindowVisible = true
         ShowUIBtn.Visible = false
@@ -3033,7 +3090,7 @@ function Library:CreateWindow(Config)
         local TargetTrans = GetSurfaceSpec(LooksState.SurfaceMode).Main
 
         if not LooksState.AnimationsEnabled then
-            MainUIScale.Scale = TargetScale
+            SetWindowScale(TargetScale, 0)
             MainFrame.Position = TargetPos
             MainFrame.BackgroundTransparency = TargetTrans
             return
@@ -3042,54 +3099,54 @@ function Library:CreateWindow(Config)
         local Style = LooksState.WindowAnimStyle
         if Style == "Pop & Scale" then
             MainFrame.Position = TargetPos; MainFrame.BackgroundTransparency = TargetTrans
-            MainUIScale.Scale = TargetScale * 0.84
-            Tween(MainUIScale, 0.22, {Scale = TargetScale}, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+            SetWindowScale(TargetScale * 0.84, 0)
+            SetWindowScale(TargetScale, 0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
         elseif Style == "Slide From Top" then
-            MainUIScale.Scale = TargetScale; MainFrame.BackgroundTransparency = TargetTrans
+            SetWindowScale(TargetScale, 0); MainFrame.BackgroundTransparency = TargetTrans
             MainFrame.Position = UDim2.new(TargetPos.X.Scale, TargetPos.X.Offset, -0.35, 0)
             Tween(MainFrame, 0.30, {Position = TargetPos}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
         elseif Style == "Slide From Bottom" then
-            MainUIScale.Scale = TargetScale; MainFrame.BackgroundTransparency = TargetTrans
+            SetWindowScale(TargetScale, 0); MainFrame.BackgroundTransparency = TargetTrans
             MainFrame.Position = UDim2.new(TargetPos.X.Scale, TargetPos.X.Offset, 1.35, 0)
             Tween(MainFrame, 0.30, {Position = TargetPos}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
         elseif Style == "Slide From Left" then
-            MainUIScale.Scale = TargetScale; MainFrame.BackgroundTransparency = TargetTrans
+            SetWindowScale(TargetScale, 0); MainFrame.BackgroundTransparency = TargetTrans
             MainFrame.Position = UDim2.new(-0.35, 0, TargetPos.Y.Scale, TargetPos.Y.Offset)
             Tween(MainFrame, 0.30, {Position = TargetPos}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
         elseif Style == "Slide From Right" then
-            MainUIScale.Scale = TargetScale; MainFrame.BackgroundTransparency = TargetTrans
+            SetWindowScale(TargetScale, 0); MainFrame.BackgroundTransparency = TargetTrans
             MainFrame.Position = UDim2.new(1.35, 0, TargetPos.Y.Scale, TargetPos.Y.Offset)
             Tween(MainFrame, 0.30, {Position = TargetPos}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
         elseif Style == "Fade & Glide" then
-            MainUIScale.Scale = TargetScale * 0.94; MainFrame.BackgroundTransparency = 0.92
+            SetWindowScale(TargetScale * 0.94, 0); MainFrame.BackgroundTransparency = 0.92
             MainFrame.Position = UDim2.new(TargetPos.X.Scale, TargetPos.X.Offset, TargetPos.Y.Scale, TargetPos.Y.Offset + 28)
-            Tween(MainUIScale, 0.24, {Scale = TargetScale}, Enum.EasingStyle.Quad)
+            SetWindowScale(TargetScale, 0.24, Enum.EasingStyle.Quad)
             Tween(MainFrame, 0.26, {Position = TargetPos, BackgroundTransparency = TargetTrans}, Enum.EasingStyle.Quad)
         elseif Style == "Elastic Bounce" then
             MainFrame.Position = TargetPos; MainFrame.BackgroundTransparency = TargetTrans
-            MainUIScale.Scale = TargetScale * 0.72
-            Tween(MainUIScale, 0.45, {Scale = TargetScale}, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out)
+            SetWindowScale(TargetScale * 0.72, 0)
+            SetWindowScale(TargetScale, 0.45, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out)
         elseif Style == "Flip & Zoom" then
             MainFrame.Position = TargetPos; MainFrame.BackgroundTransparency = TargetTrans
-            MainUIScale.Scale = TargetScale * 0.78
+            SetWindowScale(TargetScale * 0.78, 0)
             MainFrame.Rotation = -7
-            Tween(MainUIScale, 0.28, {Scale = TargetScale}, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+            SetWindowScale(TargetScale, 0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
             Tween(MainFrame, 0.28, {Rotation = 0}, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
         elseif Style == "Horizon Unfold" then
-            MainUIScale.Scale = TargetScale; MainFrame.Position = TargetPos; MainFrame.BackgroundTransparency = TargetTrans
+            SetWindowScale(TargetScale, 0); MainFrame.Position = TargetPos; MainFrame.BackgroundTransparency = TargetTrans
             MainFrame.Size = UDim2.new(0, 565, 0, 4)
             Tween(MainFrame, 0.30, {Size = DefaultWinSize}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
         elseif Style == "Curtain Split" then
-            MainUIScale.Scale = TargetScale; MainFrame.Position = TargetPos; MainFrame.BackgroundTransparency = TargetTrans
+            SetWindowScale(TargetScale, 0); MainFrame.Position = TargetPos; MainFrame.BackgroundTransparency = TargetTrans
             MainFrame.Size = UDim2.new(0, 6, 0, 315)
             Tween(MainFrame, 0.30, {Size = DefaultWinSize}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
         elseif Style == "Spin Portal" then
             MainFrame.Position = TargetPos; MainFrame.BackgroundTransparency = TargetTrans
-            MainUIScale.Scale = TargetScale * 0.45; MainFrame.Rotation = -18
-            Tween(MainUIScale, 0.32, {Scale = TargetScale}, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+            SetWindowScale(TargetScale * 0.45, 0); MainFrame.Rotation = -18
+            SetWindowScale(TargetScale, 0.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
             Tween(MainFrame, 0.32, {Rotation = 0}, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
         elseif Style == "Drop & Bounce" then
-            MainUIScale.Scale = TargetScale; MainFrame.BackgroundTransparency = TargetTrans
+            SetWindowScale(TargetScale, 0); MainFrame.BackgroundTransparency = TargetTrans
             MainFrame.Position = UDim2.new(TargetPos.X.Scale, TargetPos.X.Offset, -0.35, 0)
             Tween(MainFrame, 0.48, {Position = TargetPos}, Enum.EasingStyle.Bounce, Enum.EasingDirection.Out)
         end
@@ -3131,9 +3188,9 @@ function Library:CreateWindow(Config)
             DoneTween = Tween(MainFrame, 0.18, {Size = UDim2.new(0, 6, 0, 315)}, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
         elseif Style == "Flip & Zoom" or Style == "Spin Portal" then
             Tween(MainFrame, 0.18, {Rotation = (Style == "Spin Portal") and 18 or 7}, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-            DoneTween = Tween(MainUIScale, 0.18, {Scale = LooksState.UIScale * 0.55}, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+            DoneTween = SetWindowScale(LooksState.UIScale * 0.55, 0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
         else
-            DoneTween = Tween(MainUIScale, 0.16, {Scale = LooksState.UIScale * 0.82}, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+            DoneTween = SetWindowScale(LooksState.UIScale * 0.82, 0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
         end
 
         if DoneTween then
@@ -3142,7 +3199,7 @@ function Library:CreateWindow(Config)
                     MainFrame.Visible = false
                     MainFrame.Rotation = 0
                     MainFrame.Size = DefaultWinSize
-                    MainUIScale.Scale = LooksState.UIScale
+                    SetWindowScale(LooksState.UIScale, 0)
                     MainFrame.Position = LastSavedPos
                     ShowUIBtn.Visible = true
                 end
@@ -3418,9 +3475,7 @@ function Library:CreateWindow(Config)
 
     Make("UIPadding", {PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 6), PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 6)}, Sidebar)
     local SideLayout = Make("UIListLayout", {SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 5)}, Sidebar)
-    SideLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        Sidebar.CanvasSize = UDim2.new(0, 0, 0, SideLayout.AbsoluteContentSize.Y + 12)
-    end)
+    BindScaledCanvas(Sidebar, SideLayout, 18)
 
     BuildSidebarProfileCard(MainFrame, OpenPlayerProfileModal)
 
@@ -3443,10 +3498,7 @@ function Library:CreateWindow(Config)
 
     Make("UIPadding", {PaddingTop = UDim.new(0, 8), PaddingBottom = UDim.new(0, 14), PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 14)}, SearchPage)
     local SearchLayout = Make("UIListLayout", {SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 6)}, SearchPage)
-    SearchLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        SearchPage.CanvasSize = UDim2.new(0, 0, 0, SearchLayout.AbsoluteContentSize.Y + 20)
-    end)
-
+    BindScaledCanvas(SearchPage, SearchLayout, 28)
     TrackConn(UserInputService.InputBegan:Connect(function(Input, Processed)
         if not Processed and Input.KeyCode == Enum.KeyCode.RightShift then
             if ScreenGui and ScreenGui.Parent then
@@ -3608,9 +3660,7 @@ function Library:CreateWindow(Config)
 
         Make("UIPadding", {PaddingTop = UDim.new(0, 8), PaddingBottom = UDim.new(0, 14), PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 14)}, TabPage)
         local PageLayout = Make("UIListLayout", {SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 7)}, TabPage)
-        PageLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-            TabPage.CanvasSize = UDim2.new(0, 0, 0, PageLayout.AbsoluteContentSize.Y + 24)
-        end)
+        BindScaledCanvas(TabPage, PageLayout, 36)
 
         local TabRecord = {Name = TabName, Button = TabBtn, Label = TabLabel, Indicator = Indicator, Page = TabPage, IsSystemTab = IsSystemTab == true}
         table.insert(Tabs, TabRecord)
@@ -4249,7 +4299,8 @@ function Library:CreateWindow(Config)
                 local ShowSearch = (#OptionsList >= 5)
                 InlineSearch.Visible = IsOpen and ShowSearch
                 local ListTopY = ShowSearch and 66 or 40
-                local ContentH = DropLayout.AbsoluteContentSize.Y + 8
+                local CurScale = math.max(MainUIScale.Scale, 0.25)
+local ContentH = math.ceil(DropLayout.AbsoluteContentSize.Y / CurScale) + 8
                 ListScroll.CanvasSize = UDim2.new(0, 0, 0, ContentH)
                 local VisibleListH = math.min(math.max(ContentH, 28), 130)
 
@@ -5896,9 +5947,13 @@ function Library:CreateWindow(Config)
     end
 
     PopulateLooksTab(LooksTab, LooksPage, {
-        ApplyScale = function(NewScale)
-            if IsWindowVisible then Tween(MainUIScale, 0.14, {Scale = NewScale})
-            else MainUIScale.Scale = NewScale end
+                ApplyScale = function(NewScale)
+            LooksState.UIScale = NewScale
+            if IsWindowVisible then
+                SetWindowScale(NewScale, Internal.IsLoadingConfig and 0 or 0.14)
+            else
+                SetWindowScale(NewScale, 0)
+            end
         end,
         SetTelemetryVisible = function(Vis) TelemetryPill.Visible = Vis end,
         RebuildBgAnim = RebuildBackgroundAnim,
