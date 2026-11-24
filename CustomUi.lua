@@ -112,6 +112,11 @@ local Internal = {
     ApplyFontFn = nil,
     ToggleBorderFlowFn = nil,
     OpenAfkSaverFn = nil,
+    LayoutDragConn = nil,
+    SavedTabOrders = {},
+    SetLayoutEditModeFn = nil,
+    ResetTabOrdersFn = nil,
+    RegisterReorderCardFn = nil,
 }
 
 local function TrackConn(Conn)
@@ -206,6 +211,7 @@ local LooksState = {
     CornerRadius = 18,
     FlowingBorder = false,
     UIFont = "Gotham",
+    EditLayoutMode = false,
 }
 
 local Registry = {
@@ -2745,6 +2751,45 @@ local function PopulateLooksTab(LooksTab, LooksPage, Controls)
         end
     })
 
+    -- ==========================================
+    -- FEATURE LAYOUT REORDER STUDIO (OPTIONAL — DEFAULT OFF)
+    -- ==========================================
+    LooksTab:CreateSection("Feature Layout Reorder (Optional)")
+
+    LooksTab:CreateToggle({
+        Name = "Enable Feature Reorder Mode",
+        CurrentValue = false,
+        -- Intentionally NO Flag: always starts safe OFF on launch; saved positions still persist!
+        Callback = function(Val)
+            if Internal.SetLayoutEditModeFn then
+                Internal.SetLayoutEditModeFn(Val == true)
+            end
+            if Val then
+                Library:Notify({
+                    Title = "Reorder Mode: ON",
+                    Content = "Kisi bhi tab me '≡ MOVE' pakad kar features upar-neeche set karo!",
+                    Color = Theme.AccentSecondary,
+                    Duration = 3.2
+                })
+            end
+        end
+    })
+
+    LooksTab:CreateButton({
+        Name = "Reset All Feature Positions to Default",
+        Callback = function()
+            if Internal.ResetTabOrdersFn then
+                Internal.ResetTabOrdersFn()
+            end
+            Library:Notify({
+                Title = "Layout Order Reset!",
+                Content = "Saare tabs ke features original order me aa gaye.",
+                Color = Theme.Success,
+                Duration = 2.5
+            })
+        end
+    })
+
     LooksTab:CreateSection("Config Profiles (" .. tostring(Internal.ConfigSettings.FolderName) .. ")")
 
     local DefaultFileName = Internal.ConfigSettings.FileName
@@ -3418,6 +3463,7 @@ function Library:CreateWindow(Config)
         Internal.BorderFlowConn = SafeDisconnect(Internal.BorderFlowConn)
         Internal.AntiAfkConn = SafeDisconnect(Internal.AntiAfkConn)
         Internal.AfkClockConn = SafeDisconnect(Internal.AfkClockConn)
+        Internal.LayoutDragConn = SafeDisconnect(Internal.LayoutDragConn)
         for _, c in ipairs(Internal.GlobalConns) do SafeDisconnect(c) end
         table.clear(Internal.GlobalConns)
         if ScreenGui and ScreenGui.Parent then ScreenGui:Destroy() end
@@ -3568,6 +3614,17 @@ function Library:CreateWindow(Config)
 
         local TabRecord = {Name = TabName, Button = TabBtn, Label = TabLabel, Indicator = Indicator, Page = TabPage, IsSystemTab = IsSystemTab == true}
         table.insert(Tabs, TabRecord)
+        if not IsSystemTab then
+            TabPage.ChildAdded:Connect(function(Child)
+                if Child:IsA("GuiObject") and Child.Name ~= "__SidDropSlot" then
+                    task.defer(function()
+                        if Child and Child.Parent == TabPage and Internal.RegisterReorderCardFn then
+                            Internal.RegisterReorderCardFn(TabRecord, Child)
+                        end
+                    end)
+                end
+            end)
+        end
 
         TabBtn.MouseButton1Click:Connect(function() GlobalSearchBox.Text = ""; SelectTab(TabRecord) end)
         if not IsSystemTab and UserTabCount == 1 then SelectTab(TabRecord, true) end
@@ -4494,6 +4551,542 @@ function Library:CreateWindow(Config)
             SetThemePreset(ThemeIdentifier)
         end
     end
+
+    -- ==========================================
+    -- UNIVERSAL SMOOTH OVERLAY FEATURE REORDER ENGINE
+    -- ==========================================
+    do
+        local DragOverlayLayer = Make("Frame", {
+            Name = "LayoutDragOverlay",
+            Size = UDim2.new(1, 0, 1, 0),
+            BackgroundTransparency = 1,
+            ZIndex = 120
+        }, ScreenGui)
+
+        local TabItemsMap = {}      -- [TabRecord] = { Entry, ... }
+        local TabKeyCounters = {}   -- [TabRecord] = { [BaseKey] = count }
+        local TabOrderFlagObj = {CurrentValue = {}}
+
+        local Drag = {
+            Active = false,
+            PendingEntry = nil,
+            Entry = nil,
+            InputObj = nil,
+            HoldToken = 0,
+            StartPos = nil,
+            CurPos = nil,
+            GrabOffsetY = 0,
+            BaseCenterX = 0,
+            CardW = 0,
+            CardH = 0,
+            CurScale = 1,
+            GhostWrap = nil,
+            GhostScale = nil,
+            DropSlot = nil,
+            MovedOrder = false,
+        }
+
+        local function ExtractStableKey(TabRecord, Card)
+            local Base = "Element"
+            local Lbl = Card:FindFirstChildWhichIsA("TextLabel", true)
+            if Lbl and type(Lbl.Text) == "string" and #Lbl.Text > 0 then
+                Base = string.sub(Lbl.Text, 1, 48)
+            elseif Card.Name ~= "Frame" and Card.Name ~= "TextButton" then
+                Base = Card.Name
+            else
+                Base = "Divider"
+            end
+
+            TabKeyCounters[TabRecord] = TabKeyCounters[TabRecord] or {}
+            local Cnt = (TabKeyCounters[TabRecord][Base] or 0) + 1
+            TabKeyCounters[TabRecord][Base] = Cnt
+            return Base .. "#" .. tostring(Cnt)
+        end
+
+        local function ApplyOrderToTab(TabRecord)
+            local List = TabItemsMap[TabRecord]
+            if not List then return end
+
+            local SavedKeys = Internal.SavedTabOrders[TabRecord.Name]
+            if type(SavedKeys) == "table" and #SavedKeys > 0 then
+                local Rank = {}
+                for idx, k in ipairs(SavedKeys) do
+                    Rank[tostring(k)] = idx
+                end
+                table.sort(List, function(a, b)
+                    local ra = Rank[a.Key] or (10000 + a.DefaultOrder)
+                    local rb = Rank[b.Key] or (10000 + b.DefaultOrder)
+                    if ra ~= rb then return ra < rb end
+                    return a.DefaultOrder < b.DefaultOrder
+                end)
+            else
+                table.sort(List, function(a, b)
+                    return a.DefaultOrder < b.DefaultOrder
+                end)
+            end
+
+            for idx, Entry in ipairs(List) do
+                if Entry.Card and Entry.Card.Parent then
+                    Entry.Card.LayoutOrder = idx
+                end
+            end
+        end
+
+        local function SaveTabOrderNow(TabRecord)
+            local List = TabItemsMap[TabRecord]
+            if not List then return end
+            local KeyArr = {}
+            for _, Entry in ipairs(List) do
+                table.insert(KeyArr, Entry.Key)
+            end
+            Internal.SavedTabOrders[TabRecord.Name] = KeyArr
+            TabOrderFlagObj.CurrentValue = Internal.SavedTabOrders
+            Library:SaveConfiguration(nil, true)
+        end
+
+        local function CleanupDragVisuals(SnapSmoothly)
+            Internal.LayoutDragConn = SafeDisconnect(Internal.LayoutDragConn)
+
+            local Entry = Drag.Entry
+            local Ghost = Drag.GhostWrap
+            local GScale = Drag.GhostScale
+            local Slot = Drag.DropSlot
+            local Moved = Drag.MovedOrder
+            local OrigScale = Drag.CurScale
+
+            Drag.Active = false
+            Drag.Entry = nil
+            Drag.PendingEntry = nil
+            Drag.InputObj = nil
+            Drag.GhostWrap = nil
+            Drag.GhostScale = nil
+            Drag.DropSlot = nil
+            Drag.MovedOrder = false
+
+            if Entry and Entry.TabRecord and Entry.TabRecord.Page then
+                Entry.TabRecord.Page.ScrollingEnabled = true
+            end
+
+            local function Finalize()
+                if Ghost and Ghost.Parent then Ghost:Destroy() end
+                if Slot and Slot.Parent then Slot:Destroy() end
+                if Entry and Entry.Card and Entry.Card.Parent then
+                    Entry.Card.Visible = true
+                end
+                if Moved and Entry and Entry.TabRecord then
+                    SaveTabOrderNow(Entry.TabRecord)
+                    PlayUISound("Toggle", 1.15)
+                end
+            end
+
+            if SnapSmoothly and Ghost and Ghost.Parent and Slot and Slot.Parent then
+                local EndX = (Slot.AbsolutePosition.X - DragOverlayLayer.AbsolutePosition.X) + (Slot.AbsoluteSize.X * 0.5)
+                local EndY = (Slot.AbsolutePosition.Y - DragOverlayLayer.AbsolutePosition.Y) + (Slot.AbsoluteSize.Y * 0.5)
+
+                local SnapTween = TweenService:Create(Ghost, TweenInfo.new(0.14, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+                    Position = UDim2.fromOffset(EndX, EndY)
+                })
+                if GScale and GScale.Parent then
+                    TweenService:Create(GScale, TweenInfo.new(0.14, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+                        Scale = OrigScale
+                    }):Play()
+                end
+                SnapTween:Play()
+
+                local Done = false
+                SnapTween.Completed:Connect(function()
+                    if not Done then Done = true; Finalize() end
+                end)
+                task.delay(0.18, function()
+                    if not Done then Done = true; Finalize() end
+                end)
+            else
+                Finalize()
+            end
+        end
+
+        local function StartSmoothOverlayDrag(Entry, PointerPos)
+            if Drag.Active or not LooksState.EditLayoutMode then return end
+            if not Entry.Card or not Entry.Card.Parent then return end
+
+            local Page = Entry.TabRecord.Page
+            local CurScale = math.max(MainUIScale.Scale, 0.5)
+            local AbsPos = Entry.Card.AbsolutePosition
+            local AbsSz = Entry.Card.AbsoluteSize
+
+            Drag.Active = true
+            Drag.Entry = Entry
+            Drag.CurPos = PointerPos
+            Drag.GrabOffsetY = PointerPos.Y - AbsPos.Y
+            Drag.BaseCenterX = (AbsPos.X - DragOverlayLayer.AbsolutePosition.X) + (AbsSz.X * 0.5)
+            Drag.CardW = AbsSz.X
+            Drag.CardH = AbsSz.Y
+            Drag.CurScale = CurScale
+            Drag.MovedOrder = false
+
+            Page.ScrollingEnabled = false
+            PlayUISound("Open", 1.22)
+
+            -- 1. Glowing Drop Slot Placeholder inside TabPage
+            local Slot = Instance.new("Frame")
+            Slot.Name = "__SidDropSlot"
+            Slot.Size = Entry.Card.Size
+            Slot.LayoutOrder = Entry.Card.LayoutOrder
+            Slot.BackgroundColor3 = Theme.AccentSecondary
+            Slot.BackgroundTransparency = 0.86
+            Slot.BorderSizePixel = 0
+            Slot.ZIndex = 6
+            Slot.Parent = Page
+
+            local SlotCorner = Instance.new("UICorner")
+            SlotCorner.CornerRadius = UDim.new(0, math.floor((LooksState.CornerRadius or 18) * 0.5))
+            SlotCorner.Parent = Slot
+
+            local SlotStroke = Instance.new("UIStroke")
+            SlotStroke.Color = Theme.AccentSecondary
+            SlotStroke.Thickness = 1.5
+            SlotStroke.Transparency = 0.22
+            SlotStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+            SlotStroke.Parent = Slot
+
+            Drag.DropSlot = Slot
+
+            -- 2. Floating Smooth Overlay Ghost Card (Renders Above Entire UI)
+            local InitCenterY = (AbsPos.Y - DragOverlayLayer.AbsolutePosition.Y) + (AbsSz.Y * 0.5)
+            local GhostWrap = Instance.new("Frame")
+            GhostWrap.Name = "FloatingDragGhost"
+            GhostWrap.Size = UDim2.fromOffset(AbsSz.X / CurScale, AbsSz.Y / CurScale)
+            GhostWrap.Position = UDim2.fromOffset(Drag.BaseCenterX, InitCenterY)
+            GhostWrap.AnchorPoint = Vector2.new(0.5, 0.5)
+            GhostWrap.BackgroundTransparency = 1
+            GhostWrap.ZIndex = 121
+            GhostWrap.Parent = DragOverlayLayer
+
+            local GhostScale = Instance.new("UIScale")
+            GhostScale.Scale = CurScale
+            GhostScale.Parent = GhostWrap
+
+            -- Soft Drop Shadow behind Lifted Card
+            local Shadow = Instance.new("Frame")
+            Shadow.Size = UDim2.new(1, 8, 1, 8)
+            Shadow.Position = UDim2.new(0.5, 0, 0.5, 6)
+            Shadow.AnchorPoint = Vector2.new(0.5, 0.5)
+            Shadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+            Shadow.BackgroundTransparency = 0.48
+            Shadow.BorderSizePixel = 0
+            Shadow.ZIndex = 1
+            Shadow.Parent = GhostWrap
+
+            local ShCorner = Instance.new("UICorner")
+            ShCorner.CornerRadius = UDim.new(0, 12)
+            ShCorner.Parent = Shadow
+
+            -- Backing for transparent Section / Divider elements so they look crisp when lifted
+            if Entry.Card.BackgroundTransparency >= 0.85 then
+                local Backing = Instance.new("Frame")
+                Backing.Size = UDim2.new(1, 0, 1, 0)
+                Backing.BackgroundColor3 = Theme.CardBg
+                Backing.BackgroundTransparency = 0.14
+                Backing.BorderSizePixel = 0
+                Backing.ZIndex = 2
+                Backing.Parent = GhostWrap
+                local BkC = Instance.new("UICorner")
+                BkC.CornerRadius = UDim.new(0, 9)
+                BkC.Parent = Backing
+            end
+
+            -- Visual Clone of the Real Card
+            local CloneCard = Entry.Card:Clone()
+            CloneCard.Name = "GhostVisual"
+            CloneCard.Size = UDim2.new(1, 0, 1, 0)
+            CloneCard.Position = UDim2.new(0, 0, 0, 0)
+            CloneCard.AnchorPoint = Vector2.new(0, 0)
+            CloneCard.Visible = true
+            CloneCard.ZIndex = 3
+            local OldCov = CloneCard:FindFirstChild("__SidDragCover")
+            if OldCov then OldCov:Destroy() end
+            CloneCard.Parent = GhostWrap
+
+            -- Crisp Glowing Cyan Lift Border
+            local GlowRing = Instance.new("Frame")
+            GlowRing.Size = UDim2.new(1, 0, 1, 0)
+            GlowRing.BackgroundTransparency = 1
+            GlowRing.ZIndex = 4
+            GlowRing.Parent = GhostWrap
+
+            local GrCorner = Instance.new("UICorner")
+            GrCorner.CornerRadius = UDim.new(0, math.floor((LooksState.CornerRadius or 18) * 0.5))
+            GrCorner.Parent = GlowRing
+
+            local GrStroke = Instance.new("UIStroke")
+            GrStroke.Color = Theme.AccentSecondary
+            GrStroke.Thickness = 2
+            GrStroke.Transparency = 0.05
+            GrStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+            GrStroke.Parent = GlowRing
+
+            Drag.GhostWrap = GhostWrap
+            Drag.GhostScale = GhostScale
+
+            -- Hide original while lifted & animate lift pop
+            Entry.Card.Visible = false
+            TweenService:Create(GhostScale, TweenInfo.new(0.14, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+                Scale = CurScale * 1.045
+            }):Play()
+
+            -- 3. Silky-Smooth 60fps Overlay Follow + Edge Auto-Scroll + Live Swap Loop
+            Internal.LayoutDragConn = SafeDisconnect(Internal.LayoutDragConn)
+            Internal.LayoutDragConn = RunService.RenderStepped:Connect(function(dt)
+                if not Drag.Active or not Drag.GhostWrap or not Drag.DropSlot then
+                    CleanupDragVisuals(false)
+                    return
+                end
+                dt = math.min(dt, 0.05)
+
+                local Ptr = Drag.CurPos
+                local LayerTop = DragOverlayLayer.AbsolutePosition.Y
+                local PageTop = Page.AbsolutePosition.Y
+                local PageBot = PageTop + Page.AbsoluteSize.Y
+
+                -- Smoothly glide floating overlay card to finger with subtle X sway
+                local RawTargetY = (Ptr.Y - Drag.GrabOffsetY - LayerTop) + (Drag.CardH * 0.5)
+                local MinY = (PageTop - LayerTop) + (Drag.CardH * 0.25)
+                local MaxY = (PageBot - LayerTop) - (Drag.CardH * 0.25)
+                local TargetY = math.clamp(RawTargetY, MinY, MaxY)
+                local SwayX = Drag.BaseCenterX + math.clamp((Ptr.X - Drag.StartPos.X) * 0.10, -10, 10)
+
+                local Alpha = 1 - math.exp(-dt * 26)
+                Drag.GhostWrap.Position = Drag.GhostWrap.Position:Lerp(UDim2.fromOffset(SwayX, TargetY), Alpha)
+
+                -- Smooth auto-scroll near top / bottom edges of TabPage
+                if Ptr.Y < PageTop + 36 then
+                    local Ratio = math.clamp((PageTop + 36 - Ptr.Y) / 36, 0.25, 1)
+                    Page.CanvasPosition = Vector2.new(0, math.max(0, Page.CanvasPosition.Y - (Ratio * 300 * dt)))
+                elseif Ptr.Y > PageBot - 36 then
+                    local Ratio = math.clamp((Ptr.Y - (PageBot - 36)) / 36, 0.25, 1)
+                    local MaxCanvas = math.max(0, Page.CanvasSize.Y.Offset - Page.AbsoluteSize.Y)
+                    Page.CanvasPosition = Vector2.new(0, math.min(MaxCanvas, Page.CanvasPosition.Y + (Ratio * 300 * dt)))
+                end
+
+                -- Real-time Slot Swap based on Ghost center
+                local GhostScreenMidY = Drag.GhostWrap.AbsolutePosition.Y + (Drag.GhostWrap.AbsoluteSize.Y * 0.5)
+                local List = TabItemsMap[Entry.TabRecord]
+                local CurIdx = List and table.find(List, Entry)
+                if not CurIdx then return end
+
+                if CurIdx > 1 then
+                    local Above = List[CurIdx - 1]
+                    if Above and Above.Card and Above.Card.Parent and Above.Card.Visible then
+                        local AboveMidY = Above.Card.AbsolutePosition.Y + (Above.Card.AbsoluteSize.Y * 0.5)
+                        if GhostScreenMidY < AboveMidY then
+                            List[CurIdx], List[CurIdx - 1] = List[CurIdx - 1], List[CurIdx]
+                            Above.Card.LayoutOrder = CurIdx
+                            Entry.Card.LayoutOrder = CurIdx - 1
+                            Drag.DropSlot.LayoutOrder = CurIdx - 1
+                            Drag.MovedOrder = true
+                            PlayUISound("Click", 1.26)
+                            return
+                        end
+                    end
+                end
+
+                if CurIdx < #List then
+                    local Below = List[CurIdx + 1]
+                    if Below and Below.Card and Below.Card.Parent and Below.Card.Visible then
+                        local BelowMidY = Below.Card.AbsolutePosition.Y + (Below.Card.AbsoluteSize.Y * 0.5)
+                        if GhostScreenMidY > BelowMidY then
+                            List[CurIdx], List[CurIdx + 1] = List[CurIdx + 1], List[CurIdx]
+                            Below.Card.LayoutOrder = CurIdx
+                            Entry.Card.LayoutOrder = CurIdx + 1
+                            Drag.DropSlot.LayoutOrder = CurIdx + 1
+                            Drag.MovedOrder = true
+                            PlayUISound("Click", 1.10)
+                            return
+                        end
+                    end
+                end
+            end)
+        end
+
+        -- Shared Global Input Trackers (Zero Memory Leak)
+        TrackConn(UserInputService.InputChanged:Connect(function(In)
+            if not Drag.PendingEntry and not Drag.Active then return end
+            if In ~= Drag.InputObj and In.UserInputType ~= Enum.UserInputType.MouseMovement then return end
+
+            if Drag.Active then
+                Drag.CurPos = In.Position
+            elseif Drag.PendingEntry and Drag.StartPos then
+                -- If user swipes before 0.18s hold completes, cancel hold so normal scrolling works!
+                if (In.Position - Drag.StartPos).Magnitude > 9 then
+                    Drag.HoldToken = Drag.HoldToken + 1
+                    Drag.PendingEntry = nil
+                    Drag.InputObj = nil
+                end
+            end
+        end))
+
+        TrackConn(UserInputService.InputEnded:Connect(function(In)
+            if not Drag.PendingEntry and not Drag.Active then return end
+            if In ~= Drag.InputObj
+                and In.UserInputType ~= Enum.UserInputType.MouseButton1
+                and In.UserInputType ~= Enum.UserInputType.Touch then
+                return
+            end
+
+            Drag.HoldToken = Drag.HoldToken + 1
+            if Drag.Active then
+                CleanupDragVisuals(true)
+            else
+                Drag.PendingEntry = nil
+                Drag.InputObj = nil
+            end
+        end))
+
+        -- Attach Optional Reorder Overlay Cover to Each User-Tab Card
+        Internal.RegisterReorderCardFn = function(TabRecord, Card)
+            if not TabRecord or not Card or Card:FindFirstChild("__SidDragCover") then return end
+
+            TabItemsMap[TabRecord] = TabItemsMap[TabRecord] or {}
+            local List = TabItemsMap[TabRecord]
+            local DefaultIdx = #List + 1
+            local StableKey = ExtractStableKey(TabRecord, Card)
+
+            local IsSmall = (Card.Size.Y.Offset > 0 and Card.Size.Y.Offset < 24)
+
+            -- Invisible overlay cover (ONLY active when Edit Layout Mode is ON!)
+            local Cover = Instance.new("TextButton")
+            Cover.Name = "__SidDragCover"
+            Cover.Size = UDim2.new(1, 0, 1, 0)
+            Cover.BackgroundColor3 = Theme.AccentSecondary
+            Cover.BackgroundTransparency = 0.94
+            Cover.Text = ""
+            Cover.AutoButtonColor = false
+            Cover.Visible = LooksState.EditLayoutMode
+            Cover.ZIndex = 25
+            Cover.Parent = Card
+
+            local CovCorner = Instance.new("UICorner")
+            CovCorner.CornerRadius = UDim.new(0, 9)
+            CovCorner.Parent = Cover
+
+            local CovStroke = Instance.new("UIStroke")
+            CovStroke.Color = Theme.AccentSecondary
+            CovStroke.Thickness = 1
+            CovStroke.Transparency = 0.55
+            CovStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+            CovStroke.Parent = Cover
+
+            -- Right-Side Instant Grab Pill (Tap & Slide Immediately!)
+            local GripBtn = Instance.new("TextButton")
+            GripBtn.Name = "GrabHandle"
+            GripBtn.Size = IsSmall and UDim2.new(0, 44, 0, 14) or UDim2.new(0, 52, 0, 22)
+            GripBtn.Position = IsSmall and UDim2.new(1, -48, 0.5, -7) or UDim2.new(1, -58, 0.5, -11)
+            GripBtn.BackgroundColor3 = Color3.fromRGB(16, 20, 32)
+            GripBtn.BackgroundTransparency = 0.12
+            GripBtn.Font = Enum.Font.GothamBold
+            GripBtn.TextSize = IsSmall and 8 or 10
+            GripBtn.TextColor3 = Theme.AccentSecondary
+            GripBtn.Text = "≡ MOVE"
+            GripBtn.AutoButtonColor = false
+            GripBtn.ZIndex = 26
+            GripBtn.Parent = Cover
+
+            local GCorner = Instance.new("UICorner")
+            GCorner.CornerRadius = UDim.new(0, 6)
+            GCorner.Parent = GripBtn
+
+            local GStroke = Instance.new("UIStroke")
+            GStroke.Color = Theme.AccentSecondary
+            GStroke.Thickness = 1
+            GStroke.Transparency = 0.25
+            GStroke.Parent = GripBtn
+
+            local Entry = {
+                Key = StableKey,
+                Card = Card,
+                TabRecord = TabRecord,
+                DefaultOrder = DefaultIdx,
+                Cover = Cover,
+            }
+            table.insert(List, Entry)
+
+            -- Instant Lift when grabbing the "≡ MOVE" handle
+            GripBtn.InputBegan:Connect(function(In)
+                if not LooksState.EditLayoutMode then return end
+                if In.UserInputType == Enum.UserInputType.MouseButton1 or In.UserInputType == Enum.UserInputType.Touch then
+                    Drag.HoldToken = Drag.HoldToken + 1
+                    Drag.InputObj = In
+                    Drag.StartPos = In.Position
+                    Drag.PendingEntry = nil
+                    StartSmoothOverlayDrag(Entry, In.Position)
+                end
+            end)
+
+            -- Quick 0.18s Hold anywhere on the card body (allows normal scrolling if swiped!)
+            Cover.InputBegan:Connect(function(In)
+                if not LooksState.EditLayoutMode or Drag.Active then return end
+                if In.UserInputType == Enum.UserInputType.MouseButton1 or In.UserInputType == Enum.UserInputType.Touch then
+                    Drag.HoldToken = Drag.HoldToken + 1
+                    local MyToken = Drag.HoldToken
+                    Drag.InputObj = In
+                    Drag.StartPos = In.Position
+                    Drag.PendingEntry = Entry
+
+                    task.delay(0.18, function()
+                        if Drag.HoldToken == MyToken and Drag.PendingEntry == Entry and LooksState.EditLayoutMode then
+                            Drag.PendingEntry = nil
+                            StartSmoothOverlayDrag(Entry, Drag.StartPos)
+                        end
+                    end)
+                end
+            end)
+
+            ApplyOrderToTab(TabRecord)
+        end
+
+        Internal.SetLayoutEditModeFn = function(Enabled)
+            LooksState.EditLayoutMode = (Enabled == true)
+            if not LooksState.EditLayoutMode and Drag.Active then
+                CleanupDragVisuals(false)
+            end
+            for _, List in pairs(TabItemsMap) do
+                for _, Entry in ipairs(List) do
+                    if Entry.Cover and Entry.Cover.Parent then
+                        Entry.Cover.Visible = LooksState.EditLayoutMode
+                    end
+                end
+            end
+        end
+
+        Internal.ResetTabOrdersFn = function()
+            if Drag.Active then CleanupDragVisuals(false) end
+            table.clear(Internal.SavedTabOrders)
+            TabOrderFlagObj.CurrentValue = {}
+            for TabRecord in pairs(TabItemsMap) do
+                ApplyOrderToTab(TabRecord)
+            end
+            Library:SaveConfiguration(nil, true)
+        end
+
+        -- Persist Custom Tab Feature Orders Automatically in SavedConfig.json
+        function TabOrderFlagObj:Set(SavedMap)
+            table.clear(Internal.SavedTabOrders)
+            if type(SavedMap) == "table" then
+                for TabName, KeyList in pairs(SavedMap) do
+                    if type(KeyList) == "table" then
+                        Internal.SavedTabOrders[tostring(TabName)] = KeyList
+                    end
+                end
+            end
+            TabOrderFlagObj.CurrentValue = Internal.SavedTabOrders
+            for TabRecord in pairs(TabItemsMap) do
+                ApplyOrderToTab(TabRecord)
+            end
+        end
+        Library.Flags["SidUI_CustomTabOrder"] = TabOrderFlagObj
+        Internal.DefaultValues["SidUI_CustomTabOrder"] = {}
+    end
+
 
      -- ==========================================
     -- PATCH 3: ⭐ PINNED TAB (HOLD-TO-REORDER) + FLOATING QUICK-TOGGLES
