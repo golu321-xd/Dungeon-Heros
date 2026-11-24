@@ -3424,22 +3424,27 @@ end
 
          
 -- ==========================================
--- SAFE MODE (CROSS-TELEPORT PERSISTENT — NO FLAG)
+-- SAFE MODE (AUTO FOLDER DETECT + SAVE + TP RESTORE — NO FLAG)
 -- ==========================================
 MainTab:CreateSection("Safe Mode")
 do
     local HttpService = game:GetService("HttpService")
-    local BACKUP_FOLDER = "SidDungeonHeroes"
-    local BACKUP_FILE = BACKUP_FOLDER .. "/.safemode_backup.json"
+    local CoreGui = game:GetService("CoreGui")
+    local Players = game:GetService("Players")
+    local Player = Players.LocalPlayer
 
+    local BACKUP_FILENAME = ".safemode_backup.json"
     local SafeModeActive = false
     local SavedActiveFlags = {}
-    local OrigSaveConfig = nil
     local IsSyncingFromBackup = false
     local SafeModeToggle = nil
+    local DetectedFolder = nil
+    local DetectedConfigFile = nil
 
+    -- UI Looks, AutoExec, aur passive protection/filter flags skip honge
     local IgnoredPatterns = {
         "^SidUI_",
+        "AutoExec",
         "Protect",
         "Rarity",
         "SpaceGuard",
@@ -3471,64 +3476,284 @@ do
         return false
     end
 
-    -- Safe Mode ON rehne tak config overwrite ko completely lock rakhega
-    local function LockConfigSave()
-        local Lib = Rayfield
-        if Lib and type(Lib.SaveConfiguration) == "function" and not OrigSaveConfig then
-            OrigSaveConfig = Lib.SaveConfiguration
-            Lib.SaveConfiguration = function() end
-        end
+    local function NormalizePath(Path)
+        local s = tostring(Path or ""):gsub("\\", "/")
+        s = s:gsub("^%./", "")
+        s = s:gsub("/+$", "")
+        return s
     end
 
-    local function UnlockConfigSave()
-        local Lib = Rayfield
-        if Lib and type(OrigSaveConfig) == "function" then
-            Lib.SaveConfiguration = OrigSaveConfig
-            OrigSaveConfig = nil
+    local function SafeListFiles(Dir)
+        if not listfiles then return {} end
+        local ok, res = pcall(listfiles, Dir or "")
+        if ok and type(res) == "table" and #res > 0 then
+            return res
         end
-    end
-
-    local function WriteBackup(Active, FlagsList)
-        if not writefile then return end
-        pcall(function()
-            if makefolder and isfolder and not isfolder(BACKUP_FOLDER) then
-                makefolder(BACKUP_FOLDER)
+        if Dir == "" or Dir == nil then
+            local ok2, res2 = pcall(listfiles, ".")
+            if ok2 and type(res2) == "table" then
+                return res2
             end
-            writefile(BACKUP_FILE, HttpService:JSONEncode({
+        end
+        return {}
+    end
+
+    local function GetFolderHintFromUI()
+        local Roots = {}
+        local okH, hui = pcall(function() return gethui and gethui() end)
+        if okH and hui then table.insert(Roots, hui) end
+        table.insert(Roots, CoreGui)
+        local pGui = Player and Player:FindFirstChild("PlayerGui")
+        if pGui then table.insert(Roots, pGui) end
+
+        for _, Root in ipairs(Roots) do
+            local ok, found = pcall(function()
+                local ui = Root:FindFirstChild("SidUltimateUI")
+                if not ui then return nil end
+                for _, obj in ipairs(ui:GetDescendants()) do
+                    if obj:IsA("TextLabel") and type(obj.Text) == "string" then
+                        local hint = string.match(obj.Text, "^CONFIG PROFILES %((.+)%)$")
+                        if hint and #hint > 0 then
+                            return hint
+                        end
+                    end
+                end
+                return nil
+            end)
+            if ok and found then return found end
+        end
+        return nil
+    end
+
+    local function ReadJsonTable(FilePath)
+        if not (isfile and readfile and FilePath) then return nil end
+        local okE, exists = pcall(isfile, FilePath)
+        if not (okE and exists) then return nil end
+        local okR, raw = pcall(readfile, FilePath)
+        if not (okR and type(raw) == "string" and #raw > 0) then return nil end
+        local okJ, dec = pcall(function() return HttpService:JSONDecode(raw) end)
+        return (okJ and type(dec) == "table") and dec or nil
+    end
+
+    -- Auto-detects active config folder & JSON file from workspace + UI
+    local function DetectConfigFolderAndFile(ForceRefresh)
+        if DetectedFolder and not ForceRefresh then
+            return DetectedFolder, DetectedConfigFile
+        end
+
+        local WorkspaceFolders = {}
+        local SeenFolders = {}
+
+        local function AddFolder(FolderName)
+            FolderName = NormalizePath(FolderName)
+            if FolderName == "" or string.sub(FolderName, 1, 1) == "." then return end
+            if SeenFolders[FolderName] then return end
+            local isDir = false
+            if isfolder then
+                local ok, r = pcall(isfolder, FolderName)
+                isDir = (ok and r == true)
+            end
+            if isDir then
+                SeenFolders[FolderName] = true
+                table.insert(WorkspaceFolders, FolderName)
+            end
+        end
+
+        for _, entry in ipairs(SafeListFiles("")) do
+            local clean = NormalizePath(entry)
+            local top = string.match(clean, "^([^/]+)")
+            if top then AddFolder(top) end
+        end
+
+        -- Priority 1: Agar kisi folder me active .safemode_backup.json pehle se hai toh wahi uthao
+        for _, Folder in ipairs(WorkspaceFolders) do
+            local bData = ReadJsonTable(Folder .. "/" .. BACKUP_FILENAME)
+            if bData and bData.active == true then
+                DetectedFolder = Folder
+                DetectedConfigFile = bData.configFile
+                return DetectedFolder, DetectedConfigFile
+            end
+        end
+
+        -- Helper: Folder ke andar best matching config .json file dhoondo
+        local Flags = (Rayfield and Rayfield.Flags) or {}
+        local function PickBestJsonInFolder(Folder)
+            local BestFile, BestScore = nil, -1
+            for _, fPath in ipairs(SafeListFiles(Folder)) do
+                local clean = NormalizePath(fPath)
+                local base = string.match(clean, "([^/]+)$") or ""
+                if string.sub(base, 1, 1) ~= "." and string.find(base, "%.json$") then
+                    local dec = ReadJsonTable(clean)
+                    if dec then
+                        local score = 0
+                        for k in pairs(dec) do
+                            if Flags[k] ~= nil then
+                                score = score + 3
+                            elseif string.find(tostring(k), "^SidUI_") then
+                                score = score + 1
+                            end
+                        end
+                        if score > BestScore then
+                            BestScore = score
+                            BestFile = clean
+                        end
+                    end
+                end
+            end
+            return BestFile, BestScore
+        end
+
+        -- Priority 2: SidUltimateUI ke "CONFIG PROFILES (...)" hint se exact case-sensitive folder match karo
+        local Hint = GetFolderHintFromUI()
+        if Hint then
+            local HintLow = string.lower(Hint)
+            for _, Folder in ipairs(WorkspaceFolders) do
+                if string.lower(Folder) == HintLow then
+                    local bestJson = PickBestJsonInFolder(Folder)
+                    DetectedFolder = Folder
+                    DetectedConfigFile = bestJson
+                    return DetectedFolder, DetectedConfigFile
+                end
+            end
+        end
+
+        -- Priority 3: Workspace ke saare folders scan karke sabse zyada matching Flags wala folder pakdo
+        local TopFolder, TopFile, TopScore = nil, nil, 0
+        for _, Folder in ipairs(WorkspaceFolders) do
+            local bestJson, score = PickBestJsonInFolder(Folder)
+            if score > TopScore then
+                TopScore = score
+                TopFolder = Folder
+                TopFile = bestJson
+            end
+        end
+
+        if TopFolder then
+            DetectedFolder = TopFolder
+            DetectedConfigFile = TopFile
+            return DetectedFolder, DetectedConfigFile
+        end
+
+        -- Fallback
+        if isfolder then
+            for _, Fallback in ipairs({"SidDungeonHeroes", "SidUltimateHub"}) do
+                local ok, ex = pcall(isfolder, Fallback)
+                if ok and ex then
+                    DetectedFolder = Fallback
+                    DetectedConfigFile = PickBestJsonInFolder(Fallback)
+                    return DetectedFolder, DetectedConfigFile
+                end
+            end
+        end
+
+        DetectedFolder = "SidUltimateHub"
+        DetectedConfigFile = nil
+        return DetectedFolder, DetectedConfigFile
+    end
+
+    local function GetBackupPath()
+        local Folder = DetectConfigFolderAndFile(false)
+        return Folder .. "/" .. BACKUP_FILENAME, Folder
+    end
+
+    local function WriteBackup(Active, FlagsList, ConfigFilePath)
+        if not writefile then return end
+        local Path, Folder = GetBackupPath()
+        pcall(function()
+            if makefolder and isfolder and not isfolder(Folder) then
+                makefolder(Folder)
+            end
+            writefile(Path, HttpService:JSONEncode({
                 active = Active == true,
-                flags = FlagsList or {}
+                flags = FlagsList or {},
+                configFile = ConfigFilePath or DetectedConfigFile or ""
             }))
         end)
     end
 
     local function ReadBackup()
-        if not (isfile and readfile) then return nil end
-        local okE, exists = pcall(isfile, BACKUP_FILE)
-        if not (okE and exists) then return nil end
-        local okR, raw = pcall(readfile, BACKUP_FILE)
-        if not (okR and type(raw) == "string") then return nil end
-        local okJ, dec = pcall(function() return HttpService:JSONDecode(raw) end)
-        if okJ and type(dec) == "table" and type(dec.flags) == "table" then
+        local Path = GetBackupPath()
+        local dec = ReadJsonTable(Path)
+        if dec and type(dec.flags) == "table" then
             return dec
         end
         return nil
     end
 
     local function ClearBackup()
-        if delfile and isfile then
-            pcall(function()
-                if isfile(BACKUP_FILE) then delfile(BACKUP_FILE) end
-            end)
+        if not (delfile and isfile) then return end
+        local Path = GetBackupPath()
+        pcall(function()
+            if isfile(Path) then delfile(Path) end
+        end)
+    end
+
+    -- Batch loop ke dauraan spam saves rok kar end me 1 clean immediate save karega
+    local function RunBatchAndSave(BatchFn)
+        local Lib = Rayfield
+        local OrigSave = Lib and Lib.SaveConfiguration
+        if Lib and type(OrigSave) == "function" then
+            Lib.SaveConfiguration = function() end
+        end
+
+        pcall(BatchFn)
+
+        if Lib and type(OrigSave) == "function" then
+            Lib.SaveConfiguration = OrigSave
+            pcall(function() Lib:SaveConfiguration(nil, true) end)
         end
     end
 
-    local function PauseFlagsList(FlagsTable, TargetList)
+    local function CollectAllActiveFlags(FlagsTable, ConfigFilePath)
+        local Found = {}
+        local Seen = {}
+
+        local function AddFlag(FlagName)
+            FlagName = tostring(FlagName)
+            if not Seen[FlagName] and not ShouldSkipFlag(FlagName) then
+                Seen[FlagName] = true
+                table.insert(Found, FlagName)
+            end
+        end
+
+        -- 1. Live UI flags scan karo
+        if type(FlagsTable) == "table" then
+            for FlagName, Obj in pairs(FlagsTable) do
+                if type(Obj) == "table"
+                    and type(Obj.CurrentValue) == "boolean"
+                    and Obj.CurrentValue == true
+                    and type(Obj.Set) == "function" then
+                    AddFlag(FlagName)
+                end
+            end
+        end
+
+        -- 2. Auto-detected folder ke saved JSON se bhi true flags scan karo
+        local DiskCfg = ReadJsonTable(ConfigFilePath)
+        if type(DiskCfg) == "table" then
+            for FlagName, Val in pairs(DiskCfg) do
+                local BoolVal = Val
+                if type(Val) == "table" and type(Val.CurrentValue) == "boolean" then
+                    BoolVal = Val.CurrentValue
+                end
+                if type(BoolVal) == "boolean" and BoolVal == true then
+                    AddFlag(FlagName)
+                end
+            end
+        end
+
+        table.sort(Found)
+        return Found
+    end
+
+    local function SetFlagsListState(FlagsTable, TargetList, TargetBool)
         local Count = 0
+        if type(FlagsTable) ~= "table" then return 0 end
         for _, FlagName in ipairs(TargetList) do
             local Obj = FlagsTable[FlagName]
             if type(Obj) == "table" and type(Obj.Set) == "function" then
-                if Obj.CurrentValue == true then
-                    pcall(function() Obj:Set(false) end)
+                if Obj.CurrentValue ~= TargetBool then
+                    pcall(function() Obj:Set(TargetBool) end)
                 end
                 Count = Count + 1
             end
@@ -3539,62 +3764,57 @@ do
     SafeModeToggle = MainTab:CreateToggle({
         Name = "Safe Mode (Pause & Restore All Features)",
         CurrentValue = false,
-        -- Intentionally NO Flag here!
+        -- Intentionally NO Flag: state .safemode_backup.json me persist hota hai
         Callback = function(Value)
             SafeModeActive = (Value == true)
             local Flags = Rayfield and Rayfield.Flags
             if type(Flags) ~= "table" then return end
 
-            -- TP ke baad auto-resume hote waqt purana backup overwrite nahi karega
+            -- TP ke baad auto-resume hote waqt purana backup safe rakhega
             if IsSyncingFromBackup then
                 if SafeModeActive then
-                    LockConfigSave()
-                    PauseFlagsList(Flags, SavedActiveFlags)
+                    RunBatchAndSave(function()
+                        SetFlagsListState(Flags, SavedActiveFlags, false)
+                    end)
                 end
                 return
             end
 
+            local Folder, ConfigFile = DetectConfigFolderAndFile(true)
+
             if SafeModeActive then
-                LockConfigSave()
+                local FreshList = CollectAllActiveFlags(Flags, ConfigFile)
 
-                local FreshList = {}
-                for FlagName, Obj in pairs(Flags) do
-                    if not ShouldSkipFlag(FlagName)
-                        and type(Obj) == "table"
-                        and type(Obj.CurrentValue) == "boolean"
-                        and Obj.CurrentValue == true
-                        and type(Obj.Set) == "function" then
-                        table.insert(FreshList, FlagName)
-                    end
-                end
-
-                -- Agar kuch active mila toh naya backup banao; warna purana disk backup safe rakho
                 if #FreshList > 0 then
                     SavedActiveFlags = FreshList
-                    WriteBackup(true, SavedActiveFlags)
                 else
                     local Existing = ReadBackup()
                     if Existing and #Existing.flags > 0 then
                         SavedActiveFlags = Existing.flags
-                        WriteBackup(true, SavedActiveFlags)
                     else
                         SavedActiveFlags = {}
-                        WriteBackup(true, {})
                     end
                 end
 
-                local PausedCount = PauseFlagsList(Flags, SavedActiveFlags)
+                -- Step 1: Backup disk par pehle lock karo (TP-safe)
+                WriteBackup(true, SavedActiveFlags, ConfigFile)
+
+                -- Step 2: Sabhi active flags OFF karo aur main config me bhi OFF save kar do
+                local PausedCount = 0
+                RunBatchAndSave(function()
+                    PausedCount = SetFlagsListState(Flags, SavedActiveFlags, false)
+                end)
 
                 if Rayfield.Notify then
                     Rayfield:Notify({
-                        Title = "Safe Mode: ON",
-                        Content = string.format("%d active feature(s) paused safely.", PausedCount),
+                        Title = "Safe Mode: ON (" .. tostring(Folder) .. ")",
+                        Content = string.format("%d feature(s) paused & saved safely.", PausedCount),
                         Color = Color3.fromRGB(255, 185, 50),
-                        Duration = 2.6
+                        Duration = 2.8
                     })
                 end
             else
-                -- Agar RAM khali ho (TP ke baad) toh disk backup se exact flags uthao
+                -- Agar TP ke baad RAM khali thi toh auto-detected backup se flags uthao
                 if #SavedActiveFlags == 0 then
                     local Existing = ReadBackup()
                     if Existing and #Existing.flags > 0 then
@@ -3602,32 +3822,22 @@ do
                     end
                 end
 
+                -- Step 1: Sabhi purane flags wapas ON karo aur main config me save kar do
                 local RestoredCount = 0
-                LockConfigSave()
+                RunBatchAndSave(function()
+                    RestoredCount = SetFlagsListState(Flags, SavedActiveFlags, true)
+                end)
 
-                for _, FlagName in ipairs(SavedActiveFlags) do
-                    local Obj = Flags[FlagName]
-                    if type(Obj) == "table" and type(Obj.Set) == "function" then
-                        pcall(function() Obj:Set(true) end)
-                        RestoredCount = RestoredCount + 1
-                    end
-                end
-
+                -- Step 2: Backup clear karo
                 table.clear(SavedActiveFlags)
                 ClearBackup()
-                UnlockConfigSave()
-
-                -- Restored settings ko clean save kar do
-                if Rayfield and type(Rayfield.SaveConfiguration) == "function" then
-                    pcall(function() Rayfield:SaveConfiguration(nil, true) end)
-                end
 
                 if Rayfield.Notify then
                     Rayfield:Notify({
-                        Title = "Safe Mode: OFF",
-                        Content = string.format("%d previous feature(s) restored!", RestoredCount),
+                        Title = "Safe Mode: OFF (" .. tostring(Folder) .. ")",
+                        Content = string.format("%d feature(s) restored & saved!", RestoredCount),
                         Color = Color3.fromRGB(0, 232, 155),
-                        Duration = 2.6
+                        Duration = 2.8
                     })
                 end
             end
@@ -3637,31 +3847,38 @@ do
     -- ==========================================
     -- AUTO-RESUME SAFE MODE AFTER TELEPORT
     -- ==========================================
-    local PendingBackup = ReadBackup()
-    if PendingBackup and PendingBackup.active == true then
-        SavedActiveFlags = PendingBackup.flags
-        SafeModeActive = true
-        LockConfigSave()
+    task.spawn(function()
+        -- Thoda wait taaki UI aur config folder ready ho jaye
+        task.wait(0.15)
+        local Folder = DetectConfigFolderAndFile(true)
+        local PendingBackup = ReadBackup()
 
-        local function ApplyResumedPause()
-            if not SafeModeActive then return end
-            local Flags = Rayfield and Rayfield.Flags
-            if type(Flags) ~= "table" then return end
+        if PendingBackup and PendingBackup.active == true then
+            SavedActiveFlags = PendingBackup.flags or {}
+            SafeModeActive = true
 
-            IsSyncingFromBackup = true
-            if SafeModeToggle and SafeModeToggle.CurrentValue ~= true and SafeModeToggle.Set then
-                pcall(function() SafeModeToggle:Set(true) end)
+            local function ApplyResumedPause()
+                if not SafeModeActive then return end
+                local Flags = Rayfield and Rayfield.Flags
+                if type(Flags) ~= "table" then return end
+
+                IsSyncingFromBackup = true
+                if SafeModeToggle and SafeModeToggle.CurrentValue ~= true and SafeModeToggle.Set then
+                    pcall(function() SafeModeToggle:Set(true) end)
+                else
+                    RunBatchAndSave(function()
+                        SetFlagsListState(Flags, SavedActiveFlags, false)
+                    end)
+                end
+                IsSyncingFromBackup = false
             end
-            PauseFlagsList(Flags, SavedActiveFlags)
-            IsSyncingFromBackup = false
+
+            -- LoadConfiguration ke aas-paas 2 passes me verify karega
+            task.delay(0.45, ApplyResumedPause)
+            task.delay(1.25, ApplyResumedPause)
         end
-
-        -- LoadConfiguration ke baad 2 passes me lock kar dega taaki koi feature leak na ho
-        task.delay(0.55, ApplyResumedPause)
-        task.delay(1.30, ApplyResumedPause)
-    end
+    end)
 end
-
 
 --====================================================
 -- DUNGEON HEROES | BLOCK LAGGY INCOMING REMOTES
