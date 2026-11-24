@@ -4866,249 +4866,226 @@ Player.CharacterAdded:Connect(function()
 end)
                     
 --====================================================
--- DUNGEON HEROES | SKILL AURA + INSTANT SKILL FILTER (VERIFIED)
--- Direct Verified Paths: Skills:GetSkillInActiveSlot(1-4)
--- + Profile.Equipped.Skill1..4 + Profile.Masteries.ActiveMastery
+-- DUNGEON HEROES | 1-TOGGLE AUTO SKILL AURA (SLOTS 1-5)
+-- Dynamically Reads Slots 1-4 + Slot 5 (Mastery Ultimate)
+-- Works With All 180 Skills | No UI Notifications
 --====================================================
 do
+    local SkillAuraEnabled = false
+
     local Players = game:GetService("Players")
-    local RS = game:GetService("ReplicatedStorage")
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
     local LocalPlayer = Players.LocalPlayer
 
-    local Remotes = RS:FindFirstChild("Remotes")
-    local Systems = RS:FindFirstChild("Systems")
+    local Remotes = ReplicatedStorage:WaitForChild("Remotes")
+    local UseSkillRemote = Remotes:WaitForChild("UseSkill")
+    local PlayerSkillAttackRemote = Remotes:WaitForChild("PlayerSkillAttack")
+    local InterruptSkillRemote = Remotes:WaitForChild("InterruptSkill")
+    local UseUltimateRemote = Remotes:FindFirstChild("Masteries/UseUltimate")
 
-    local UseSkillRemote = Remotes and Remotes:FindFirstChild("UseSkill")
-    local PlayerSkillAttackRemote = Remotes and Remotes:FindFirstChild("PlayerSkillAttack")
-    local InterruptSkillRemote = Remotes and Remotes:FindFirstChild("InterruptSkill")
-    local UseUltimateRemote = Remotes and Remotes:FindFirstChild("Masteries/UseUltimate")
+    local ProfileSystem = require(ReplicatedStorage.Systems.Profile)
+    local Items = require(ReplicatedStorage.Systems.Items)
+    local SkillsSystem = require(ReplicatedStorage.Systems.Skills)
+    local MasteriesSystem = require(ReplicatedStorage.Systems.Masteries)
 
-    local SkillsSys = nil
-    pcall(function()
-        local m = Systems and Systems:FindFirstChild("Skills")
-        if m then SkillsSys = require(m) end
-    end)
+    -- Uses your existing CONFIG table if present, otherwise defaults
+    local SKILL_AURA_CONFIG = CONFIG or {
+        KillRange = 500,
+        AttackSpeed = 0.1
+    }
 
-    local SkillAuraEnabled = false
-    local UseFilter = false
-    local SelectedMap = {}
-    local WorkerId = 0
-    local LastSig = ""
-    local SkillDropdown = nil
-    local StatusLabel = nil
+    -- ==========================================
+    -- LIVE AUTO-DETECTION FOR SLOTS 1-4 & SLOT 5 (ULTIMATE)
+    -- ==========================================
+    local function GetAllActiveSkills()
+        local ActiveSkills = {}
+        local Seen = {}
 
-    local function GetRange()
-        local f = Rayfield and Rayfield.Flags and Rayfield.Flags["KillRange"]
-        return (f and tonumber(f.CurrentValue)) or 200
-    end
-
-    local function GetSpeed()
-        local f = Rayfield and Rayfield.Flags and Rayfield.Flags["AttackSpeed"]
-        return (f and tonumber(f.CurrentValue)) or 0.15
-    end
-
-    local function FormatSkillName(skillId, isUlt)
-        local disp = nil
-        if SkillsSys and type(SkillsSys.GetSkillData) == "function" then
-            local ok, d = pcall(function() return SkillsSys:GetSkillData(skillId) end)
-            if ok and type(d) == "table" then
-                if type(d.DisplayName) == "string" and #d.DisplayName > 0 then
-                    disp = d.DisplayName
-                elseif type(d.Name) == "string" and #d.Name > 0 then
-                    disp = d.Name
-                end
-            end
-        end
-        if not disp then
-            disp = (string.gsub(tostring(skillId), "(%l)(%u)", "%1 %2"))
-        end
-        if isUlt and not string.find(string.lower(disp), "ult", 1, true) then
-            disp = disp .. " (Ult)"
-        end
-        return disp
-    end
-
-    -- Exact verified instant reader (< 0.005s, zero yield)
-    local function GetEquippedSkills()
-        local list, seen = {}, {}
-        local function add(skillId, isUlt)
-            if type(skillId) ~= "string" or #skillId == 0 or seen[skillId] then return end
-            seen[skillId] = true
-            table.insert(list, {
-                Name = skillId,
-                DisplayName = FormatSkillName(skillId, isUlt),
-                IsUltimate = isUlt == true
-            })
-        end
-
-        local pg = LocalPlayer:FindFirstChild("PlayerGui")
-        local prof = pg and pg:FindFirstChild("Profile")
-        local eq = prof and prof:FindFirstChild("Equipped")
-
-        -- 1. Slots 1-4: Official Skills:GetSkillInActiveSlot + direct Skill1..4 folder fallback
-        for slot = 1, 4 do
-            local foundId = nil
-            if SkillsSys and type(SkillsSys.GetSkillInActiveSlot) == "function" then
-                local ok, sk = pcall(function()
-                    return SkillsSys:GetSkillInActiveSlot(LocalPlayer, slot)
-                end)
-                if ok and type(sk) == "string" and #sk > 0 then
-                    foundId = sk
-                end
-            end
-
-            if not foundId and eq then
-                local sf = eq:FindFirstChild("Skill" .. tostring(slot))
-                local itemObj = sf and sf:GetChildren()[1]
-                if itemObj then
-                    foundId = (string.gsub(itemObj.Name, "Skill$", ""))
-                end
-            end
-
-            if foundId then
-                add(foundId, false)
+        local function AddSkill(SkillId, IsUlt)
+            if type(SkillId) == "string" and #SkillId > 0 and not Seen[SkillId] then
+                Seen[SkillId] = true
+                table.insert(ActiveSkills, {
+                    Name = SkillId,
+                    IsUltimate = IsUlt == true
+                })
             end
         end
 
-        -- 2. Slot 5: Mastery Ultimate directly from Profile.Masteries.ActiveMastery
-        local mast = prof and prof:FindFirstChild("Masteries")
-        local activeM = mast and mast:FindFirstChild("ActiveMastery")
-        if activeM and activeM:IsA("StringValue") and #activeM.Value > 0 then
-            add(activeM.Value .. "Ultimate", true)
-        end
-
-        return list
-    end
-
-    local function ExtractNames(skills)
-        local names = {}
-        for _, s in ipairs(skills) do
-            table.insert(names, s.DisplayName)
-        end
-        return names
-    end
-
-    local function RefreshSkillsDropdown(force)
-        local skills = GetEquippedSkills()
-        local names = ExtractNames(skills)
-
-        if StatusLabel and StatusLabel.Set then
-            pcall(function()
-                StatusLabel:Set("Detected Skills (" .. tostring(#names) .. "): " .. (#names > 0 and table.concat(names, ", ") or "None"))
+        -- 1. SLOTS 1 TO 4: Official Skills:GetSkillInActiveSlot(LocalPlayer, slot)
+        for Slot = 1, 4 do
+            local Ok, SkillName = pcall(function()
+                return SkillsSystem:GetSkillInActiveSlot(LocalPlayer, Slot)
             end)
+            if Ok and type(SkillName) == "string" and #SkillName > 0 then
+                AddSkill(SkillName, false)
+            end
         end
 
-        if #names == 0 or not SkillDropdown or not SkillDropdown.Refresh then return false end
-
-        local sig = table.concat(names, "|")
-        if not force and sig == LastSig then return true end
-        LastSig = sig
-
-        local kept, valid = {}, {}
-        for _, n in ipairs(names) do valid[n] = true end
-        for k, v in pairs(SelectedMap) do
-            if v and valid[k] then table.insert(kept, k) end
-        end
-
+        -- 2. SLOTS 1 TO 4 FALLBACK: Read Profile.Equipped.Skill1..4 -> Items:GetItemData().Skill
+        local Profile = nil
         pcall(function()
-            SkillDropdown:Refresh(names, (#kept > 0) and kept or nil)
+            Profile = ProfileSystem:GetProfile(LocalPlayer)
         end)
-        return true
+
+        if Profile and Profile:FindFirstChild("Equipped") then
+            for Slot = 1, 4 do
+                local SlotFolder = Profile.Equipped:FindFirstChild("Skill" .. tostring(Slot))
+                if SlotFolder then
+                    for _, Child in ipairs(SlotFolder:GetChildren()) do
+                        local OkData, ItemData = pcall(function()
+                            return Items:GetItemData(Child.Name)
+                        end)
+                        if OkData and type(ItemData) == "table" and type(ItemData.Skill) == "string" then
+                            AddSkill(ItemData.Skill, false)
+                        end
+                    end
+                end
+            end
+        end
+
+        -- 3. SLOT 5 (MASTERY ULTIMATE): Read Masteries:GetEquippedUltimate(LocalPlayer).abilityId
+        local UltAdded = false
+        local OkUlt, UltTable = pcall(function()
+            return MasteriesSystem:GetEquippedUltimate(LocalPlayer)
+        end)
+
+        if OkUlt and type(UltTable) == "table" and type(UltTable.abilityId) == "string" and #UltTable.abilityId > 0 then
+            AddSkill(UltTable.abilityId, true)
+            UltAdded = true
+        end
+
+        -- Fallback for Slot 5 via ActiveMastery string (e.g. "Guardian" -> "GuardianUltimate")
+        if not UltAdded and Profile and Profile:FindFirstChild("Masteries") then
+            local ActiveMastery = Profile.Masteries:FindFirstChild("ActiveMastery")
+            if ActiveMastery and ActiveMastery:IsA("StringValue") and #ActiveMastery.Value > 0 then
+                AddSkill(ActiveMastery.Value .. "Ultimate", true)
+            end
+        end
+
+        return ActiveSkills
     end
 
-    local function GetHitCount(skillName)
-        if SkillsSys then
-            local ok1, tbl = pcall(function() return SkillsSys:GetSkillHitTable(LocalPlayer, skillName) end)
-            if ok1 and type(tbl) == "table" and #tbl > 0 then return #tbl end
-            local ok2, data = pcall(function() return SkillsSys:GetSkillData(skillName) end)
-            if ok2 and type(data) == "table" and type(data.Hits) == "table" and #data.Hits > 0 then return #data.Hits end
+    -- ==========================================
+    -- GET EXACT HIT COUNT FOR ANY SKILL
+    -- ==========================================
+    local function GetSkillHitsCount(SkillName)
+        -- 1. Try Skills:GetSkillHitTable(LocalPlayer, SkillName) (Handles Necklace-Modified Hits)
+        local OkHitTbl, HitTable = pcall(function()
+            return SkillsSystem:GetSkillHitTable(LocalPlayer, SkillName)
+        end)
+        if OkHitTbl and type(HitTable) == "table" and #HitTable > 0 then
+            return #HitTable
         end
+
+        -- 2. Fallback to Skills:GetSkillData(SkillName).Hits
+        local OkData, SkillData = pcall(function()
+            return SkillsSystem:GetSkillData(SkillName)
+        end)
+        if OkData and type(SkillData) == "table" and type(SkillData.Hits) == "table" and #SkillData.Hits > 0 then
+            return #SkillData.Hits
+        end
+
         return 1
     end
 
-    local function GetTargets()
-        local char = LocalPlayer.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        local mobs = workspace:FindFirstChild("Mobs")
-        if not (hrp and mobs) then return {} end
+    -- ==========================================
+    -- COLLECT TARGET MOBS IN RANGE
+    -- ==========================================
+    local function GetTargetsInRange()
+        local Character = LocalPlayer.Character
+        local HRP = Character and Character:FindFirstChild("HumanoidRootPart")
+        local MobsFolder = workspace:FindFirstChild("Mobs")
 
-        local range = GetRange()
-        local real, dummy = {}, {}
-        for _, mob in ipairs(mobs:GetChildren()) do
-            local mhrp = mob:FindFirstChild("HumanoidRootPart")
-            local hp = mob:GetAttribute("HP")
-            if mhrp and hp ~= "0" and hp ~= 0 and not mob:GetAttribute("Owner")
-                and (mhrp.Position - hrp.Position).Magnitude <= range then
-                if mob.Name == "TargetDummy" then
-                    table.insert(dummy, mob)
+        if not HRP or not MobsFolder then
+            return {}
+        end
+
+        local Range = (CONFIG and CONFIG.KillRange) or SKILL_AURA_CONFIG.KillRange or 200
+        local RealMobs = {}
+        local DummyMobs = {}
+
+        for _, Mob in ipairs(MobsFolder:GetChildren()) do
+            local MobHRP = Mob:FindFirstChild("HumanoidRootPart")
+            local HP = Mob:GetAttribute("HP")
+
+            if MobHRP
+                and HP ~= "0"
+                and HP ~= 0
+                and not Mob:GetAttribute("Owner")
+                and (MobHRP.Position - HRP.Position).Magnitude <= Range then
+
+                if Mob.Name == "TargetDummy" then
+                    table.insert(DummyMobs, Mob)
                 else
-                    table.insert(real, mob)
+                    table.insert(RealMobs, Mob)
                 end
             end
         end
 
-        local base = (#real > 0) and real or dummy
-        if #base == 0 then return {} end
-        local out = {}
-        for _, m in ipairs(base) do
-            for _ = 1, 4 do table.insert(out, m) end
+        -- Prioritize real dungeon mobs; fallback to TargetDummy in lobby for testing
+        local BaseMobs = (#RealMobs > 0) and RealMobs or DummyMobs
+        if #BaseMobs == 0 then
+            return {}
         end
-        return out
+
+        -- Build multi-target hit table (matches game's remote structure)
+        local TargetTable = {}
+        for _, Mob in ipairs(BaseMobs) do
+            for _ = 1, 4 do
+                table.insert(TargetTable, Mob)
+            end
+        end
+
+        return TargetTable
     end
 
+    -- ==========================================
+    -- MAIN SKILL AURA LOOP
+    -- ==========================================
     local function StartSkillAura()
-        WorkerId = WorkerId + 1
-        local myId = WorkerId
-
         task.spawn(function()
-            while SkillAuraEnabled and WorkerId == myId do
+            while SkillAuraEnabled do
                 task.wait()
-                if not (UseSkillRemote and PlayerSkillAttackRemote and InterruptSkillRemote) then
-                    local r = RS:FindFirstChild("Remotes")
-                    if r then
-                        UseSkillRemote = UseSkillRemote or r:FindFirstChild("UseSkill")
-                        PlayerSkillAttackRemote = PlayerSkillAttackRemote or r:FindFirstChild("PlayerSkillAttack")
-                        InterruptSkillRemote = InterruptSkillRemote or r:FindFirstChild("InterruptSkill")
-                        UseUltimateRemote = UseUltimateRemote or r:FindFirstChild("Masteries/UseUltimate")
-                    end
-                    task.wait(0.2)
-                    continue
-                end
 
-                local all = GetEquippedSkills()
-                local toCast = {}
-                if UseFilter then
-                    for _, s in ipairs(all) do
-                        if SelectedMap[s.DisplayName] or SelectedMap[s.Name] then
-                            table.insert(toCast, s)
+                local EquippedSkills = GetAllActiveSkills()
+                local InitialTargets = GetTargetsInRange()
+
+                if #EquippedSkills > 0 and #InitialTargets > 0 then
+                    for _, SkillEntry in ipairs(EquippedSkills) do
+                        if not SkillAuraEnabled then break end
+
+                        local Targets = GetTargetsInRange()
+                        if #Targets == 0 then break end
+
+                        local SkillName = SkillEntry.Name
+                        local HitCount = GetSkillHitsCount(SkillName)
+
+                        -- 1. If Slot 5 (Ultimate), trigger Ultimate remote + UseSkill remote
+                        if SkillEntry.IsUltimate and UseUltimateRemote then
+                            pcall(function()
+                                UseUltimateRemote:FireServer()
+                            end)
                         end
-                    end
-                else
-                    toCast = all
-                end
 
-                if #toCast > 0 and #GetTargets() > 0 then
-                    for _, entry in ipairs(toCast) do
-                        if not SkillAuraEnabled or WorkerId ~= myId then break end
-                        local targets = GetTargets()
-                        if #targets == 0 then break end
-
-                        local hits = GetHitCount(entry.Name)
-                        if entry.IsUltimate and UseUltimateRemote then
-                            pcall(function() UseUltimateRemote:FireServer() end)
-                        end
-                        pcall(function() UseSkillRemote:FireServer(entry.Name, 1) end)
+                        -- 2. Activate Skill on Server (Opens RegisterSkillUseForHits window)
+                        UseSkillRemote:FireServer(SkillName, 1)
                         task.wait(0.04)
 
-                        for i = 1, hits do
-                            if not SkillAuraEnabled or WorkerId ~= myId then break end
-                            pcall(function() PlayerSkillAttackRemote:FireServer(targets, entry.Name, i) end)
-                            if hits > 1 then task.wait(0.02) end
+                        -- 3. Fire PlayerSkillAttack for every hit index in the skill's Hits table
+                        for HitIndex = 1, HitCount do
+                            if not SkillAuraEnabled then break end
+                            PlayerSkillAttackRemote:FireServer(Targets, SkillName, HitIndex)
+                            if HitCount > 1 then
+                                task.wait(0.02)
+                            end
                         end
 
+                        -- 4. Clear server "busy" cast state so the next skill slot can fire immediately
                         task.wait(0.03)
-                        pcall(function() InterruptSkillRemote:FireServer() end)
-                        task.wait(GetSpeed())
+                        InterruptSkillRemote:FireServer()
+
+                        local Speed = (CONFIG and CONFIG.AttackSpeed) or SKILL_AURA_CONFIG.AttackSpeed or 0.15
+                        task.wait(Speed)
                     end
                 else
                     task.wait(0.1)
@@ -5118,92 +5095,20 @@ do
     end
 
     -- ==========================================
-    -- UI CONTROLS (INSTANT POPULATE ON CREATION)
+    -- SINGLE TOGGLE ON MAINTAB
     -- ==========================================
-    local InitialSkills = GetEquippedSkills()
-    local InitialNames = ExtractNames(InitialSkills)
-    LastSig = table.concat(InitialNames, "|")
-
-    StatusLabel = MainTab:CreateLabel("Detected Skills (" .. tostring(#InitialNames) .. "): " .. (#InitialNames > 0 and table.concat(InitialNames, ", ") or "None"))
-
     MainTab:CreateToggle({
         Name = "Skill Aura",
         CurrentValue = false,
         Flag = "SkillAura",
         Callback = function(Value)
-            SkillAuraEnabled = (Value == true)
-            if SkillAuraEnabled then
-                RefreshSkillsDropdown(false)
+            SkillAuraEnabled = Value
+            if Value then
                 StartSkillAura()
-            else
-                WorkerId = WorkerId + 1
             end
         end
     })
-
-    MainTab:CreateToggle({
-        Name = "Use Selected Skills Only",
-        CurrentValue = false,
-        Flag = "SkillAuraUseFilter",
-        Callback = function(Value)
-            UseFilter = (Value == true)
-            if UseFilter then
-                RefreshSkillsDropdown(false)
-            end
-        end
-    })
-
-    SkillDropdown = MainTab:CreateDropdown({
-        Name = "Select Skills to Use",
-        Options = (#InitialNames > 0) and InitialNames or {"No Skills Equipped"},
-        CurrentOption = {},
-        MultipleOptions = true,
-        Flag = "SkillAuraSelectedSkills",
-        Callback = function(Selected)
-            table.clear(SelectedMap)
-            if type(Selected) == "table" then
-                for _, Name in ipairs(Selected) do
-                    SelectedMap[tostring(Name)] = true
-                end
-            elseif type(Selected) == "string" and #Selected > 0 then
-                SelectedMap[Selected] = true
-            end
-        end
-    })
-
-    MainTab:CreateButton({
-        Name = "Refresh Equipped Skills",
-        Callback = function()
-            RefreshSkillsDropdown(true)
-        end
-    })
-
-    -- Live watchers: instant update (<0.05s) jab bhi skill ya mastery preset badlo
-    task.spawn(function()
-        local pg = LocalPlayer:FindFirstChild("PlayerGui")
-        local prof = pg and pg:FindFirstChild("Profile")
-        if not prof then return end
-
-        local eq = prof:FindFirstChild("Equipped")
-        if eq then
-            for slot = 1, 4 do
-                local sf = eq:FindFirstChild("Skill" .. tostring(slot))
-                if sf then
-                    sf.ChildAdded:Connect(function() task.delay(0.05, RefreshSkillsDropdown, false) end)
-                    sf.ChildRemoved:Connect(function() task.delay(0.05, RefreshSkillsDropdown, false) end)
-                end
-            end
-        end
-
-        local mast = prof:FindFirstChild("Masteries")
-        local activeM = mast and mast:FindFirstChild("ActiveMastery")
-        if activeM and activeM:IsA("StringValue") then
-            activeM.Changed:Connect(function() task.delay(0.05, RefreshSkillsDropdown, false) end)
-        end
-    end)
 end
-
-
 
 UtilityTab:CreateSection("Auto Booster")
 
