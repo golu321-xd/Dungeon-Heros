@@ -3781,7 +3781,7 @@ end
 
 -- ON/OFF Toggle
 MainTab:CreateToggle({
-	Name = "Pet Aura ( Lungsen recommended)",
+	Name = "Pet Aura ( Dark Shark recommended)",
 	CurrentValue = false,
 	Flag = "PetKillAura",
 	Callback = function(Value)
