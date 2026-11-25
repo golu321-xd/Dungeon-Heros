@@ -3176,7 +3176,8 @@ do
 end
 
 -- ==========================================
--- DASH SPEED CONTROLS (FIXED — NO INFINITE LOOP, JOYSTICK SAFE)
+-- DASH SPEED CONTROLS (ZERO PHYSICS LOCK — SAFE CFRAME BOOST)
+-- Never touches game's LinearVelocity / BodyVelocity / MaxForce!
 -- ==========================================
 MovementTab:CreateSection("Dash Speed Controls")
 do
@@ -3186,7 +3187,8 @@ do
 
     local minMult = 1.0
     local maxMult = 5.0
-    local MAX_SAFE_DASH_SPEED = 210
+    local DASH_BOOST_DURATION = 0.18
+    local BASE_EXTRA_SPEED = 55 -- Studs/sec per +1.0x multiplier
 
     local dashEnabled = false
     local dashMultiplier = 2.0
@@ -3195,10 +3197,18 @@ do
     local DashSlider = nil
     local DashInput = nil
     local CharConns = {}
-    local LastMoverDash = 0
-    local LastFallbackDash = 0
+    local ActiveBoostConn = nil
+    local LastDashBoost = 0
+
+    local function StopActiveBoost()
+        if ActiveBoostConn then
+            pcall(function() ActiveBoostConn:Disconnect() end)
+            ActiveBoostConn = nil
+        end
+    end
 
     local function ClearCharConns()
+        StopActiveBoost()
         for _, c in ipairs(CharConns) do
             pcall(function() c:Disconnect() end)
         end
@@ -3210,111 +3220,69 @@ do
         return conn
     end
 
-    local function IsIgnoredMover(obj)
+    local function IsIgnoredChild(obj)
         if not obj then return true end
         if obj:GetAttribute("SidIgnoreDash") == true then return true end
         local n = string.lower(obj.Name)
-        if string.find(n, "automobs", 1, true) or string.find(n, "sid", 1, true) then
+        if string.find(n, "automobs", 1, true)
+            or string.find(n, "sid", 1, true)
+            or string.find(n, "admin", 1, true) then
             return true
         end
         return false
     end
 
-    local function ClampScaledXZ(vec, mult)
-        local horiz = Vector3.new(vec.X, 0, vec.Z)
-        local mag = horiz.Magnitude
-        if mag < 8 or mag ~= mag then return nil end -- Zero ya NaN ho toh mat chhedo
-        local newMag = math.min(mag * mult, MAX_SAFE_DASH_SPEED)
-        local dir = horiz.Unit
-        return Vector3.new(dir.X * newMag, vec.Y, dir.Z * newMag)
-    end
-
-    -- Case 1: ONE-TIME safe boost on game's temporary Dash mover (NO GetPropertyChangedSignal loop!)
-    local function HandleDashMover(obj)
-        if not dashEnabled or dashMultiplier <= 1.01 then return end
-        if _G.SidAutoMobsFlying == true then return end
-        if IsIgnoredMover(obj) then return end
-
-        task.defer(function()
-            if not dashEnabled or not obj or not obj.Parent then return end
-            if _G.SidAutoMobsFlying == true or IsIgnoredMover(obj) then return end
-
-            if obj:IsA("LinearVelocity") then
-                if not obj.Enabled then return end
-                if obj.VelocityConstraintMode == Enum.VelocityConstraintMode.Vector then
-                    local boosted = ClampScaledXZ(obj.VectorVelocity, dashMultiplier)
-                    if boosted then
-                        LastMoverDash = os.clock()
-                        obj.VectorVelocity = boosted
-                    end
-                elseif obj.VelocityConstraintMode == Enum.VelocityConstraintMode.Plane then
-                    local pv = obj.PlaneVelocity
-                    if pv.Magnitude >= 8 then
-                        LastMoverDash = os.clock()
-                        obj.PlaneVelocity = pv.Unit * math.min(pv.Magnitude * dashMultiplier, MAX_SAFE_DASH_SPEED)
-                    end
-                elseif obj.VelocityConstraintMode == Enum.VelocityConstraintMode.Line then
-                    local lv = obj.LineVelocity
-                    if math.abs(lv) >= 8 then
-                        LastMoverDash = os.clock()
-                        local sign = (lv >= 0) and 1 or -1
-                        obj.LineVelocity = sign * math.min(math.abs(lv) * dashMultiplier, MAX_SAFE_DASH_SPEED)
-                    end
-                end
-
-            elseif obj:IsA("BodyVelocity") then
-                local mf = obj.MaxForce
-                if mf.X <= 0 and mf.Z <= 0 then return end
-                local boosted = ClampScaledXZ(obj.Velocity, dashMultiplier)
-                if boosted then
-                    LastMoverDash = os.clock()
-                    obj.Velocity = boosted
-                end
-            end
-        end)
-    end
-
-    -- Case 2: Clean 0.14s Fallback Boost (Live joystick steering + auto-stop)
-    local function TriggerFallbackDashBoost(Char, Hum, HRP)
+    -- Pure wall-safe CFrame boost (reads live joystick MoveDirection, never touches movers/velocity)
+    local function StartSafeDashBoost(Char, Hum, HRP, TriggerObj)
         if not dashEnabled or dashMultiplier <= 1.01 then return end
         if _G.SidAutoMobsFlying == true then return end
 
         local now = os.clock()
-        if (now - LastFallbackDash) < 0.30 then return end
-        LastFallbackDash = now
+        if (now - LastDashBoost) < 0.30 then return end
+        LastDashBoost = now
 
-        task.delay(0.03, function()
-            if not dashEnabled or _G.SidAutoMobsFlying == true then return end
-            if (os.clock() - LastMoverDash) < 0.30 then return end
-            if not (Char and Char.Parent and Hum and Hum.Parent and HRP and HRP.Parent) then return end
+        StopActiveBoost()
 
-            local curVel = HRP.AssemblyLinearVelocity
-            local baseHoriz = math.max(Vector3.new(curVel.X, 0, curVel.Z).Magnitude, Hum.WalkSpeed * 1.6, 35)
-            local targetSpeed = math.clamp(baseHoriz * dashMultiplier, 35, MAX_SAFE_DASH_SPEED)
+        local extraSpeed = (dashMultiplier - 1.0) * BASE_EXTRA_SPEED
+        local startTime = os.clock()
 
-            local t0 = os.clock()
-            local boostConn
-            boostConn = RunService.Heartbeat:Connect(function()
-                if not dashEnabled
-                    or _G.SidAutoMobsFlying == true
-                    or not HRP or not HRP.Parent
-                    or not Hum or not Hum.Parent
-                    or (os.clock() - t0) >= 0.14 then
-                    if boostConn then boostConn:Disconnect() end
-                    return
-                end
+        local rayParams = RaycastParams.new()
+        rayParams.FilterType = Enum.RaycastFilterType.Exclude
+        local ignoreList = {Char}
+        local mobsFolder = workspace:FindFirstChild("Mobs")
+        if mobsFolder then table.insert(ignoreList, mobsFolder) end
+        rayParams.FilterDescendantsInstances = ignoreList
 
-                local dir = Hum.MoveDirection
-                if dir.Magnitude < 0.05 then
-                    local lv = HRP.CFrame.LookVector
-                    dir = Vector3.new(lv.X, 0, lv.Z)
-                end
-                if dir.Magnitude >= 0.05 then
-                    dir = dir.Unit
-                    local v = HRP.AssemblyLinearVelocity
-                    HRP.AssemblyLinearVelocity = Vector3.new(dir.X * targetSpeed, v.Y, dir.Z * targetSpeed)
-                end
-            end)
+        ActiveBoostConn = RunService.Heartbeat:Connect(function(dt)
+            local elapsed = os.clock() - startTime
+            if not dashEnabled
+                or _G.SidAutoMobsFlying == true
+                or elapsed >= DASH_BOOST_DURATION
+                or not (Char and Char.Parent and Hum and Hum.Parent and HRP and HRP.Parent)
+                or Hum.Health <= 0
+                or (TriggerObj and not TriggerObj.Parent) then
+                StopActiveBoost()
+                return
+            end
+
+            local stepDt = math.clamp(dt, 0.001, 0.035)
+            local dir = Hum.MoveDirection
+            if dir.Magnitude < 0.05 then
+                local lv = HRP.CFrame.LookVector
+                dir = Vector3.new(lv.X, 0, lv.Z)
+            end
+            if dir.Magnitude < 0.05 then return end
+            dir = Vector3.new(dir.X, 0, dir.Z).Unit
+
+            local stepDist = extraSpeed * stepDt
+            local hit = workspace:Raycast(HRP.Position, dir * (stepDist + 2.5), rayParams)
+            if hit then
+                stepDist = math.max(0, hit.Distance - 2.3)
+            end
+
+            if stepDist > 0.01 then
+                HRP.CFrame = HRP.CFrame + (dir * stepDist)
+            end
         end)
     end
 
@@ -3326,11 +3294,14 @@ do
         local HRP = Char:FindFirstChild("HumanoidRootPart") or Char:WaitForChild("HumanoidRootPart", 10)
         if not (Hum and HRP) then return end
 
+        -- Read-only detection: NEVER modifies the child mover!
         Track(HRP.ChildAdded:Connect(function(child)
+            if not dashEnabled or _G.SidAutoMobsFlying == true or IsIgnoredChild(child) then return end
+
             if child:IsA("LinearVelocity") or child:IsA("BodyVelocity") then
-                HandleDashMover(child)
+                StartSafeDashBoost(Char, Hum, HRP, child)
             elseif child:IsA("Sound") and string.find(string.lower(child.Name), "dash", 1, true) then
-                TriggerFallbackDashBoost(Char, Hum, HRP)
+                StartSafeDashBoost(Char, Hum, HRP, nil)
             end
         end))
 
@@ -3344,7 +3315,7 @@ do
                     or string.find(animName, "dodge", 1, true)
                     or string.find(animObjName, "dash", 1, true)
                     or string.find(animObjName, "dodge", 1, true) then
-                    TriggerFallbackDashBoost(Char, Hum, HRP)
+                    StartSafeDashBoost(Char, Hum, HRP, nil)
                 end
             end))
         end
@@ -3364,6 +3335,9 @@ do
         Flag = "DashSpeedToggle",
         Callback = function(Value)
             dashEnabled = (Value == true)
+            if not dashEnabled then
+                StopActiveBoost()
+            end
         end,
     })
 
@@ -3420,7 +3394,6 @@ do
     })
 end
 
-         
 -- ==========================================
 -- SAFE MODE (AUTO FOLDER DETECT + SAVE + TP RESTORE — NO FLAG)
 -- ==========================================
@@ -4470,10 +4443,10 @@ end,
 UtilityTab:CreateSection("Tween Mobs")
 
 --========================================================
--- DUNGEON HEROES | AUTO MOBS V6 (CLEAN FLIGHT + ZERO DESYNC)
--- * Clean Root.CFrame + Dash-Ignored Hover Lock (No PivotTo Glitch)
--- * Anti-Ragdoll & Safe Ground Landing (100-1000 Speed Safe)
--- * Co-Op Exact Speed Lock + Sticky Target + Area-Wise Lock
+-- DUNGEON HEROES | AUTO MOBS V7 (LOCKED 150 SPEED + AREA LOCK)
+-- * Fixed 150 Speed (No Speed Slider)
+-- * Clean Root.CFrame + Hover Lock (Zero Break / Zero Desync)
+-- * Safe Ground Landing + Sticky Target + Area-Wise Lock
 --========================================================
 do
     local Players = game:GetService("Players")
@@ -4481,9 +4454,9 @@ do
 
     local Player = Players.LocalPlayer
 
-    -- CONFIGURATION
+    -- FIXED CONFIGURATION (Speed Locked at 150)
+    local MOVE_SPEED = 150
     local FloatHeight = 30
-    local MoveSpeed = 175
     local PetOffset = Vector3.new(3, 2, 0)
 
     local PlatformSize = Vector3.new(7, 1, 7)
@@ -4584,7 +4557,7 @@ do
         if not bv then
             bv = Instance.new("BodyVelocity")
             bv.Name = "SidAutoMobs_Hover"
-            bv:SetAttribute("SidIgnoreDash", true) -- Dash Speed isse kabhi touch nahi karega!
+            bv:SetAttribute("SidIgnoreDash", true)
             bv.MaxForce = Vector3.new(1e5, 1e5, 1e5)
             bv.Velocity = Vector3.zero
             bv.P = 12000
@@ -4631,7 +4604,7 @@ do
             Platform.Name = "AutoMobs_SupportPlatform"
             Platform.Size = PlatformSize
             Platform.Anchored = true
-            Platform.CanCollide = false -- Pure visual while flying (zero slam/break)
+            Platform.CanCollide = false
             Platform.CanTouch = false
             Platform.CanQuery = false
             Platform.Transparency = 0.40
@@ -4920,7 +4893,6 @@ do
             ActiveAreaAnchor = startRoot.Position
         end
 
-        -- Pre-physics: NoClip + velocity kill
         NoClipConnection = RunService.Stepped:Connect(function()
             if not AutoMobs or RunId ~= CurrentRun then return end
             if IsFlying then
@@ -4933,7 +4905,6 @@ do
             end
         end)
 
-        -- Post-physics: Clean Root.CFrame exact-speed movement (no PivotTo distortion!)
         MovementConnection = RunService.Heartbeat:Connect(function(DeltaTime)
             if not AutoMobs or RunId ~= CurrentRun then return end
 
@@ -4982,7 +4953,7 @@ do
                 local UprightRot = CFrame.Angles(0, CurrentYaw, 0)
 
                 if Dist > 0.05 then
-                    local Step = math.min(MoveSpeed * StepTime, Dist)
+                    local Step = math.min(MOVE_SPEED * StepTime, Dist)
                     local NextPos = Root.Position + (Diff.Unit * Step)
                     Root.CFrame = CFrame.new(NextPos) * UprightRot
                 else
@@ -4995,7 +4966,6 @@ do
                 UpdateVisualPlatform(Root)
                 LockPetToPlayer(Root)
 
-                -- Live Unattackable Guard (skips locked boss/next-area mob if HP doesn't drop)
                 local HorizDist = Vector3.new(MobRoot.Position.X - Root.Position.X, 0, MobRoot.Position.Z - Root.Position.Z).Magnitude
                 if HorizDist <= 18 then
                     local curHP = GetMobHP(Mob)
@@ -5052,18 +5022,6 @@ do
         Flag = "MobFloatHeight",
         Callback = function(Value)
             FloatHeight = Value
-        end
-    })
-
-    UtilityTab:CreateSlider({
-        Name = "Movement Speed",
-        Range = {100, 1000},
-        Increment = 25,
-        Suffix = "Speed",
-        CurrentValue = 175,
-        Flag = "MovementSpeed",
-        Callback = function(Value)
-            MoveSpeed = Value
         end
     })
 
