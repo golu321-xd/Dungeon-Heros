@@ -2914,7 +2914,7 @@ do
 end
 
 -- ==========================================
--- LIVE CURRENCY HUD V2 (ORIGINAL LOGOS + EXPANDABLE DRAWER)
+-- LIVE CURRENCY HUD V3 (SLIM + SAVED POSITION + FIXED DUNGEON ONLY)
 -- Top Bar: Keys, MagicDust, Crystals + Side Arrow (▼/▲)
 -- Drawer: All 15+ Currencies | Real-Time 0.1s + Instant .Changed
 -- ==========================================
@@ -2931,6 +2931,19 @@ do
 
     local CACHE_FOLDER = "SidDungeonHeroes"
     local ICON_CACHE_FILE = CACHE_FOLDER .. "/.currency_icons.json"
+    local POS_SAVE_FILE = CACHE_FOLDER .. "/.currency_hud_pos.json"
+
+    local BAR_WIDTH = 286
+    local BAR_HEIGHT = 28
+
+    local LocationsSys = nil
+    pcall(function()
+        local sys = RS:FindFirstChild("Systems")
+        local mod = sys and sys:FindFirstChild("Locations")
+        if mod and mod:IsA("ModuleScript") then
+            LocationsSys = require(mod)
+        end
+    end)
 
     local TOP_CURRENCIES = { "Keys", "MagicDust", "Crystals" }
     local TOP_SET = { Keys = true, MagicDust = true, Crystals = true }
@@ -2997,7 +3010,7 @@ do
     local LastIconScan = 0
 
     -- ==========================================
-    -- HELPERS
+    -- HELPERS & SAVED POSITION
     -- ==========================================
     local function FormatNumber(n)
         local num = math.floor(tonumber(n) or 0)
@@ -3048,9 +3061,115 @@ do
         return nil
     end
 
-    local function IsInLobby()
-        return (workspace:FindFirstChild("QueueRings") ~= nil)
-            or (workspace:FindFirstChild("MenuRings") ~= nil)
+    local function GetViewportSize()
+        local cam = workspace.CurrentCamera
+        if cam and cam.ViewportSize and cam.ViewportSize.X > 100 then
+            return cam.ViewportSize
+        end
+        return Vector2.new(1280, 720)
+    end
+
+    local function ClampBarPixelPos(px, py)
+        local vp = GetViewportSize()
+        local maxX = math.max(0, vp.X - BAR_WIDTH)
+        local maxY = math.max(0, vp.Y - BAR_HEIGHT)
+        return math.clamp(math.floor(px + 0.5), 0, maxX), math.clamp(math.floor(py + 0.5), 0, maxY)
+    end
+
+    local function GetDefaultBarPosition()
+        local vp = GetViewportSize()
+        local px, py = ClampBarPixelPos((vp.X - BAR_WIDTH) * 0.5, 48)
+        return UDim2.new(0, px, 0, py)
+    end
+
+    local function SaveBarPosition(px, py)
+        if not writefile then return end
+        local cx, cy = ClampBarPixelPos(px, py)
+        pcall(function()
+            if makefolder and isfolder and not isfolder(CACHE_FOLDER) then
+                makefolder(CACHE_FOLDER)
+            end
+            writefile(POS_SAVE_FILE, HttpService:JSONEncode({ x = cx, y = cy }))
+        end)
+    end
+
+    local function LoadBarPosition()
+        if isfile and readfile then
+            local ok, pos = pcall(function()
+                if not isfile(POS_SAVE_FILE) then return nil end
+                local dec = HttpService:JSONDecode(readfile(POS_SAVE_FILE))
+                if type(dec) == "table" and tonumber(dec.x) and tonumber(dec.y) then
+                    local cx, cy = ClampBarPixelPos(tonumber(dec.x), tonumber(dec.y))
+                    return UDim2.new(0, cx, 0, cy)
+                end
+                return nil
+            end)
+            if ok and pos then
+                return pos
+            end
+        end
+        return GetDefaultBarPosition()
+    end
+
+    -- Accurate Dungeon / Raid / Event / Gauntlet detector (Fixes Dungeon-Only hiding bug)
+    local function IsInDungeonNow()
+        if not LocationsSys then
+            pcall(function()
+                local sys = RS:FindFirstChild("Systems")
+                local mod = sys and sys:FindFirstChild("Locations")
+                if mod and mod:IsA("ModuleScript") then
+                    LocationsSys = require(mod)
+                end
+            end)
+        end
+
+        -- 1. Official game Locations:GetCurrentLocation()
+        if LocationsSys and type(LocationsSys.GetCurrentLocation) == "function" then
+            local ok, locName, locData = pcall(function()
+                return LocationsSys:GetCurrentLocation()
+            end)
+            if ok then
+                if type(locData) == "table" then
+                    if locData.IsDungeon == true
+                        or locData.IsRaid == true
+                        or locData.IsEventDungeon == true
+                        or locData.IsGauntlet == true
+                        or locData.SpecialDungeon == true then
+                        return true
+                    end
+                    if locData.IsLobby == true then
+                        return false
+                    end
+                end
+                if type(locName) == "string" and #locName > 0 then
+                    local low = string.lower(locName)
+                    if string.find(low, "lobby", 1, true) or string.find(low, "hub", 1, true) then
+                        return false
+                    end
+                    if string.find(low, "dungeon", 1, true)
+                        or string.find(low, "raid", 1, true)
+                        or string.find(low, "gauntlet", 1, true)
+                        or string.find(low, "event", 1, true) then
+                        return true
+                    end
+                end
+            end
+        end
+
+        -- 2. Workspace Dungeon state attributes fallback
+        if workspace:GetAttribute("DungeonStarted") ~= nil
+            or workspace:GetAttribute("DungeonCleared") ~= nil
+            or workspace:GetAttribute("DungeonFailed") ~= nil then
+            return true
+        end
+
+        -- 3. Populated QueueRings only exist in Lobby
+        local qr = workspace:FindFirstChild("QueueRings")
+        if qr and #qr:GetChildren() > 0 then
+            return false
+        end
+
+        return true
     end
 
     local function GetCurrenciesFolder()
@@ -3074,7 +3193,7 @@ do
     end
 
     -- ==========================================
-    -- ICON DISK CACHE (PERSISTS LOBBY -> DUNGEON)
+    -- ICON DISK CACHE
     -- ==========================================
     local function LoadIconCache()
         if not (isfile and readfile) then return end
@@ -3162,7 +3281,6 @@ do
             end
         end
 
-        -- 1. ItemList & Systems.Items
         pcall(function()
             local itemList = nil
             local wm = RS:FindFirstChild("WorldModules")
@@ -3207,7 +3325,6 @@ do
             end
         end)
 
-        -- 2. Currency modules in Systems / WorldModules
         pcall(function()
             local containers = {
                 RS:FindFirstChild("Systems"),
@@ -3248,7 +3365,6 @@ do
             end
         end)
 
-        -- 3. Live PlayerGui Icons
         pcall(function()
             local pGui = LocalPlayer:FindFirstChild("PlayerGui")
             if not pGui then return end
@@ -3307,7 +3423,7 @@ do
     end
 
     -- ==========================================
-    -- LIVE GAIN POPUP & DRAG
+    -- LIVE GAIN POPUP & DRAG WITH AUTO-SAVE POSITION
     -- ==========================================
     local function FlashGain(key, delta)
         local lbl = GainLabels[key]
@@ -3345,19 +3461,31 @@ do
         local dragging = false
         local dragInput = nil
         local dragStart = nil
-        local startPos = nil
+        local startX, startY = 0, 0
+        local lastX, lastY = 0, 0
+        local hasMoved = false
 
         dragHandle.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1
                 or input.UserInputType == Enum.UserInputType.Touch then
                 dragging = true
+                hasMoved = false
                 dragStart = input.Position
-                startPos = moveTarget.Position
+
+                local vp = GetViewportSize()
+                startX = (moveTarget.Position.X.Scale * vp.X) + moveTarget.Position.X.Offset
+                startY = (moveTarget.Position.Y.Scale * vp.Y) + moveTarget.Position.Y.Offset
+                lastX, lastY = startX, startY
+
                 if input.UserInputType == Enum.UserInputType.Touch then
                     dragInput = input
                 end
+
                 input.Changed:Connect(function()
                     if input.UserInputState == Enum.UserInputState.End then
+                        if dragging and hasMoved then
+                            SaveBarPosition(lastX, lastY)
+                        end
                         dragging = false
                     end
                 end)
@@ -3372,12 +3500,14 @@ do
         end)
 
         UserInputService.InputChanged:Connect(function(input)
-            if dragging and input == dragInput and dragStart and startPos then
+            if dragging and input == dragInput and dragStart then
                 local delta = input.Position - dragStart
-                moveTarget.Position = UDim2.new(
-                    startPos.X.Scale, startPos.X.Offset + delta.X,
-                    startPos.Y.Scale, startPos.Y.Offset + delta.Y
-                )
+                if math.abs(delta.X) > 2 or math.abs(delta.Y) > 2 then
+                    hasMoved = true
+                end
+                local nx, ny = ClampBarPixelPos(startX + delta.X, startY + delta.Y)
+                lastX, lastY = nx, ny
+                moveTarget.Position = UDim2.new(0, nx, 0, ny)
             end
         end)
     end
@@ -3407,7 +3537,7 @@ do
         fb.BackgroundColor3 = meta.Color
         fb.BackgroundTransparency = 0.78
         fb.Font = Enum.Font.GothamBold
-        fb.TextSize = math.max(8, math.floor(sizePx * 0.48))
+        fb.TextSize = math.max(7, math.floor(sizePx * 0.48))
         fb.TextColor3 = meta.Color
         fb.Text = meta.Short
         fb.Visible = (IconCache[key] == nil)
@@ -3428,16 +3558,16 @@ do
     end
 
     -- ==========================================
-    -- EXPAND / COLLAPSE DRAWER
+    -- COMPACT EXPAND / COLLAPSE DRAWER
     -- ==========================================
     local function GetDrawerTargetHeight()
-        if not DrawerScroll then return 170 end
+        if not DrawerScroll then return 135 end
         local count = 0
         for _ in pairs(DrawerCards) do count += 1 end
         local rows = math.max(1, math.ceil(count / 2))
-        local contentH = (rows * 38) + ((rows - 1) * 6) + 14
+        local contentH = (rows * 30) + ((rows - 1) * 5) + 10
         DrawerScroll.CanvasSize = UDim2.new(0, 0, 0, contentH)
-        return math.clamp(contentH, 52, 215)
+        return math.clamp(contentH, 42, 168)
     end
 
     local function SetExpandedState(expanded, instant)
@@ -3459,7 +3589,7 @@ do
         else
             local tw = TweenService:Create(
                 DrawerFrame,
-                TweenInfo.new(0.20, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+                TweenInfo.new(0.18, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
                 { Size = UDim2.new(1, 0, 0, targetH) }
             )
             tw:Play()
@@ -3488,24 +3618,24 @@ do
         card.Parent = DrawerScroll
 
         local cCorner = Instance.new("UICorner")
-        cCorner.CornerRadius = UDim.new(0, 9)
+        cCorner.CornerRadius = UDim.new(0, 7)
         cCorner.Parent = card
 
         local cStroke = Instance.new("UIStroke")
         cStroke.Color = meta.Color
         cStroke.Thickness = 1
-        cStroke.Transparency = 0.55
+        cStroke.Transparency = 0.58
         cStroke.Parent = card
 
-        CreateIconWidget(card, key, 22, UDim2.new(0, 7, 0.5, -11))
+        CreateIconWidget(card, key, 16, UDim2.new(0, 5, 0.5, -8))
 
         local nameLbl = Instance.new("TextLabel")
         nameLbl.Name = "CurrencyName"
-        nameLbl.Size = UDim2.new(1, -38, 0, 13)
-        nameLbl.Position = UDim2.new(0, 34, 0, 4)
+        nameLbl.Size = UDim2.new(1, -28, 0, 11)
+        nameLbl.Position = UDim2.new(0, 25, 0, 2)
         nameLbl.BackgroundTransparency = 1
         nameLbl.Font = Enum.Font.GothamMedium
-        nameLbl.TextSize = 10
+        nameLbl.TextSize = 9
         nameLbl.TextColor3 = Color3.fromRGB(165, 178, 205)
         nameLbl.TextXAlignment = Enum.TextXAlignment.Left
         nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
@@ -3514,11 +3644,11 @@ do
 
         local valLbl = Instance.new("TextLabel")
         valLbl.Name = "Value"
-        valLbl.Size = UDim2.new(1, -38, 0, 17)
-        valLbl.Position = UDim2.new(0, 34, 0, 17)
+        valLbl.Size = UDim2.new(1, -28, 0, 14)
+        valLbl.Position = UDim2.new(0, 25, 0, 13)
         valLbl.BackgroundTransparency = 1
         valLbl.Font = Enum.Font.GothamBold
-        valLbl.TextSize = 13
+        valLbl.TextSize = 11
         valLbl.TextColor3 = Color3.fromRGB(244, 248, 255)
         valLbl.TextXAlignment = Enum.TextXAlignment.Left
         valLbl.TextTruncate = Enum.TextTruncate.AtEnd
@@ -3527,11 +3657,11 @@ do
 
         local gainLbl = Instance.new("TextLabel")
         gainLbl.Name = "Gain"
-        gainLbl.Size = UDim2.new(0, 70, 0, 13)
-        gainLbl.Position = UDim2.new(1, -74, 0, 4)
+        gainLbl.Size = UDim2.new(0, 56, 0, 11)
+        gainLbl.Position = UDim2.new(1, -59, 0, 2)
         gainLbl.BackgroundTransparency = 1
         gainLbl.Font = Enum.Font.GothamBold
-        gainLbl.TextSize = 10
+        gainLbl.TextSize = 9
         gainLbl.TextXAlignment = Enum.TextXAlignment.Right
         gainLbl.TextColor3 = Color3.fromRGB(0, 240, 155)
         gainLbl.Text = ""
@@ -3550,7 +3680,7 @@ do
     end
 
     -- ==========================================
-    -- CREATE / DESTROY HUD
+    -- CREATE / DESTROY SLIM HUD
     -- ==========================================
     local function ClearBoundConns()
         for _, c in ipairs(BoundConns) do
@@ -3602,15 +3732,15 @@ do
 
         OuterHolder = Instance.new("Frame")
         OuterHolder.Name = "CurrencyOuter"
-        OuterHolder.Size = UDim2.new(0, 362, 0, 36)
-        OuterHolder.Position = UDim2.new(0.5, -181, 0, 54)
+        OuterHolder.Size = UDim2.new(0, BAR_WIDTH, 0, BAR_HEIGHT)
+        OuterHolder.Position = LoadBarPosition()
         OuterHolder.BackgroundTransparency = 1
         OuterHolder.ClipsDescendants = false
         OuterHolder.Parent = ScreenGui
 
         TopBar = Instance.new("Frame")
         TopBar.Name = "TopBar"
-        TopBar.Size = UDim2.new(1, 0, 0, 36)
+        TopBar.Size = UDim2.new(1, 0, 0, BAR_HEIGHT)
         TopBar.Position = UDim2.new(0, 0, 0, 0)
         TopBar.BackgroundColor3 = Color3.fromRGB(14, 17, 26)
         TopBar.BackgroundTransparency = 0.12
@@ -3619,19 +3749,20 @@ do
         TopBar.Parent = OuterHolder
 
         local barCorner = Instance.new("UICorner")
-        barCorner.CornerRadius = UDim.new(0, 11)
+        barCorner.CornerRadius = UDim.new(0, 9)
         barCorner.Parent = TopBar
 
         local barStroke = Instance.new("UIStroke")
         barStroke.Color = Color3.fromRGB(78, 108, 165)
-        barStroke.Thickness = 1.25
+        barStroke.Thickness = 1.1
         barStroke.Transparency = 0.25
         barStroke.Parent = TopBar
 
+        -- Slim Top 3 Pills (Total Width = 286px)
         local topSpecs = {
-            { Key = "Keys",      X = 6,   W = 104 },
-            { Key = "MagicDust", X = 115, W = 114 },
-            { Key = "Crystals",  X = 234, W = 88  },
+            { Key = "Keys",      X = 5,   W = 82 },
+            { Key = "MagicDust", X = 91,  W = 90 },
+            { Key = "Crystals",  X = 185, W = 68 },
         }
 
         for _, sp in ipairs(topSpecs) do
@@ -3639,32 +3770,32 @@ do
 
             local pill = Instance.new("Frame")
             pill.Name = sp.Key .. "Pill"
-            pill.Size = UDim2.new(0, sp.W, 0, 26)
-            pill.Position = UDim2.new(0, sp.X, 0.5, -13)
+            pill.Size = UDim2.new(0, sp.W, 0, 20)
+            pill.Position = UDim2.new(0, sp.X, 0.5, -10)
             pill.BackgroundColor3 = Color3.fromRGB(22, 27, 41)
             pill.BackgroundTransparency = 0.12
             pill.BorderSizePixel = 0
             pill.Parent = TopBar
 
             local pCorner = Instance.new("UICorner")
-            pCorner.CornerRadius = UDim.new(0, 8)
+            pCorner.CornerRadius = UDim.new(0, 6)
             pCorner.Parent = pill
 
             local pStroke = Instance.new("UIStroke")
             pStroke.Color = meta.Color
             pStroke.Thickness = 1
-            pStroke.Transparency = 0.48
+            pStroke.Transparency = 0.50
             pStroke.Parent = pill
 
-            CreateIconWidget(pill, sp.Key, 18, UDim2.new(0, 5, 0.5, -9))
+            CreateIconWidget(pill, sp.Key, 14, UDim2.new(0, 4, 0.5, -7))
 
             local valLbl = Instance.new("TextLabel")
             valLbl.Name = "Value"
-            valLbl.Size = UDim2.new(1, -28, 1, 0)
-            valLbl.Position = UDim2.new(0, 26, 0, 0)
+            valLbl.Size = UDim2.new(1, -22, 1, 0)
+            valLbl.Position = UDim2.new(0, 21, 0, 0)
             valLbl.BackgroundTransparency = 1
             valLbl.Font = Enum.Font.GothamBold
-            valLbl.TextSize = 12
+            valLbl.TextSize = 10
             valLbl.TextColor3 = Color3.fromRGB(244, 248, 255)
             valLbl.TextXAlignment = Enum.TextXAlignment.Left
             valLbl.TextTruncate = Enum.TextTruncate.AtEnd
@@ -3673,11 +3804,11 @@ do
 
             local gainLbl = Instance.new("TextLabel")
             gainLbl.Name = "Gain"
-            gainLbl.Size = UDim2.new(1, 0, 0, 14)
-            gainLbl.Position = UDim2.new(0, 0, 0, -15)
+            gainLbl.Size = UDim2.new(1, 0, 0, 12)
+            gainLbl.Position = UDim2.new(0, 0, 0, -13)
             gainLbl.BackgroundTransparency = 1
             gainLbl.Font = Enum.Font.GothamBold
-            gainLbl.TextSize = 11
+            gainLbl.TextSize = 10
             gainLbl.TextStrokeTransparency = 0.3
             gainLbl.TextColor3 = Color3.fromRGB(0, 240, 155)
             gainLbl.Text = ""
@@ -3688,10 +3819,11 @@ do
             GainLabels[sp.Key] = gainLbl
         end
 
+        -- Slim Side Arrow Button
         ArrowBtn = Instance.new("TextButton")
         ArrowBtn.Name = "ExpandArrowBtn"
-        ArrowBtn.Size = UDim2.new(0, 28, 0, 26)
-        ArrowBtn.Position = UDim2.new(1, -34, 0.5, -13)
+        ArrowBtn.Size = UDim2.new(0, 24, 0, 20)
+        ArrowBtn.Position = UDim2.new(1, -29, 0.5, -10)
         ArrowBtn.BackgroundColor3 = Color3.fromRGB(30, 38, 58)
         ArrowBtn.BackgroundTransparency = 0.08
         ArrowBtn.BorderSizePixel = 0
@@ -3701,12 +3833,12 @@ do
         ArrowBtn.Parent = TopBar
 
         local aCorner = Instance.new("UICorner")
-        aCorner.CornerRadius = UDim.new(0, 8)
+        aCorner.CornerRadius = UDim.new(0, 6)
         aCorner.Parent = ArrowBtn
 
         local aStroke = Instance.new("UIStroke")
         aStroke.Color = Color3.fromRGB(95, 165, 255)
-        aStroke.Thickness = 1.1
+        aStroke.Thickness = 1
         aStroke.Transparency = 0.30
         aStroke.Parent = ArrowBtn
 
@@ -3714,7 +3846,7 @@ do
         ArrowText.Size = UDim2.new(1, 0, 1, 0)
         ArrowText.BackgroundTransparency = 1
         ArrowText.Font = Enum.Font.GothamBold
-        ArrowText.TextSize = 12
+        ArrowText.TextSize = 10
         ArrowText.TextColor3 = Color3.fromRGB(165, 215, 255)
         ArrowText.Text = IsExpanded and "▲" or "▼"
         ArrowText.ZIndex = 6
@@ -3724,10 +3856,11 @@ do
             SetExpandedState(not IsExpanded, false)
         end)
 
+        -- Compact Expandable Drawer
         DrawerFrame = Instance.new("Frame")
         DrawerFrame.Name = "ExpandedDrawer"
         DrawerFrame.Size = UDim2.new(1, 0, 0, 0)
-        DrawerFrame.Position = UDim2.new(0, 0, 0, 40)
+        DrawerFrame.Position = UDim2.new(0, 0, 0, BAR_HEIGHT + 3)
         DrawerFrame.BackgroundColor3 = Color3.fromRGB(14, 17, 26)
         DrawerFrame.BackgroundTransparency = 0.10
         DrawerFrame.BorderSizePixel = 0
@@ -3736,12 +3869,12 @@ do
         DrawerFrame.Parent = OuterHolder
 
         local dCorner = Instance.new("UICorner")
-        dCorner.CornerRadius = UDim.new(0, 11)
+        dCorner.CornerRadius = UDim.new(0, 9)
         dCorner.Parent = DrawerFrame
 
         local dStroke = Instance.new("UIStroke")
         dStroke.Color = Color3.fromRGB(78, 108, 165)
-        dStroke.Thickness = 1.2
+        dStroke.Thickness = 1.1
         dStroke.Transparency = 0.28
         dStroke.Parent = DrawerFrame
 
@@ -3750,21 +3883,21 @@ do
         DrawerScroll.Size = UDim2.new(1, 0, 1, 0)
         DrawerScroll.BackgroundTransparency = 1
         DrawerScroll.BorderSizePixel = 0
-        DrawerScroll.ScrollBarThickness = 3
+        DrawerScroll.ScrollBarThickness = 2
         DrawerScroll.ScrollBarImageColor3 = Color3.fromRGB(95, 165, 255)
         DrawerScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
         DrawerScroll.Parent = DrawerFrame
 
         local dPad = Instance.new("UIPadding")
-        dPad.PaddingTop = UDim.new(0, 7)
-        dPad.PaddingBottom = UDim.new(0, 7)
-        dPad.PaddingLeft = UDim.new(0, 7)
-        dPad.PaddingRight = UDim.new(0, 7)
+        dPad.PaddingTop = UDim.new(0, 5)
+        dPad.PaddingBottom = UDim.new(0, 5)
+        dPad.PaddingLeft = UDim.new(0, 5)
+        dPad.PaddingRight = UDim.new(0, 5)
         dPad.Parent = DrawerScroll
 
         local grid = Instance.new("UIGridLayout")
-        grid.CellSize = UDim2.new(0.5, -4, 0, 38)
-        grid.CellPadding = UDim2.new(0, 6, 0, 6)
+        grid.CellSize = UDim2.new(0.5, -3, 0, 30)
+        grid.CellPadding = UDim2.new(0, 5, 0, 5)
         grid.SortOrder = Enum.SortOrder.LayoutOrder
         grid.Parent = DrawerScroll
 
@@ -3821,8 +3954,7 @@ do
     local function SyncAllCurrenciesNow()
         if not (HUDEnabled and OuterHolder and OuterHolder.Parent) then return end
 
-        local inLobby = IsInLobby()
-        OuterHolder.Visible = (not DungeonOnly) or (not inLobby)
+        OuterHolder.Visible = (not DungeonOnly) or IsInDungeonNow()
 
         local folder = GetCurrenciesFolder()
         if not folder then return end
@@ -3920,9 +4052,11 @@ do
     MiscellaneousTab:CreateButton({
         Name = "Reset Currency Bar Position",
         Callback = function()
+            local defPos = GetDefaultBarPosition()
             if OuterHolder and OuterHolder.Parent then
-                OuterHolder.Position = UDim2.new(0.5, -181, 0, 54)
+                OuterHolder.Position = defPos
             end
+            SaveBarPosition(defPos.X.Offset, defPos.Y.Offset)
         end,
     })
 
