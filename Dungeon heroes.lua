@@ -3175,6 +3175,442 @@ do
     })
 end
 
+-- ==========================================
+-- DASH SPEED CONTROLS + DUNGEON ROLL UNSTUCK PRO
+-- * Full Character Descendant Watchdog (Fixes Stuck Roll & Joystick)
+-- * Smooth CFrame Boost & Direct RollVelocity Boost
+-- * Safe Mode Compatible (DashProtectUnstuck stays ON)
+-- ==========================================
+MovementTab:CreateSection("Dash Speed Controls")
+do
+    local Players = game:GetService("Players")
+    local RunService = game:GetService("RunService")
+    local Player = Players.LocalPlayer
+
+    local minMult = 1.0
+    local maxMult = 5.0
+
+    local dashEnabled = false
+    local autoUnstuckEnabled = true
+    local dashMultiplier = 2.0
+    local maxRollDuration = 0.35
+    local boostMode = "Smooth CFrame Boost"
+    local isSyncingDash = false
+
+    local BASE_CFRAME_EXTRA = 65
+    local MAX_DIRECT_VEL = 250
+
+    local DashSlider = nil
+    local DashInput = nil
+    local StatusLabel = nil
+
+    local CharConns = {}
+    local RenderConn = nil
+    local HeartbeatConn = nil
+
+    local CachedRollVel = nil
+    local CachedRollAlign = nil
+    local OrigRollMaxForce = 1000
+
+    local dashActive = false
+    local dashStartTime = 0
+    local dashBaseSpeed = 80
+    local lastRollAttrVal = 0
+    local suppressUntilNaturalOff = false
+    local suppressStartTime = 0
+    local unstuckCount = 0
+
+    local function SetStatus(txt)
+        if StatusLabel and StatusLabel.Set then
+            pcall(function() StatusLabel:Set("Dash Status: " .. tostring(txt)) end)
+        end
+    end
+
+    local function ClearConns()
+        if RenderConn then
+            pcall(function() RenderConn:Disconnect() end)
+            RenderConn = nil
+        end
+        if HeartbeatConn then
+            pcall(function() HeartbeatConn:Disconnect() end)
+            HeartbeatConn = nil
+        end
+        for _, c in ipairs(CharConns) do
+            pcall(function() c:Disconnect() end)
+        end
+        table.clear(CharConns)
+        CachedRollVel = nil
+        CachedRollAlign = nil
+        dashActive = false
+        suppressUntilNaturalOff = false
+    end
+
+    local function Track(conn)
+        if conn then table.insert(CharConns, conn) end
+        return conn
+    end
+
+    local function RefreshDashMovers(Char)
+        if not Char then return nil, nil end
+
+        if not (CachedRollVel and CachedRollVel.Parent and CachedRollVel:IsDescendantOf(Char)) then
+            CachedRollVel = nil
+            local found = Char:FindFirstChild("RollVelocity", true)
+            if found and found:IsA("LinearVelocity") then
+                CachedRollVel = found
+                if found.MaxForce > 0 and found.MaxForce < 50000 then
+                    OrigRollMaxForce = found.MaxForce
+                end
+            end
+        end
+
+        if not (CachedRollAlign and CachedRollAlign.Parent and CachedRollAlign:IsDescendantOf(Char)) then
+            CachedRollAlign = nil
+            local found = Char:FindFirstChild("RollAlign", true)
+            if found and found:IsA("AlignOrientation") then
+                CachedRollAlign = found
+            end
+        end
+
+        return CachedRollVel, CachedRollAlign
+    end
+
+    local function ForceUnstuckNow(Char, Hum, HRP, IsManual)
+        if not Char then return end
+
+        dashActive = false
+        suppressUntilNaturalOff = true
+        suppressStartTime = os.clock()
+
+        pcall(function()
+            for _, obj in ipairs(Char:GetDescendants()) do
+                if obj.Name == "RollVelocity" and obj:IsA("LinearVelocity") then
+                    obj.Enabled = false
+                    obj.VectorVelocity = Vector3.zero
+                    obj.MaxForce = OrigRollMaxForce
+                elseif obj.Name == "RollAlign" and obj:IsA("AlignOrientation") then
+                    obj.Enabled = false
+                end
+            end
+
+            if Hum and Hum.Parent then
+                Hum.AutoRotate = true
+                Hum.PlatformStand = false
+            end
+
+            if HRP and HRP.Parent then
+                local v = HRP.AssemblyLinearVelocity
+                HRP.AssemblyLinearVelocity = Vector3.new(0, v.Y, 0)
+            end
+        end)
+
+        unstuckCount += 1
+        SetStatus(string.format("%sUnstuck #%d | AutoRotate ON", IsManual and "Manual " or "Auto-", unstuckCount))
+    end
+
+    local function BuildRayParams(Char)
+        local rp = RaycastParams.new()
+        rp.FilterType = Enum.RaycastFilterType.Exclude
+        local ignore = {Char}
+        local mobs = workspace:FindFirstChild("Mobs")
+        if mobs then table.insert(ignore, mobs) end
+        rp.FilterDescendantsInstances = ignore
+        return rp
+    end
+
+    local function GetDashDirection(Hum, HRP, rv)
+        local dir = Hum.MoveDirection
+        if dir.Magnitude < 0.05 and rv and rv.Parent then
+            local rvH = Vector3.new(rv.VectorVelocity.X, 0, rv.VectorVelocity.Z)
+            if rvH.Magnitude >= 5 then
+                dir = rvH
+            end
+        end
+        if dir.Magnitude < 0.05 then
+            local lv = HRP.CFrame.LookVector
+            dir = Vector3.new(lv.X, 0, lv.Z)
+        end
+        local flat = Vector3.new(dir.X, 0, dir.Z)
+        return (flat.Magnitude >= 0.05) and flat.Unit or nil
+    end
+
+    local function BindCharacter(Char)
+        ClearConns()
+        if not Char then return end
+
+        local Hum = Char:FindFirstChildOfClass("Humanoid") or Char:WaitForChild("Humanoid", 10)
+        local HRP = Char:FindFirstChild("HumanoidRootPart") or Char:WaitForChild("HumanoidRootPart", 10)
+        if not (Hum and HRP) then return end
+
+        local rayParams = BuildRayParams(Char)
+        lastRollAttrVal = tonumber(Char:GetAttribute("RollInvulnerableUntil")) or 0
+
+        local rvInit = RefreshDashMovers(Char)
+        SetStatus(rvInit and "Ready" or "Ready (Waiting for dash)")
+
+        Track(Char:GetAttributeChangedSignal("RollInvulnerableUntil"):Connect(function()
+            local newVal = tonumber(Char:GetAttribute("RollInvulnerableUntil")) or 0
+            if newVal > lastRollAttrVal then
+                lastRollAttrVal = newVal
+                suppressUntilNaturalOff = false
+                dashActive = true
+                dashStartTime = os.clock()
+
+                local rv = RefreshDashMovers(Char)
+                if rv then
+                    local hMag = Vector3.new(rv.VectorVelocity.X, 0, rv.VectorVelocity.Z).Magnitude
+                    dashBaseSpeed = (hMag >= 20 and hMag <= 120) and hMag or 80
+                else
+                    dashBaseSpeed = 80
+                end
+                SetStatus(string.format("Dashing (%.1fx)", dashMultiplier))
+            end
+        end))
+
+        Track(Char.DescendantAdded:Connect(function(desc)
+            if desc.Name == "RollVelocity" and desc:IsA("LinearVelocity") then
+                CachedRollVel = desc
+                if desc.MaxForce > 0 and desc.MaxForce < 50000 then
+                    OrigRollMaxForce = desc.MaxForce
+                end
+            elseif desc.Name == "RollAlign" and desc:IsA("AlignOrientation") then
+                CachedRollAlign = desc
+            end
+        end))
+
+        RenderConn = RunService.RenderStepped:Connect(function()
+            if not autoUnstuckEnabled then return end
+            if not (Char and Char.Parent and Hum and Hum.Parent) then return end
+            if not suppressUntilNaturalOff then return end
+
+            local rv, ra = RefreshDashMovers(Char)
+            local stillReEnabling = false
+
+            if rv and rv.Enabled then
+                rv.Enabled = false
+                rv.VectorVelocity = Vector3.zero
+                rv.MaxForce = OrigRollMaxForce
+                stillReEnabling = true
+            end
+            if ra and ra.Enabled then
+                ra.Enabled = false
+                stillReEnabling = true
+            end
+            if not Hum.AutoRotate then
+                Hum.AutoRotate = true
+            end
+
+            if not stillReEnabling and (os.clock() - suppressStartTime) >= 0.25 then
+                suppressUntilNaturalOff = false
+            end
+        end)
+
+        HeartbeatConn = RunService.Heartbeat:Connect(function(dt)
+            if not (Char and Char.Parent and Hum and Hum.Parent and HRP and HRP.Parent) then return end
+            if Hum.Health <= 0 then
+                dashActive = false
+                return
+            end
+
+            local rv, ra = RefreshDashMovers(Char)
+            local rvOn = (rv and rv.Enabled == true) or false
+            local raOn = (ra and ra.Enabled == true) or false
+            local now = os.clock()
+
+            if autoUnstuckEnabled and suppressUntilNaturalOff then
+                if rvOn then
+                    rv.Enabled = false
+                    rv.VectorVelocity = Vector3.zero
+                    rv.MaxForce = OrigRollMaxForce
+                end
+                if raOn then
+                    ra.Enabled = false
+                end
+                if not Hum.AutoRotate then
+                    Hum.AutoRotate = true
+                end
+                return
+            end
+
+            if rvOn or raOn then
+                if not dashActive then
+                    dashActive = true
+                    dashStartTime = now
+                    if rv then
+                        local hMag = Vector3.new(rv.VectorVelocity.X, 0, rv.VectorVelocity.Z).Magnitude
+                        dashBaseSpeed = (hMag >= 20 and hMag <= 120) and hMag or 80
+                    else
+                        dashBaseSpeed = 80
+                    end
+                    SetStatus(string.format("Dashing (%.1fx)", dashMultiplier))
+                end
+
+                local elapsed = now - dashStartTime
+
+                if autoUnstuckEnabled and elapsed >= maxRollDuration then
+                    ForceUnstuckNow(Char, Hum, HRP, false)
+                    return
+                end
+
+                if dashEnabled and dashMultiplier > 1.01 and _G.SidAutoMobsFlying ~= true then
+                    local dir = GetDashDirection(Hum, HRP, rv)
+                    if dir then
+                        if boostMode == "Smooth CFrame Boost" then
+                            local stepDt = math.clamp(dt, 0.001, 0.035)
+                            local extraSpeed = (dashMultiplier - 1.0) * BASE_CFRAME_EXTRA
+                            local stepDist = extraSpeed * stepDt
+
+                            local hit = workspace:Raycast(HRP.Position, dir * (stepDist + 2.5), rayParams)
+                            if hit then
+                                stepDist = math.max(0, hit.Distance - 2.3)
+                            end
+                            if stepDist > 0.01 then
+                                HRP.CFrame = HRP.CFrame + (dir * stepDist)
+                            end
+
+                        elseif boostMode == "Direct RollVelocity Boost" and rv and rv.Enabled then
+                            local targetMag = math.clamp(dashBaseSpeed * dashMultiplier, 40, MAX_DIRECT_VEL)
+                            rv.MaxForce = math.clamp(OrigRollMaxForce * dashMultiplier, 1000, 12000)
+                            rv.VectorVelocity = Vector3.new(dir.X * targetMag, 0, dir.Z * targetMag)
+                        end
+                    end
+                end
+            else
+                if dashActive then
+                    dashActive = false
+                    if rv then
+                        rv.MaxForce = OrigRollMaxForce
+                    end
+                    if autoUnstuckEnabled and not Hum.AutoRotate then
+                        Hum.AutoRotate = true
+                    end
+                    SetStatus("Ready")
+                elseif autoUnstuckEnabled and not Hum.AutoRotate and (now - dashStartTime) >= maxRollDuration then
+                    Hum.AutoRotate = true
+                end
+            end
+        end)
+    end
+
+    StatusLabel = MovementTab:CreateLabel("Dash Status: Initializing...")
+
+    MovementTab:CreateToggle({
+        Name = "Enable Dash Speed",
+        CurrentValue = false,
+        Flag = "DashSpeedToggle",
+        Callback = function(Value)
+            dashEnabled = (Value == true)
+        end,
+    })
+
+    MovementTab:CreateToggle({
+        Name = "Dungeon Auto-Unstuck (Fix Stuck Roll / Joystick)",
+        CurrentValue = true,
+        Flag = "DashProtectUnstuck",
+        Callback = function(Value)
+            autoUnstuckEnabled = (Value == true)
+            if not autoUnstuckEnabled then
+                suppressUntilNaturalOff = false
+            end
+        end,
+    })
+
+    MovementTab:CreateDropdown({
+        Name = "Dash Boost Method",
+        Options = {
+            "Smooth CFrame Boost",
+            "Direct RollVelocity Boost"
+        },
+        CurrentOption = {"Smooth CFrame Boost"},
+        MultipleOptions = false,
+        Flag = "DashBoostMethod",
+        Callback = function(Opt)
+            local chosen = type(Opt) == "table" and Opt[1] or Opt
+            if type(chosen) == "string" and #chosen > 0 then
+                boostMode = chosen
+            end
+        end,
+    })
+
+    DashSlider = MovementTab:CreateSlider({
+        Name = "Dash Speed Multiplier (1x - 5x)",
+        Range = {minMult, maxMult},
+        Increment = 0.1,
+        Suffix = "x",
+        CurrentValue = 2.0,
+        Flag = "DashSpeedSlider",
+        Callback = function(Value)
+            local num = tonumber(Value)
+            if not num then return end
+            dashMultiplier = math.clamp(math.floor(num * 10 + 0.5) / 10, minMult, maxMult)
+
+            if not isSyncingDash and DashInput and DashInput.Set and tostring(DashInput.CurrentValue) ~= tostring(dashMultiplier) then
+                isSyncingDash = true
+                pcall(function() DashInput:Set(tostring(dashMultiplier)) end)
+                isSyncingDash = false
+            end
+        end,
+    })
+
+    DashInput = MovementTab:CreateInput({
+        Name = "Manual Dash Speed (1.0 - 5.0)",
+        CurrentValue = "2",
+        PlaceholderText = "Enter Multiplier (1.0 - 5.0)",
+        RemoveTextAfterFocusLost = false,
+        Flag = "DashSpeedInput",
+        Callback = function(Text)
+            local num = tonumber(Text)
+            if num then
+                dashMultiplier = math.clamp(math.floor(num * 10 + 0.5) / 10, minMult, maxMult)
+                if not isSyncingDash and DashSlider and DashSlider.Set and tonumber(DashSlider.CurrentValue) ~= dashMultiplier then
+                    isSyncingDash = true
+                    pcall(function() DashSlider:Set(dashMultiplier) end)
+                    isSyncingDash = false
+                end
+            else
+                if not isSyncingDash and DashInput and DashInput.Set then
+                    isSyncingDash = true
+                    pcall(function() DashInput:Set(tostring(dashMultiplier)) end)
+                    isSyncingDash = false
+                end
+            end
+        end,
+    })
+
+    MovementTab:CreateSlider({
+        Name = "Max Dash Time Before Auto-Unstuck",
+        Range = {0.15, 0.60},
+        Increment = 0.05,
+        Suffix = "s",
+        CurrentValue = 0.35,
+        Flag = "DashMaxRollTime",
+        Callback = function(Value)
+            local num = tonumber(Value)
+            if num then
+                maxRollDuration = math.clamp(num, 0.15, 0.60)
+            end
+        end,
+    })
+
+    MovementTab:CreateButton({
+        Name = "Force Dash Unstuck Now",
+        Callback = function()
+            local Char = Player.Character
+            local Hum = Char and Char:FindFirstChildOfClass("Humanoid")
+            local HRP = Char and Char:FindFirstChild("HumanoidRootPart")
+            ForceUnstuckNow(Char, Hum, HRP, true)
+        end,
+    })
+
+    if Player.Character then
+        task.spawn(BindCharacter, Player.Character)
+    end
+    Player.CharacterAdded:Connect(function(Char)
+        task.wait(0.1)
+        BindCharacter(Char)
+    end)
+end
+
 
 -- ==========================================
 -- SAFE MODE (AUTO FOLDER DETECT + SAVE + TP RESTORE — NO FLAG)
