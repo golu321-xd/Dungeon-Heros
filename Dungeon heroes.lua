@@ -3176,7 +3176,7 @@ do
 end
 
 -- ==========================================
--- DASH SPEED CONTROLS (SYNCED TOGGLE + SLIDER + MANUAL INPUT)
+-- DASH SPEED CONTROLS (FIXED — NO INFINITE LOOP, JOYSTICK SAFE)
 -- ==========================================
 MovementTab:CreateSection("Dash Speed Controls")
 do
@@ -3186,6 +3186,8 @@ do
 
     local minMult = 1.0
     local maxMult = 5.0
+    local MAX_SAFE_DASH_SPEED = 210
+
     local dashEnabled = false
     local dashMultiplier = 2.0
     local isSyncingDash = false
@@ -3208,113 +3210,110 @@ do
         return conn
     end
 
-    local function ScaleVectorXZ(vec, mult)
-        return Vector3.new(vec.X * mult, vec.Y, vec.Z * mult)
+    local function IsIgnoredMover(obj)
+        if not obj then return true end
+        if obj:GetAttribute("SidIgnoreDash") == true then return true end
+        local n = string.lower(obj.Name)
+        if string.find(n, "automobs", 1, true) or string.find(n, "sid", 1, true) then
+            return true
+        end
+        return false
     end
 
-    -- Case 1: Boost LinearVelocity / BodyVelocity / VectorForce created during Dash
+    local function ClampScaledXZ(vec, mult)
+        local horiz = Vector3.new(vec.X, 0, vec.Z)
+        local mag = horiz.Magnitude
+        if mag < 8 or mag ~= mag then return nil end -- Zero ya NaN ho toh mat chhedo
+        local newMag = math.min(mag * mult, MAX_SAFE_DASH_SPEED)
+        local dir = horiz.Unit
+        return Vector3.new(dir.X * newMag, vec.Y, dir.Z * newMag)
+    end
+
+    -- Case 1: ONE-TIME safe boost on game's temporary Dash mover (NO GetPropertyChangedSignal loop!)
     local function HandleDashMover(obj)
         if not dashEnabled or dashMultiplier <= 1.01 then return end
+        if _G.SidAutoMobsFlying == true then return end
+        if IsIgnoredMover(obj) then return end
 
-        if obj:IsA("LinearVelocity") then
-            LastMoverDash = os.clock()
-            local scaling = false
+        task.defer(function()
+            if not dashEnabled or not obj or not obj.Parent then return end
+            if _G.SidAutoMobsFlying == true or IsIgnoredMover(obj) then return end
 
-            local function ApplyLV()
-                if scaling or not dashEnabled or not obj.Parent then return end
-                scaling = true
-                pcall(function()
-                    if obj.MaxForce < math.huge then
-                        obj.MaxForce = math.max(obj.MaxForce * dashMultiplier, 50000)
+            if obj:IsA("LinearVelocity") then
+                if not obj.Enabled then return end
+                if obj.VelocityConstraintMode == Enum.VelocityConstraintMode.Vector then
+                    local boosted = ClampScaledXZ(obj.VectorVelocity, dashMultiplier)
+                    if boosted then
+                        LastMoverDash = os.clock()
+                        obj.VectorVelocity = boosted
                     end
-                    if obj.VelocityConstraintMode == Enum.VelocityConstraintMode.Vector then
-                        obj.VectorVelocity = ScaleVectorXZ(obj.VectorVelocity, dashMultiplier)
-                    elseif obj.VelocityConstraintMode == Enum.VelocityConstraintMode.Plane then
-                        obj.PlaneVelocity = obj.PlaneVelocity * dashMultiplier
-                    elseif obj.VelocityConstraintMode == Enum.VelocityConstraintMode.Line then
-                        obj.LineVelocity = obj.LineVelocity * dashMultiplier
+                elseif obj.VelocityConstraintMode == Enum.VelocityConstraintMode.Plane then
+                    local pv = obj.PlaneVelocity
+                    if pv.Magnitude >= 8 then
+                        LastMoverDash = os.clock()
+                        obj.PlaneVelocity = pv.Unit * math.min(pv.Magnitude * dashMultiplier, MAX_SAFE_DASH_SPEED)
                     end
-                end)
-                scaling = false
+                elseif obj.VelocityConstraintMode == Enum.VelocityConstraintMode.Line then
+                    local lv = obj.LineVelocity
+                    if math.abs(lv) >= 8 then
+                        LastMoverDash = os.clock()
+                        local sign = (lv >= 0) and 1 or -1
+                        obj.LineVelocity = sign * math.min(math.abs(lv) * dashMultiplier, MAX_SAFE_DASH_SPEED)
+                    end
+                end
+
+            elseif obj:IsA("BodyVelocity") then
+                local mf = obj.MaxForce
+                if mf.X <= 0 and mf.Z <= 0 then return end
+                local boosted = ClampScaledXZ(obj.Velocity, dashMultiplier)
+                if boosted then
+                    LastMoverDash = os.clock()
+                    obj.Velocity = boosted
+                end
             end
-
-            task.defer(ApplyLV)
-            obj:GetPropertyChangedSignal("VectorVelocity"):Connect(ApplyLV)
-            obj:GetPropertyChangedSignal("PlaneVelocity"):Connect(ApplyLV)
-            obj:GetPropertyChangedSignal("LineVelocity"):Connect(ApplyLV)
-
-        elseif obj:IsA("BodyVelocity") then
-            LastMoverDash = os.clock()
-            local scaling = false
-
-            local function ApplyBV()
-                if scaling or not dashEnabled or not obj.Parent then return end
-                scaling = true
-                pcall(function()
-                    obj.MaxForce = Vector3.new(
-                        math.max(obj.MaxForce.X * dashMultiplier, 50000),
-                        obj.MaxForce.Y,
-                        math.max(obj.MaxForce.Z * dashMultiplier, 50000)
-                    )
-                    obj.Velocity = ScaleVectorXZ(obj.Velocity, dashMultiplier)
-                end)
-                scaling = false
-            end
-
-            task.defer(ApplyBV)
-            obj:GetPropertyChangedSignal("Velocity"):Connect(ApplyBV)
-
-        elseif obj:IsA("VectorForce") then
-            LastMoverDash = os.clock()
-            local scaling = false
-
-            local function ApplyVF()
-                if scaling or not dashEnabled or not obj.Parent then return end
-                scaling = true
-                pcall(function()
-                    obj.Force = ScaleVectorXZ(obj.Force, dashMultiplier)
-                end)
-                scaling = false
-            end
-
-            task.defer(ApplyVF)
-            obj:GetPropertyChangedSignal("Force"):Connect(ApplyVF)
-        end
+        end)
     end
 
-    -- Case 2: Fallback horizontal velocity boost (if game dashes without a physics mover)
+    -- Case 2: Clean 0.14s Fallback Boost (Live joystick steering + auto-stop)
     local function TriggerFallbackDashBoost(Char, Hum, HRP)
         if not dashEnabled or dashMultiplier <= 1.01 then return end
+        if _G.SidAutoMobsFlying == true then return end
+
         local now = os.clock()
-        if (now - LastFallbackDash) < 0.28 then return end
+        if (now - LastFallbackDash) < 0.30 then return end
         LastFallbackDash = now
 
-        task.delay(0.04, function()
-            -- Agar physics mover already boost ho chuka hai toh double-boost mat karo
-            if not dashEnabled or (os.clock() - LastMoverDash) < 0.25 then return end
+        task.delay(0.03, function()
+            if not dashEnabled or _G.SidAutoMobsFlying == true then return end
+            if (os.clock() - LastMoverDash) < 0.30 then return end
             if not (Char and Char.Parent and Hum and Hum.Parent and HRP and HRP.Parent) then return end
 
-            local dir = Hum.MoveDirection
-            if dir.Magnitude < 0.05 then
-                local lv = HRP.CFrame.LookVector
-                dir = Vector3.new(lv.X, 0, lv.Z)
-            end
-            if dir.Magnitude < 0.05 then return end
-            dir = dir.Unit
-
             local curVel = HRP.AssemblyLinearVelocity
-            local baseHoriz = math.max(Vector3.new(curVel.X, 0, curVel.Z).Magnitude, Hum.WalkSpeed * 1.8, 35)
-            local targetSpeed = math.clamp(baseHoriz * dashMultiplier, 35, 260)
+            local baseHoriz = math.max(Vector3.new(curVel.X, 0, curVel.Z).Magnitude, Hum.WalkSpeed * 1.6, 35)
+            local targetSpeed = math.clamp(baseHoriz * dashMultiplier, 35, MAX_SAFE_DASH_SPEED)
 
             local t0 = os.clock()
             local boostConn
             boostConn = RunService.Heartbeat:Connect(function()
-                if not dashEnabled or not HRP or not HRP.Parent or (os.clock() - t0) >= 0.16 then
+                if not dashEnabled
+                    or _G.SidAutoMobsFlying == true
+                    or not HRP or not HRP.Parent
+                    or not Hum or not Hum.Parent
+                    or (os.clock() - t0) >= 0.14 then
                     if boostConn then boostConn:Disconnect() end
                     return
                 end
-                local v = HRP.AssemblyLinearVelocity
-                HRP.AssemblyLinearVelocity = Vector3.new(dir.X * targetSpeed, v.Y, dir.Z * targetSpeed)
+
+                local dir = Hum.MoveDirection
+                if dir.Magnitude < 0.05 then
+                    local lv = HRP.CFrame.LookVector
+                    dir = Vector3.new(lv.X, 0, lv.Z)
+                end
+                if dir.Magnitude >= 0.05 then
+                    dir = dir.Unit
+                    local v = HRP.AssemblyLinearVelocity
+                    HRP.AssemblyLinearVelocity = Vector3.new(dir.X * targetSpeed, v.Y, dir.Z * targetSpeed)
+                end
             end)
         end)
     end
@@ -3327,20 +3326,18 @@ do
         local HRP = Char:FindFirstChild("HumanoidRootPart") or Char:WaitForChild("HumanoidRootPart", 10)
         if not (Hum and HRP) then return end
 
-        -- Catch physics movers & Dash SFX added to HumanoidRootPart
         Track(HRP.ChildAdded:Connect(function(child)
-            if child:IsA("LinearVelocity") or child:IsA("BodyVelocity") or child:IsA("VectorForce") then
+            if child:IsA("LinearVelocity") or child:IsA("BodyVelocity") then
                 HandleDashMover(child)
             elseif child:IsA("Sound") and string.find(string.lower(child.Name), "dash", 1, true) then
                 TriggerFallbackDashBoost(Char, Hum, HRP)
             end
         end))
 
-        -- Catch Dash / Dodge animation as backup trigger
         local Animator = Hum:FindFirstChildOfClass("Animator") or Hum:WaitForChild("Animator", 5)
         if Animator then
             Track(Animator.AnimationPlayed:Connect(function(track)
-                if not dashEnabled then return end
+                if not dashEnabled or _G.SidAutoMobsFlying == true then return end
                 local animName = string.lower(tostring(track.Name or ""))
                 local animObjName = track.Animation and string.lower(tostring(track.Animation.Name or "")) or ""
                 if string.find(animName, "dash", 1, true)
@@ -4473,11 +4470,10 @@ end,
 UtilityTab:CreateSection("Tween Mobs")
 
 --========================================================
--- DUNGEON HEROES | AUTO MOBS V5 (ZERO-BREAK + AREA LOCK)
--- * BodyVelocity + BodyGyro + Atomic PivotTo (100-1000+ Safe)
--- * Anti-Ragdoll & Safe Ground-Unstuck Landing
--- * Co-Op Exact Speed Lock + Sticky Target (No Weird Jumps)
--- * Smart Area-Wise Lock + Unattackable HP-Stall Skip
+-- DUNGEON HEROES | AUTO MOBS V6 (CLEAN FLIGHT + ZERO DESYNC)
+-- * Clean Root.CFrame + Dash-Ignored Hover Lock (No PivotTo Glitch)
+-- * Anti-Ragdoll & Safe Ground Landing (100-1000 Speed Safe)
+-- * Co-Op Exact Speed Lock + Sticky Target + Area-Wise Lock
 --========================================================
 do
     local Players = game:GetService("Players")
@@ -4507,7 +4503,6 @@ do
     local SupportPlatform = nil
     local OriginalCollideStates = {}
 
-    -- Area & Sticky Target State
     local CurrentTargetMob = nil
     local ActiveAreaAnchor = nil
     local TargetTrackedHP = nil
@@ -4521,9 +4516,6 @@ do
         Enum.HumanoidStateType.Seated,
     }
 
-    -- ==========================================
-    -- CHARACTER & PHYSICS STABILIZER HELPERS
-    -- ==========================================
     local function GetCharacter()
         return Player.Character
     end
@@ -4556,15 +4548,14 @@ do
         if SupportPlatform then table.insert(ignore, SupportPlatform) end
         params.FilterDescendantsInstances = ignore
 
-        -- Check slightly above player straight down to find true floor surface
         local origin = Root.Position + Vector3.new(0, 7, 0)
         local hit = workspace:Raycast(origin, Vector3.new(0, -14, 0), params)
         if hit and hit.Position.Y > (Root.Position.Y - 2.6) then
             local safePos = Vector3.new(Root.Position.X, hit.Position.Y + 4.2, Root.Position.Z)
             local _, yaw, _ = Root.CFrame:ToEulerAnglesYXZ()
-            local targetRootCF = CFrame.new(safePos) * CFrame.Angles(0, yaw, 0)
-            local offset = Char:GetPivot():ToObjectSpace(Root.CFrame)
-            Char:PivotTo(targetRootCF * offset:Inverse())
+            Root.CFrame = CFrame.new(safePos) * CFrame.Angles(0, yaw, 0)
+            Root.AssemblyLinearVelocity = Vector3.zero
+            Root.AssemblyAngularVelocity = Vector3.zero
         end
     end
 
@@ -4589,31 +4580,15 @@ do
     local function EnableFlightStabilizer(Root, Humanoid)
         if not Root then return end
 
-        local bv = Root:FindFirstChild("AutoMobs_ZeroVel")
+        local bv = Root:FindFirstChild("SidAutoMobs_Hover")
         if not bv then
             bv = Instance.new("BodyVelocity")
-            bv.Name = "AutoMobs_ZeroVel"
-            bv.MaxForce = Vector3.new(1e7, 1e7, 1e7)
+            bv.Name = "SidAutoMobs_Hover"
+            bv:SetAttribute("SidIgnoreDash", true) -- Dash Speed isse kabhi touch nahi karega!
+            bv.MaxForce = Vector3.new(1e5, 1e5, 1e5)
             bv.Velocity = Vector3.zero
-            bv.P = 1e5
+            bv.P = 12000
             bv.Parent = Root
-        else
-            bv.MaxForce = Vector3.new(1e7, 1e7, 1e7)
-            bv.Velocity = Vector3.zero
-        end
-
-        local bg = Root:FindFirstChild("AutoMobs_Upright")
-        if not bg then
-            bg = Instance.new("BodyGyro")
-            bg.Name = "AutoMobs_Upright"
-            bg.MaxTorque = Vector3.new(1e7, 0, 1e7) -- Locks pitch & roll upright, free yaw
-            bg.P = 50000
-            bg.D = 1000
-            bg.CFrame = CFrame.new()
-            bg.Parent = Root
-        else
-            bg.MaxTorque = Vector3.new(1e7, 0, 1e7)
-            bg.CFrame = CFrame.new()
         end
 
         if Humanoid then
@@ -4622,6 +4597,7 @@ do
             end
             Humanoid.PlatformStand = false
             Humanoid.Sit = false
+            Humanoid.AutoRotate = true
             local curState = Humanoid:GetState()
             if curState == Enum.HumanoidStateType.FallingDown
                 or curState == Enum.HumanoidStateType.Ragdoll
@@ -4633,10 +4609,10 @@ do
 
     local function DisableFlightStabilizer(Root, Humanoid)
         if Root then
-            local bv = Root:FindFirstChild("AutoMobs_ZeroVel")
-            if bv then bv:Destroy() end
-            local bg = Root:FindFirstChild("AutoMobs_Upright")
-            if bg then bg:Destroy() end
+            for _, name in ipairs({"SidAutoMobs_Hover", "AutoMobs_ZeroVel", "AutoMobs_Upright"}) do
+                local old = Root:FindFirstChild(name)
+                if old then old:Destroy() end
+            end
             Root.AssemblyLinearVelocity = Vector3.zero
             Root.AssemblyAngularVelocity = Vector3.zero
         end
@@ -4644,27 +4620,18 @@ do
             for _, st in ipairs(DISABLED_STATES) do
                 pcall(function() Humanoid:SetStateEnabled(st, true) end)
             end
+            Humanoid.PlatformStand = false
+            Humanoid.AutoRotate = true
         end
     end
 
-    -- Atomic full-character move: prevents joint stretching/breaking at 500-1000+ speed
-    local function PivotCharacterToRootCFrame(Char, Root, TargetRootCF)
-        local pivotOffset = Char:GetPivot():ToObjectSpace(Root.CFrame)
-        Char:PivotTo(TargetRootCF * pivotOffset:Inverse())
-        Root.AssemblyLinearVelocity = Vector3.zero
-        Root.AssemblyAngularVelocity = Vector3.zero
-    end
-
-    -- ==========================================
-    -- VISUAL PLATFORM & PET LOCK
-    -- ==========================================
     local function UpdateVisualPlatform(Root)
         if not (SupportPlatform and SupportPlatform.Parent) then
             local Platform = Instance.new("Part")
             Platform.Name = "AutoMobs_SupportPlatform"
             Platform.Size = PlatformSize
             Platform.Anchored = true
-            Platform.CanCollide = false -- Non-colliding while flying so player NEVER slams into it
+            Platform.CanCollide = false -- Pure visual while flying (zero slam/break)
             Platform.CanTouch = false
             Platform.CanQuery = false
             Platform.Transparency = 0.40
@@ -4732,22 +4699,15 @@ do
 
     local function GetMobHP(Mob)
         local hpAttr = Mob:GetAttribute("HP")
-        if hpAttr ~= nil then
-            return tonumber(hpAttr) or 0
-        end
+        if hpAttr ~= nil then return tonumber(hpAttr) or 0 end
         local hum = Mob:FindFirstChildOfClass("Humanoid")
-        if hum then
-            return hum.Health
-        end
-        return nil
+        return hum and hum.Health or nil
     end
 
     local function GetMobRoomIndex(Mob)
         for _, attr in ipairs({"Room", "RoomIndex", "RoomNumber", "Area", "AreaIndex", "Zone", "Section", "Stage", "Wave"}) do
             local v = Mob:GetAttribute(attr)
-            if tonumber(v) then
-                return tonumber(v)
-            end
+            if tonumber(v) then return tonumber(v) end
         end
         return nil
     end
@@ -4755,14 +4715,10 @@ do
     local function IsMobExplicitlyLocked(Mob)
         if Mob:FindFirstChildOfClass("ForceField") then return true end
         for _, attr in ipairs({"Invulnerable", "Immune", "Untargetable", "Locked", "IsLocked", "Invincible", "Untouchable"}) do
-            if Mob:GetAttribute(attr) == true then
-                return true
-            end
+            if Mob:GetAttribute(attr) == true then return true end
         end
         for _, attr in ipairs({"Attackable", "CanTakeDamage", "Targetable", "Damageable"}) do
-            if Mob:GetAttribute(attr) == false then
-                return true
-            end
+            if Mob:GetAttribute(attr) == false then return true end
         end
         return false
     end
@@ -4784,9 +4740,7 @@ do
 
         if not IgnoreCooldown then
             local cd = UnattackableUntil[Mob]
-            if cd and os.clock() < cd then
-                return false
-            end
+            if cd and os.clock() < cd then return false end
         end
 
         return true
@@ -4835,7 +4789,6 @@ do
     local function PickBestMobInArea(Root)
         local AllMobs = CollectValidMobs(false)
         if #AllMobs == 0 then
-            -- If everything was temporarily on unattackable cooldown, retry them cleanly
             AllMobs = CollectValidMobs(true)
             if #AllMobs == 0 then
                 CurrentTargetMob = nil
@@ -4844,16 +4797,13 @@ do
             end
         end
 
-        -- 1. Keep sticky target if still valid (eliminates co-op ping-pong & weird jumps)
         if CurrentTargetMob and IsMobValidTarget(CurrentTargetMob, false) then
-            local curRoot = GetMobRoot(CurrentTargetMob)
-            if curRoot then
+            if GetMobRoot(CurrentTargetMob) then
                 return CurrentTargetMob
             end
         end
         CurrentTargetMob = nil
 
-        -- 2. Room-Attribute Priority: ALWAYS finish the lowest numbered room/area first
         local LowestRoom = math.huge
         for _, entry in ipairs(AllMobs) do
             if entry.Room and entry.Room < LowestRoom then
@@ -4869,17 +4819,13 @@ do
                     table.insert(roomPool, entry)
                 end
             end
-            if #roomPool > 0 then
-                Pool = roomPool
-            end
+            if #roomPool > 0 then Pool = roomPool end
         end
 
-        -- 3. Spatial Area-Cluster Lock: finish ALL mobs in the current area before moving to next area
         local CandidatePool = Pool
         if ActiveAreaAnchor then
             local InArea = {}
             local Queue = {}
-
             for i, entry in ipairs(Pool) do
                 local d = (entry.Pos - ActiveAreaAnchor).Magnitude
                 local dy = math.abs(entry.Pos.Y - ActiveAreaAnchor.Y)
@@ -4889,7 +4835,6 @@ do
                 end
             end
 
-            -- BFS expand connected mobs inside the same room/area
             local head = 1
             while head <= #Queue do
                 local cur = Queue[head]
@@ -4909,12 +4854,10 @@ do
             if #Queue > 0 then
                 CandidatePool = Queue
             else
-                -- Current area 100% cleared -> unlock anchor to advance to next area!
                 ActiveAreaAnchor = nil
             end
         end
 
-        -- 4. Pick closest mob in the locked area (or closest next area if current area cleared)
         local BestEntry = nil
         local BestDist = math.huge
         local RefPos = ActiveAreaAnchor or Root.Position
@@ -4938,12 +4881,10 @@ do
         return nil
     end
 
-    -- ==========================================
-    -- STOP / START AUTO MOBS
-    -- ==========================================
     local function StopAutoMobs()
         AutoMobs = false
         IsFlying = false
+        _G.SidAutoMobsFlying = false
         CurrentTargetMob = nil
         ActiveAreaAnchor = nil
         table.clear(UnattackableUntil)
@@ -4979,19 +4920,23 @@ do
             ActiveAreaAnchor = startRoot.Position
         end
 
-        -- 1. Stepped: Continuous NoClip so limbs/walls never snag
+        -- Pre-physics: NoClip + velocity kill
         NoClipConnection = RunService.Stepped:Connect(function()
             if not AutoMobs or RunId ~= CurrentRun then return end
             if IsFlying then
                 ApplyNoClipStep()
+                local Root = GetHRP()
+                if Root then
+                    Root.AssemblyLinearVelocity = Vector3.zero
+                    Root.AssemblyAngularVelocity = Vector3.zero
+                end
             end
         end)
 
-        -- 2. Heartbeat: Exact-Speed Atomic Pivot Flight + Area-Lock Monitor
+        -- Post-physics: Clean Root.CFrame exact-speed movement (no PivotTo distortion!)
         MovementConnection = RunService.Heartbeat:Connect(function(DeltaTime)
             if not AutoMobs or RunId ~= CurrentRun then return end
 
-            -- Strict dt clamp prevents giant lag-spike teleports in co-op
             local StepTime = math.clamp(DeltaTime, 0.001, 0.035)
 
             pcall(function()
@@ -5001,15 +4946,16 @@ do
 
                 if not Root or not Hum or Hum.Health <= 0 then
                     IsFlying = false
+                    _G.SidAutoMobsFlying = false
                     return
                 end
 
                 local Mob = PickBestMobInArea(Root)
 
-                -- No mobs left anywhere -> safely land & unlock player
                 if not Mob then
                     if IsFlying then
                         IsFlying = false
+                        _G.SidAutoMobsFlying = false
                         DisableFlightStabilizer(Root, Hum)
                         RestoreCharacterCollision()
                         DestroyPlatform()
@@ -5023,8 +4969,8 @@ do
                     return
                 end
 
-                -- Active valid mob found -> engage full zero-break physics lock
                 IsFlying = true
+                _G.SidAutoMobsFlying = true
                 ApplyNoClipStep()
                 EnableFlightStabilizer(Root, Hum)
 
@@ -5038,15 +4984,18 @@ do
                 if Dist > 0.05 then
                     local Step = math.min(MoveSpeed * StepTime, Dist)
                     local NextPos = Root.Position + (Diff.Unit * Step)
-                    PivotCharacterToRootCFrame(Char, Root, CFrame.new(NextPos) * UprightRot)
+                    Root.CFrame = CFrame.new(NextPos) * UprightRot
                 else
-                    PivotCharacterToRootCFrame(Char, Root, CFrame.new(TargetPos) * UprightRot)
+                    Root.CFrame = CFrame.new(TargetPos) * UprightRot
                 end
+
+                Root.AssemblyLinearVelocity = Vector3.zero
+                Root.AssemblyAngularVelocity = Vector3.zero
 
                 UpdateVisualPlatform(Root)
                 LockPetToPlayer(Root)
 
-                -- Live Unattackable Guard: if hovering over a locked-area mob & HP never drops, switch!
+                -- Live Unattackable Guard (skips locked boss/next-area mob if HP doesn't drop)
                 local HorizDist = Vector3.new(MobRoot.Position.X - Root.Position.X, 0, MobRoot.Position.Z - Root.Position.Z).Magnitude
                 if HorizDist <= 18 then
                     local curHP = GetMobHP(Mob)
@@ -5055,11 +5004,10 @@ do
                             TargetTrackedHP = curHP
                             TargetLastDamageTime = os.clock()
                         elseif IsAnyCombatAuraActive() and (os.clock() - TargetLastDamageTime) >= UNATTACKABLE_TIMEOUT then
-                            -- Only skip if another alive mob exists in a different area
                             local allValid = CollectValidMobs(false)
                             local hasOtherAreaMob = false
                             for _, entry in ipairs(allValid) do
-                                if entry.Mob ~= Mob and (entry.Pos - MobRoot.Position).Magnitude > 45 then
+                                if entry.Mob ~= Mob and (entry.Pos - MobRoot.Position).Magnitude > 25 then
                                     hasOtherAreaMob = true
                                     break
                                 end
@@ -5068,12 +5016,6 @@ do
                             if hasOtherAreaMob then
                                 local untilT = os.clock() + UNATTACKABLE_COOLDOWN
                                 UnattackableUntil[Mob] = untilT
-                                -- Also briefly cool down unattackable mobs right next to this locked mob
-                                for _, entry in ipairs(allValid) do
-                                    if (entry.Pos - MobRoot.Position).Magnitude <= 35 then
-                                        UnattackableUntil[entry.Mob] = untilT
-                                    end
-                                end
                                 CurrentTargetMob = nil
                                 ActiveAreaAnchor = nil
                             else
@@ -5082,16 +5024,12 @@ do
                         end
                     end
                 else
-                    -- Reset stall timer while still flying toward target
                     TargetLastDamageTime = os.clock()
                 end
             end)
         end)
     end
 
-    -- ==========================================
-    -- UI CONTROLS (SAME FLAGS — CONFIG SAFE!)
-    -- ==========================================
     UtilityTab:CreateToggle({
         Name = "Auto Mobs",
         CurrentValue = false,
@@ -5129,9 +5067,10 @@ do
         end
     })
 
-    -- RESPAWN CLEANUP
     Player.CharacterAdded:Connect(function()
         table.clear(OriginalCollideStates)
+        IsFlying = false
+        _G.SidAutoMobsFlying = false
         CurrentTargetMob = nil
         ActiveAreaAnchor = nil
         table.clear(UnattackableUntil)
@@ -5145,7 +5084,7 @@ do
         end
     end)
 end
-                    
+
 --====================================================
 -- DUNGEON HEROES | 1-TOGGLE AUTO SKILL AURA (SLOTS 1-5)
 -- Dynamically Reads Slots 1-4 + Slot 5 (Mastery Ultimate)
@@ -5170,10 +5109,10 @@ do
     local MasteriesSystem = require(ReplicatedStorage.Systems.Masteries)
 
     -- Uses your existing CONFIG table if present, otherwise defaults
-    local SKILL_AURA_CONFIG = CONFIG or {
-        KillRange = 500,
-        AttackSpeed = 0.1
-    }
+        local SKILL_AURA_CONFIG = {
+        KillRange = 200,
+        AttackSpeed = 0.001
+	}
 
     -- ==========================================
     -- LIVE AUTO-DETECTION FOR SLOTS 1-4 & SLOT 5 (ULTIMATE)
@@ -5365,7 +5304,7 @@ do
                         task.wait(0.03)
                         InterruptSkillRemote:FireServer()
 
-                        local Speed = (CONFIG and CONFIG.AttackSpeed) or SKILL_AURA_CONFIG.AttackSpeed or 0.15
+                        local Speed = SKILL_AURA_CONFIG.AttackSpeed
                         task.wait(Speed)
                     end
                 else
