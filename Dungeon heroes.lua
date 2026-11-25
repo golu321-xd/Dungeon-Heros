@@ -3176,8 +3176,10 @@ do
 end
 
 -- ==========================================
--- DASH SPEED CONTROLS (ZERO PHYSICS LOCK — SAFE CFRAME BOOST)
--- Never touches game's LinearVelocity / BodyVelocity / MaxForce!
+-- DASH SPEED CONTROLS + DUNGEON ROLL UNSTUCK FIX
+-- * Fixes stuck RollVelocity / RollAlign / AutoRotate=false in Dungeons
+-- * Watchdog works even when Dash Speed toggle is OFF
+-- * Exact RollVelocity + RollInvulnerableUntil detection
 -- ==========================================
 MovementTab:CreateSection("Dash Speed Controls")
 do
@@ -3187,8 +3189,9 @@ do
 
     local minMult = 1.0
     local maxMult = 5.0
-    local DASH_BOOST_DURATION = 0.18
-    local BASE_EXTRA_SPEED = 55 -- Studs/sec per +1.0x multiplier
+    local MAX_ROLL_DURATION = 0.40   -- Normal dash ~0.32s; isse zyada ON raha toh auto-unstuck
+    local BOOST_MAX_DURATION = 0.34
+    local BASE_EXTRA_SPEED = 65      -- Extra studs/sec per +1.0x multiplier
 
     local dashEnabled = false
     local dashMultiplier = 2.0
@@ -3197,8 +3200,15 @@ do
     local DashSlider = nil
     local DashInput = nil
     local CharConns = {}
+    local WatchdogConn = nil
     local ActiveBoostConn = nil
-    local LastDashBoost = 0
+
+    local dashActive = false
+    local dashStartTime = 0
+    local lastRollAttrTime = 0
+    local lastForceOffTime = 0
+    local isForcingOff = false
+    local HookedRollVel = nil
 
     local function StopActiveBoost()
         if ActiveBoostConn then
@@ -3209,10 +3219,16 @@ do
 
     local function ClearCharConns()
         StopActiveBoost()
+        if WatchdogConn then
+            pcall(function() WatchdogConn:Disconnect() end)
+            WatchdogConn = nil
+        end
         for _, c in ipairs(CharConns) do
             pcall(function() c:Disconnect() end)
         end
         table.clear(CharConns)
+        HookedRollVel = nil
+        dashActive = false
     end
 
     local function Track(conn)
@@ -3220,26 +3236,41 @@ do
         return conn
     end
 
-    local function IsIgnoredChild(obj)
-        if not obj then return true end
-        if obj:GetAttribute("SidIgnoreDash") == true then return true end
-        local n = string.lower(obj.Name)
-        if string.find(n, "automobs", 1, true)
-            or string.find(n, "sid", 1, true)
-            or string.find(n, "admin", 1, true) then
-            return true
-        end
-        return false
+    -- Forces stuck RollVelocity, RollAlign & AutoRotate=false back to normal cleanly
+    local function ForceUnstuckRoll(Hum, HRP)
+        if not HRP or not HRP.Parent then return end
+        isForcingOff = true
+        lastForceOffTime = os.clock()
+        dashActive = false
+        StopActiveBoost()
+
+        pcall(function()
+            local rv = HRP:FindFirstChild("RollVelocity")
+            if rv and rv:IsA("LinearVelocity") then
+                rv.Enabled = false
+                rv.VectorVelocity = Vector3.zero
+            end
+
+            local ra = HRP:FindFirstChild("RollAlign")
+            if ra and ra:IsA("AlignOrientation") then
+                ra.Enabled = false
+            end
+
+            if Hum and Hum.Parent then
+                Hum.AutoRotate = true
+            end
+
+            local v = HRP.AssemblyLinearVelocity
+            HRP.AssemblyLinearVelocity = Vector3.new(0, v.Y, 0)
+        end)
+
+        isForcingOff = false
     end
 
-    -- Pure wall-safe CFrame boost (reads live joystick MoveDirection, never touches movers/velocity)
-    local function StartSafeDashBoost(Char, Hum, HRP, TriggerObj)
+    -- Wall-safe CFrame extra speed boost during a genuine dash
+    local function StartSafeDashBoost(Char, Hum, HRP)
         if not dashEnabled or dashMultiplier <= 1.01 then return end
         if _G.SidAutoMobsFlying == true then return end
-
-        local now = os.clock()
-        if (now - LastDashBoost) < 0.30 then return end
-        LastDashBoost = now
 
         StopActiveBoost()
 
@@ -3256,17 +3287,29 @@ do
         ActiveBoostConn = RunService.Heartbeat:Connect(function(dt)
             local elapsed = os.clock() - startTime
             if not dashEnabled
+                or not dashActive
                 or _G.SidAutoMobsFlying == true
-                or elapsed >= DASH_BOOST_DURATION
+                or elapsed >= BOOST_MAX_DURATION
                 or not (Char and Char.Parent and Hum and Hum.Parent and HRP and HRP.Parent)
-                or Hum.Health <= 0
-                or (TriggerObj and not TriggerObj.Parent) then
+                or Hum.Health <= 0 then
+                StopActiveBoost()
+                return
+            end
+
+            local rv = HRP:FindFirstChild("RollVelocity")
+            if rv and rv:IsA("LinearVelocity") and not rv.Enabled then
                 StopActiveBoost()
                 return
             end
 
             local stepDt = math.clamp(dt, 0.001, 0.035)
             local dir = Hum.MoveDirection
+            if dir.Magnitude < 0.05 and rv and rv:IsA("LinearVelocity") then
+                local rvHoriz = Vector3.new(rv.VectorVelocity.X, 0, rv.VectorVelocity.Z)
+                if rvHoriz.Magnitude >= 5 then
+                    dir = rvHoriz
+                end
+            end
             if dir.Magnitude < 0.05 then
                 local lv = HRP.CFrame.LookVector
                 dir = Vector3.new(lv.X, 0, lv.Z)
@@ -3286,6 +3329,43 @@ do
         end)
     end
 
+    local function OnRealDashStarted(Char, Hum, HRP)
+        local now = os.clock()
+        if dashActive and (now - dashStartTime) < 0.15 then return end
+        dashActive = true
+        dashStartTime = now
+        StartSafeDashBoost(Char, Hum, HRP)
+    end
+
+    local function HookRollVelocityObj(Char, Hum, HRP, rv)
+        if not (rv and rv:IsA("LinearVelocity")) or HookedRollVel == rv then return end
+        HookedRollVel = rv
+
+        Track(rv:GetPropertyChangedSignal("Enabled"):Connect(function()
+            if isForcingOff then return end
+            if rv.Enabled then
+                local now = os.clock()
+                local isGenuineNewDash = ((now - lastRollAttrTime) < 0.25) or ((now - lastForceOffTime) > 0.30)
+                if isGenuineNewDash then
+                    OnRealDashStarted(Char, Hum, HRP)
+                else
+                    -- Stuck loop tried to re-enable RollVelocity without a new dash -> kill it
+                    ForceUnstuckRoll(Hum, HRP)
+                end
+            else
+                dashActive = false
+                StopActiveBoost()
+                if Hum and Hum.Parent then
+                    Hum.AutoRotate = true
+                end
+            end
+        end))
+
+        if rv.Enabled then
+            OnRealDashStarted(Char, Hum, HRP)
+        end
+    end
+
     local function BindDashCharacter(Char)
         ClearCharConns()
         if not Char then return end
@@ -3294,31 +3374,55 @@ do
         local HRP = Char:FindFirstChild("HumanoidRootPart") or Char:WaitForChild("HumanoidRootPart", 10)
         if not (Hum and HRP) then return end
 
-        -- Read-only detection: NEVER modifies the child mover!
-        Track(HRP.ChildAdded:Connect(function(child)
-            if not dashEnabled or _G.SidAutoMobsFlying == true or IsIgnoredChild(child) then return end
-
-            if child:IsA("LinearVelocity") or child:IsA("BodyVelocity") then
-                StartSafeDashBoost(Char, Hum, HRP, child)
-            elseif child:IsA("Sound") and string.find(string.lower(child.Name), "dash", 1, true) then
-                StartSafeDashBoost(Char, Hum, HRP, nil)
+        -- 1. Exact game Dash attribute signal (RollInvulnerableUntil)
+        local lastAttrVal = tonumber(Char:GetAttribute("RollInvulnerableUntil")) or 0
+        Track(Char:GetAttributeChangedSignal("RollInvulnerableUntil"):Connect(function()
+            local newVal = tonumber(Char:GetAttribute("RollInvulnerableUntil")) or 0
+            if newVal > lastAttrVal then
+                lastAttrVal = newVal
+                lastRollAttrTime = os.clock()
+                OnRealDashStarted(Char, Hum, HRP)
             end
         end))
 
-        local Animator = Hum:FindFirstChildOfClass("Animator") or Hum:WaitForChild("Animator", 5)
-        if Animator then
-            Track(Animator.AnimationPlayed:Connect(function(track)
-                if not dashEnabled or _G.SidAutoMobsFlying == true then return end
-                local animName = string.lower(tostring(track.Name or ""))
-                local animObjName = track.Animation and string.lower(tostring(track.Animation.Name or "")) or ""
-                if string.find(animName, "dash", 1, true)
-                    or string.find(animName, "dodge", 1, true)
-                    or string.find(animObjName, "dash", 1, true)
-                    or string.find(animObjName, "dodge", 1, true) then
-                    StartSafeDashBoost(Char, Hum, HRP, nil)
-                end
-            end))
+        -- 2. Hook existing or newly added RollVelocity
+        local existingRV = HRP:FindFirstChild("RollVelocity")
+        if existingRV then
+            HookRollVelocityObj(Char, Hum, HRP, existingRV)
         end
+
+        Track(HRP.ChildAdded:Connect(function(child)
+            if child.Name == "RollVelocity" and child:IsA("LinearVelocity") then
+                HookRollVelocityObj(Char, Hum, HRP, child)
+            end
+        end))
+
+        -- 3. Continuous Auto-Unstuck Watchdog (Always ON — even if Dash Speed toggle is OFF!)
+        WatchdogConn = RunService.Heartbeat:Connect(function()
+            if not (Char and Char.Parent and Hum and Hum.Parent and HRP and HRP.Parent) then return end
+
+            local rv = HRP:FindFirstChild("RollVelocity")
+            local ra = HRP:FindFirstChild("RollAlign")
+            local rvOn = (rv and rv:IsA("LinearVelocity") and rv.Enabled) == true
+            local raOn = (ra and ra:IsA("AlignOrientation") and ra.Enabled) == true
+
+            if rvOn or raOn then
+                if not dashActive then
+                    dashActive = true
+                    dashStartTime = os.clock()
+                elseif (os.clock() - dashStartTime) >= MAX_ROLL_DURATION then
+                    ForceUnstuckRoll(Hum, HRP)
+                end
+            else
+                if dashActive then
+                    dashActive = false
+                    StopActiveBoost()
+                end
+                if not Hum.AutoRotate and (os.clock() - dashStartTime) >= MAX_ROLL_DURATION then
+                    Hum.AutoRotate = true
+                end
+            end
+        end)
     end
 
     if Player.Character then
