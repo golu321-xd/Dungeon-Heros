@@ -2913,6 +2913,1034 @@ do
     end)
 end
 
+-- ==========================================
+-- LIVE CURRENCY HUD V2 (ORIGINAL LOGOS + EXPANDABLE DRAWER)
+-- Top Bar: Keys, MagicDust, Crystals + Side Arrow (▼/▲)
+-- Drawer: All 15+ Currencies | Real-Time 0.1s + Instant .Changed
+-- ==========================================
+MiscellaneousTab:CreateSection("Live Currency HUD")
+do
+    local Players = game:GetService("Players")
+    local RS = game:GetService("ReplicatedStorage")
+    local CoreGui = game:GetService("CoreGui")
+    local HttpService = game:GetService("HttpService")
+    local UserInputService = game:GetService("UserInputService")
+    local TweenService = game:GetService("TweenService")
+
+    local LocalPlayer = Players.LocalPlayer
+
+    local CACHE_FOLDER = "SidDungeonHeroes"
+    local ICON_CACHE_FILE = CACHE_FOLDER .. "/.currency_icons.json"
+
+    local TOP_CURRENCIES = { "Keys", "MagicDust", "Crystals" }
+    local TOP_SET = { Keys = true, MagicDust = true, Crystals = true }
+
+    local EXTRA_ORDER = {
+        "Marks",
+        "VoidStar",
+        "DragonCoin",
+        "BananaBunch",
+        "CandyCorn",
+        "DemonCoin",
+        "ArcaneCoin",
+        "FestiveCookie",
+        "LoveGift",
+        "HelmetCoin",
+        "AnimeCoin",
+        "BeachCoin",
+    }
+
+    local CURRENCY_META = {
+        Keys          = { Label = "Keys",           Short = "KY", Color = Color3.fromRGB(245, 220, 120) },
+        MagicDust     = { Label = "Magic Dust",     Short = "MD", Color = Color3.fromRGB(205, 115, 255) },
+        Crystals      = { Label = "Crystals",       Short = "CR", Color = Color3.fromRGB(75, 210, 255)  },
+        Marks         = { Label = "Marks",          Short = "MK", Color = Color3.fromRGB(255, 195, 70)  },
+        CandyCorn     = { Label = "Candy Corn",     Short = "CC", Color = Color3.fromRGB(255, 155, 55)  },
+        FestiveCookie = { Label = "Festive Cookie", Short = "FC", Color = Color3.fromRGB(225, 165, 105) },
+        VoidStar      = { Label = "Void Star",      Short = "VS", Color = Color3.fromRGB(165, 95, 255)  },
+        LoveGift      = { Label = "Love Gift",      Short = "LG", Color = Color3.fromRGB(255, 105, 165) },
+        BananaBunch   = { Label = "Banana Bunch",   Short = "BB", Color = Color3.fromRGB(255, 230, 75)  },
+        HelmetCoin    = { Label = "Helmet Coin",    Short = "HC", Color = Color3.fromRGB(170, 195, 225) },
+        AnimeCoin     = { Label = "Anime Coin",     Short = "AC", Color = Color3.fromRGB(255, 115, 200) },
+        BeachCoin     = { Label = "Beach Coin",     Short = "BC", Color = Color3.fromRGB(70, 220, 210)  },
+        DemonCoin     = { Label = "Demon Coin",     Short = "DC", Color = Color3.fromRGB(255, 85, 85)   },
+        DragonCoin    = { Label = "Dragon Coin",    Short = "DR", Color = Color3.fromRGB(255, 140, 60)  },
+        ArcaneCoin    = { Label = "Arcane Coin",    Short = "AR", Color = Color3.fromRGB(115, 155, 255) },
+    }
+
+    local HUDEnabled = false
+    local DungeonOnly = false
+    local IsExpanded = false
+    local WorkerId = 0
+
+    local ScreenGui = nil
+    local OuterHolder = nil
+    local TopBar = nil
+    local ArrowBtn = nil
+    local ArrowText = nil
+    local DrawerFrame = nil
+    local DrawerScroll = nil
+
+    local ValueLabels = {}
+    local IconImages = {}
+    local FallbackBadges = {}
+    local GainLabels = {}
+    local GainTokens = {}
+    local LastValues = {}
+    local DrawerCards = {}
+
+    local IconCache = {}
+    local BoundObjs = {}
+    local BoundConns = {}
+    local FolderChildConn = nil
+    local BoundFolderRef = nil
+    local LastIconScan = 0
+
+    -- ==========================================
+    -- HELPERS
+    -- ==========================================
+    local function FormatNumber(n)
+        local num = math.floor(tonumber(n) or 0)
+        local str = tostring(num)
+        while true do
+            local k
+            str, k = string.gsub(str, "^(-?%d+)(%d%d%d)", "%1,%2")
+            if k == 0 then break end
+        end
+        return str
+    end
+
+    local function FormatCamel(str)
+        local s = tostring(str or "")
+        s = (string.gsub(s, "(%l)(%u)", "%1 %2"))
+        s = (string.gsub(s, "_", " "))
+        return s
+    end
+
+    local function GetMeta(key)
+        local m = CURRENCY_META[key]
+        if m then return m end
+        local clean = FormatCamel(key)
+        local short = string.upper(string.sub(key, 1, 2))
+        m = { Label = clean, Short = short, Color = Color3.fromRGB(150, 185, 240) }
+        CURRENCY_META[key] = m
+        return m
+    end
+
+    local function NormalizeKey(s)
+        return (string.lower(tostring(s or "")):gsub("[^%w]", ""))
+    end
+
+    local function NormalizeImageId(val)
+        if type(val) == "number" and val > 0 then
+            return "rbxassetid://" .. tostring(math.floor(val))
+        elseif type(val) == "string" and #val > 0 then
+            if string.find(val, "rbxassetid://", 1, true)
+                or string.find(val, "roblox.com/asset", 1, true)
+                or string.find(val, "rbxthumb://", 1, true) then
+                if val ~= "rbxassetid://0" then
+                    return val
+                end
+            elseif string.match(val, "^%d+$") and val ~= "0" then
+                return "rbxassetid://" .. val
+            end
+        end
+        return nil
+    end
+
+    local function IsInLobby()
+        return (workspace:FindFirstChild("QueueRings") ~= nil)
+            or (workspace:FindFirstChild("MenuRings") ~= nil)
+    end
+
+    local function GetCurrenciesFolder()
+        local pGui = LocalPlayer:FindFirstChild("PlayerGui")
+        local prof = pGui and pGui:FindFirstChild("Profile")
+        local cur = prof and prof:FindFirstChild("Currencies")
+        if cur then return cur end
+
+        local ok, p2 = pcall(function()
+            local sys = RS:FindFirstChild("Systems")
+            local mod = sys and sys:FindFirstChild("Profile")
+            if mod then
+                return require(mod):GetProfile(LocalPlayer)
+            end
+            return nil
+        end)
+        if ok and typeof(p2) == "Instance" then
+            return p2:FindFirstChild("Currencies")
+        end
+        return nil
+    end
+
+    -- ==========================================
+    -- ICON DISK CACHE (PERSISTS LOBBY -> DUNGEON)
+    -- ==========================================
+    local function LoadIconCache()
+        if not (isfile and readfile) then return end
+        pcall(function()
+            if not isfile(ICON_CACHE_FILE) then return end
+            local raw = readfile(ICON_CACHE_FILE)
+            local dec = HttpService:JSONDecode(raw)
+            if type(dec) == "table" then
+                for k, v in pairs(dec) do
+                    local img = NormalizeImageId(v)
+                    if img then IconCache[k] = img end
+                end
+            end
+        end)
+    end
+
+    local function SaveIconCache()
+        if not writefile then return end
+        pcall(function()
+            if makefolder and isfolder and not isfolder(CACHE_FOLDER) then
+                makefolder(CACHE_FOLDER)
+            end
+            writefile(ICON_CACHE_FILE, HttpService:JSONEncode(IconCache))
+        end)
+    end
+
+    -- ==========================================
+    -- ORIGINAL GAME LOGO EXTRACTOR
+    -- ==========================================
+    local function BuildAliasMap(currencyKeys)
+        local aliasToKey = {}
+        for _, key in ipairs(currencyKeys) do
+            local nk = NormalizeKey(key)
+            aliasToKey[nk] = key
+            if string.sub(nk, -1) == "s" and #nk > 3 then
+                aliasToKey[string.sub(nk, 1, -2)] = key
+            else
+                aliasToKey[nk .. "s"] = key
+            end
+            local meta = GetMeta(key)
+            aliasToKey[NormalizeKey(meta.Label)] = key
+        end
+        aliasToKey["dust"] = "MagicDust"
+        aliasToKey["gem"] = "Crystals"
+        aliasToKey["gems"] = "Crystals"
+        aliasToKey["banana"] = "BananaBunch"
+        aliasToKey["bananas"] = "BananaBunch"
+        return aliasToKey
+    end
+
+    local function ExtractImageFromTable(tbl)
+        if type(tbl) ~= "table" then return nil end
+        for _, field in ipairs({
+            "Image", "Icon", "ImageId", "IconId", "Texture", "TextureId",
+            "CurrencyIcon", "AssetId", "Sprite", "Img"
+        }) do
+            local img = NormalizeImageId(tbl[field])
+            if img then return img end
+        end
+        return nil
+    end
+
+    local function ApplyIconToUI(key, imgId)
+        if not imgId then return end
+        local imgLbl = IconImages[key]
+        local badge = FallbackBadges[key]
+        if imgLbl and imgLbl.Parent then
+            imgLbl.Image = imgId
+            imgLbl.Visible = true
+        end
+        if badge and badge.Parent then
+            badge.Visible = false
+        end
+    end
+
+    local function ScanOriginalIcons(currencyKeys)
+        local aliasToKey = BuildAliasMap(currencyKeys)
+        local changed = false
+
+        local function RecordIcon(key, img)
+            if key and img and IconCache[key] ~= img then
+                IconCache[key] = img
+                changed = true
+                ApplyIconToUI(key, img)
+            end
+        end
+
+        -- 1. ItemList & Systems.Items
+        pcall(function()
+            local itemList = nil
+            local wm = RS:FindFirstChild("WorldModules")
+            local itmFolder = wm and wm:FindFirstChild("Items")
+            local ilMod = itmFolder and itmFolder:FindFirstChild("ItemList")
+            if ilMod and ilMod:IsA("ModuleScript") then
+                local ok, t = pcall(require, ilMod)
+                if ok and type(t) == "table" then itemList = t end
+            end
+
+            if not itemList then
+                local sys = RS:FindFirstChild("Systems")
+                local iMod = sys and sys:FindFirstChild("Items")
+                if iMod and iMod:IsA("ModuleScript") then
+                    local ok, mod = pcall(require, iMod)
+                    if ok and type(mod) == "table" and type(mod.GetItemList) == "function" then
+                        local ok2, t = pcall(function() return mod:GetItemList() end)
+                        if ok2 and type(t) == "table" then itemList = t end
+                    end
+                end
+            end
+
+            if type(itemList) == "table" then
+                for itemId, data in pairs(itemList) do
+                    if type(data) == "table" then
+                        local matchedKey = aliasToKey[NormalizeKey(itemId)]
+                            or (data.Currency and aliasToKey[NormalizeKey(data.Currency)])
+                            or (data.CurrencyId and aliasToKey[NormalizeKey(data.CurrencyId)])
+                            or (data.DisplayName and aliasToKey[NormalizeKey(data.DisplayName)])
+
+                        if matchedKey then
+                            local isCurrencyCat = (data.Category == "Currency")
+                                or (data.Type == "Currency")
+                                or (NormalizeKey(itemId) == NormalizeKey(matchedKey))
+                            if isCurrencyCat or not IconCache[matchedKey] then
+                                local img = ExtractImageFromTable(data)
+                                if img then RecordIcon(matchedKey, img) end
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+
+        -- 2. Currency modules in Systems / WorldModules
+        pcall(function()
+            local containers = {
+                RS:FindFirstChild("Systems"),
+                RS:FindFirstChild("WorldModules"),
+            }
+            for _, folder in ipairs(containers) do
+                if folder then
+                    for _, desc in ipairs(folder:GetDescendants()) do
+                        if desc:IsA("ModuleScript") and string.find(string.lower(desc.Name), "currenc", 1, true) then
+                            local ok, mod = pcall(require, desc)
+                            if ok and type(mod) == "table" then
+                                local tablesToCheck = { mod }
+                                for _, fnName in ipairs({ "GetCurrencies", "GetCurrencyList", "GetAllCurrencies" }) do
+                                    if type(mod[fnName]) == "function" then
+                                        local ok2, res = pcall(function() return mod[fnName](mod) end)
+                                        if ok2 and type(res) == "table" then
+                                            table.insert(tablesToCheck, res)
+                                        end
+                                    end
+                                end
+                                for _, tbl in ipairs(tablesToCheck) do
+                                    for k, v in pairs(tbl) do
+                                        if type(v) == "table" then
+                                            local matchedKey = aliasToKey[NormalizeKey(k)]
+                                                or (v.Name and aliasToKey[NormalizeKey(v.Name)])
+                                                or (v.Id and aliasToKey[NormalizeKey(v.Id)])
+                                            if matchedKey then
+                                                local img = ExtractImageFromTable(v)
+                                                if img then RecordIcon(matchedKey, img) end
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+
+        -- 3. Live PlayerGui Icons
+        pcall(function()
+            local pGui = LocalPlayer:FindFirstChild("PlayerGui")
+            if not pGui then return end
+
+            local function FindBestIconInside(container)
+                for _, d in ipairs(container:GetDescendants()) do
+                    if d:IsA("ImageLabel") or d:IsA("ImageButton") then
+                        local dn = string.lower(d.Name)
+                        if dn == "icon" or dn == "logo" or dn == "image" or string.find(dn, "icon", 1, true) then
+                            local img = NormalizeImageId(d.Image)
+                            if img then return img end
+                        end
+                    end
+                end
+                for _, d in ipairs(container:GetDescendants()) do
+                    if d:IsA("ImageLabel") then
+                        local dn = string.lower(d.Name)
+                        if not string.find(dn, "bg", 1, true)
+                            and not string.find(dn, "back", 1, true)
+                            and not string.find(dn, "shadow", 1, true)
+                            and not string.find(dn, "glow", 1, true)
+                            and not string.find(dn, "grad", 1, true) then
+                            local img = NormalizeImageId(d.Image)
+                            if img then return img end
+                        end
+                    end
+                end
+                return nil
+            end
+
+            for _, gui in ipairs(pGui:GetChildren()) do
+                if gui:IsA("ScreenGui") and gui.Name ~= "DH_LiveCurrencyHUD" and gui.Name ~= "SidUltimateUI" then
+                    for _, desc in ipairs(gui:GetDescendants()) do
+                        local matchedKey = aliasToKey[NormalizeKey(desc.Name)]
+                        if matchedKey and not IconCache[matchedKey] then
+                            if desc:IsA("ImageLabel") or desc:IsA("ImageButton") then
+                                local img = NormalizeImageId(desc.Image)
+                                if img then RecordIcon(matchedKey, img) end
+                            elseif desc:IsA("GuiObject") then
+                                local img = FindBestIconInside(desc)
+                                if img then RecordIcon(matchedKey, img) end
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+
+        for key, img in pairs(IconCache) do
+            ApplyIconToUI(key, img)
+        end
+
+        if changed then
+            SaveIconCache()
+        end
+    end
+
+    -- ==========================================
+    -- LIVE GAIN POPUP & DRAG
+    -- ==========================================
+    local function FlashGain(key, delta)
+        local lbl = GainLabels[key]
+        if not (lbl and lbl.Parent) or delta == 0 then return end
+
+        GainTokens[key] = (GainTokens[key] or 0) + 1
+        local myToken = GainTokens[key]
+
+        if delta > 0 then
+            lbl.Text = "+" .. FormatNumber(delta)
+            lbl.TextColor3 = Color3.fromRGB(0, 240, 155)
+        else
+            lbl.Text = "-" .. FormatNumber(math.abs(delta))
+            lbl.TextColor3 = Color3.fromRGB(255, 100, 100)
+        end
+
+        lbl.TextTransparency = 0
+        lbl.Visible = true
+
+        task.delay(2.0, function()
+            if GainTokens[key] == myToken and lbl and lbl.Parent then
+                pcall(function()
+                    TweenService:Create(lbl, TweenInfo.new(0.25), { TextTransparency = 1 }):Play()
+                end)
+                task.delay(0.26, function()
+                    if GainTokens[key] == myToken and lbl and lbl.Parent then
+                        lbl.Visible = false
+                    end
+                end)
+            end
+        end)
+    end
+
+    local function MakeDraggable(dragHandle, moveTarget)
+        local dragging = false
+        local dragInput = nil
+        local dragStart = nil
+        local startPos = nil
+
+        dragHandle.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1
+                or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = true
+                dragStart = input.Position
+                startPos = moveTarget.Position
+                if input.UserInputType == Enum.UserInputType.Touch then
+                    dragInput = input
+                end
+                input.Changed:Connect(function()
+                    if input.UserInputState == Enum.UserInputState.End then
+                        dragging = false
+                    end
+                end)
+            end
+        end)
+
+        dragHandle.InputChanged:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseMovement
+                or input.UserInputType == Enum.UserInputType.Touch then
+                dragInput = input
+            end
+        end)
+
+        UserInputService.InputChanged:Connect(function(input)
+            if dragging and input == dragInput and dragStart and startPos then
+                local delta = input.Position - dragStart
+                moveTarget.Position = UDim2.new(
+                    startPos.X.Scale, startPos.X.Offset + delta.X,
+                    startPos.Y.Scale, startPos.Y.Offset + delta.Y
+                )
+            end
+        end)
+    end
+
+    local function CreateIconWidget(parent, key, sizePx, posUDim)
+        local meta = GetMeta(key)
+
+        local holder = Instance.new("Frame")
+        holder.Name = "IconHolder"
+        holder.Size = UDim2.new(0, sizePx, 0, sizePx)
+        holder.Position = posUDim
+        holder.BackgroundTransparency = 1
+        holder.Parent = parent
+
+        local img = Instance.new("ImageLabel")
+        img.Name = "Logo"
+        img.Size = UDim2.new(1, 0, 1, 0)
+        img.BackgroundTransparency = 1
+        img.ScaleType = Enum.ScaleType.Fit
+        img.Image = IconCache[key] or ""
+        img.Visible = (IconCache[key] ~= nil)
+        img.Parent = holder
+
+        local fb = Instance.new("TextLabel")
+        fb.Name = "FallbackBadge"
+        fb.Size = UDim2.new(1, 0, 1, 0)
+        fb.BackgroundColor3 = meta.Color
+        fb.BackgroundTransparency = 0.78
+        fb.Font = Enum.Font.GothamBold
+        fb.TextSize = math.max(8, math.floor(sizePx * 0.48))
+        fb.TextColor3 = meta.Color
+        fb.Text = meta.Short
+        fb.Visible = (IconCache[key] == nil)
+        fb.Parent = holder
+
+        local fbCorner = Instance.new("UICorner")
+        fbCorner.CornerRadius = UDim.new(1, 0)
+        fbCorner.Parent = fb
+
+        local fbStroke = Instance.new("UIStroke")
+        fbStroke.Color = meta.Color
+        fbStroke.Thickness = 1
+        fbStroke.Transparency = 0.4
+        fbStroke.Parent = fb
+
+        IconImages[key] = img
+        FallbackBadges[key] = fb
+    end
+
+    -- ==========================================
+    -- EXPAND / COLLAPSE DRAWER
+    -- ==========================================
+    local function GetDrawerTargetHeight()
+        if not DrawerScroll then return 170 end
+        local count = 0
+        for _ in pairs(DrawerCards) do count += 1 end
+        local rows = math.max(1, math.ceil(count / 2))
+        local contentH = (rows * 38) + ((rows - 1) * 6) + 14
+        DrawerScroll.CanvasSize = UDim2.new(0, 0, 0, contentH)
+        return math.clamp(contentH, 52, 215)
+    end
+
+    local function SetExpandedState(expanded, instant)
+        IsExpanded = (expanded == true)
+        if not (DrawerFrame and DrawerFrame.Parent) then return end
+
+        local targetH = IsExpanded and GetDrawerTargetHeight() or 0
+        if ArrowText and ArrowText.Parent then
+            ArrowText.Text = IsExpanded and "▲" or "▼"
+        end
+
+        if IsExpanded then
+            DrawerFrame.Visible = true
+        end
+
+        if instant then
+            DrawerFrame.Size = UDim2.new(1, 0, 0, targetH)
+            if not IsExpanded then DrawerFrame.Visible = false end
+        else
+            local tw = TweenService:Create(
+                DrawerFrame,
+                TweenInfo.new(0.20, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+                { Size = UDim2.new(1, 0, 0, targetH) }
+            )
+            tw:Play()
+            if not IsExpanded then
+                tw.Completed:Connect(function()
+                    if not IsExpanded and DrawerFrame and DrawerFrame.Parent then
+                        DrawerFrame.Visible = false
+                    end
+                end)
+            end
+        end
+    end
+
+    local function EnsureDrawerCard(key, layoutOrder)
+        if DrawerCards[key] and DrawerCards[key].Parent then return end
+        if not (DrawerScroll and DrawerScroll.Parent) then return end
+
+        local meta = GetMeta(key)
+
+        local card = Instance.new("Frame")
+        card.Name = "Card_" .. key
+        card.LayoutOrder = layoutOrder or 99
+        card.BackgroundColor3 = Color3.fromRGB(22, 27, 41)
+        card.BackgroundTransparency = 0.10
+        card.BorderSizePixel = 0
+        card.Parent = DrawerScroll
+
+        local cCorner = Instance.new("UICorner")
+        cCorner.CornerRadius = UDim.new(0, 9)
+        cCorner.Parent = card
+
+        local cStroke = Instance.new("UIStroke")
+        cStroke.Color = meta.Color
+        cStroke.Thickness = 1
+        cStroke.Transparency = 0.55
+        cStroke.Parent = card
+
+        CreateIconWidget(card, key, 22, UDim2.new(0, 7, 0.5, -11))
+
+        local nameLbl = Instance.new("TextLabel")
+        nameLbl.Name = "CurrencyName"
+        nameLbl.Size = UDim2.new(1, -38, 0, 13)
+        nameLbl.Position = UDim2.new(0, 34, 0, 4)
+        nameLbl.BackgroundTransparency = 1
+        nameLbl.Font = Enum.Font.GothamMedium
+        nameLbl.TextSize = 10
+        nameLbl.TextColor3 = Color3.fromRGB(165, 178, 205)
+        nameLbl.TextXAlignment = Enum.TextXAlignment.Left
+        nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
+        nameLbl.Text = meta.Label
+        nameLbl.Parent = card
+
+        local valLbl = Instance.new("TextLabel")
+        valLbl.Name = "Value"
+        valLbl.Size = UDim2.new(1, -38, 0, 17)
+        valLbl.Position = UDim2.new(0, 34, 0, 17)
+        valLbl.BackgroundTransparency = 1
+        valLbl.Font = Enum.Font.GothamBold
+        valLbl.TextSize = 13
+        valLbl.TextColor3 = Color3.fromRGB(244, 248, 255)
+        valLbl.TextXAlignment = Enum.TextXAlignment.Left
+        valLbl.TextTruncate = Enum.TextTruncate.AtEnd
+        valLbl.Text = "0"
+        valLbl.Parent = card
+
+        local gainLbl = Instance.new("TextLabel")
+        gainLbl.Name = "Gain"
+        gainLbl.Size = UDim2.new(0, 70, 0, 13)
+        gainLbl.Position = UDim2.new(1, -74, 0, 4)
+        gainLbl.BackgroundTransparency = 1
+        gainLbl.Font = Enum.Font.GothamBold
+        gainLbl.TextSize = 10
+        gainLbl.TextXAlignment = Enum.TextXAlignment.Right
+        gainLbl.TextColor3 = Color3.fromRGB(0, 240, 155)
+        gainLbl.Text = ""
+        gainLbl.Visible = false
+        gainLbl.Parent = card
+
+        DrawerCards[key] = card
+        ValueLabels[key] = valLbl
+        GainLabels[key] = gainLbl
+
+        if IsExpanded then
+            SetExpandedState(true, true)
+        else
+            GetDrawerTargetHeight()
+        end
+    end
+
+    -- ==========================================
+    -- CREATE / DESTROY HUD
+    -- ==========================================
+    local function ClearBoundConns()
+        for _, c in ipairs(BoundConns) do
+            pcall(function() c:Disconnect() end)
+        end
+        table.clear(BoundConns)
+        table.clear(BoundObjs)
+        if FolderChildConn then
+            pcall(function() FolderChildConn:Disconnect() end)
+            FolderChildConn = nil
+        end
+        BoundFolderRef = nil
+    end
+
+    local function DestroyHUD()
+        ClearBoundConns()
+        if ScreenGui and ScreenGui.Parent then
+            pcall(function() ScreenGui:Destroy() end)
+        end
+        ScreenGui = nil
+        OuterHolder = nil
+        TopBar = nil
+        ArrowBtn = nil
+        ArrowText = nil
+        DrawerFrame = nil
+        DrawerScroll = nil
+        table.clear(ValueLabels)
+        table.clear(IconImages)
+        table.clear(FallbackBadges)
+        table.clear(GainLabels)
+        table.clear(DrawerCards)
+        table.clear(LastValues)
+    end
+
+    local function CreateHUD()
+        DestroyHUD()
+
+        local parentGui = (gethui and gethui()) or CoreGui or LocalPlayer:WaitForChild("PlayerGui")
+        local existing = parentGui:FindFirstChild("DH_LiveCurrencyHUD")
+        if existing then existing:Destroy() end
+
+        ScreenGui = Instance.new("ScreenGui")
+        ScreenGui.Name = "DH_LiveCurrencyHUD"
+        ScreenGui.ResetOnSpawn = false
+        ScreenGui.IgnoreGuiInset = true
+        ScreenGui.DisplayOrder = 999999
+        ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+        ScreenGui.Parent = parentGui
+
+        OuterHolder = Instance.new("Frame")
+        OuterHolder.Name = "CurrencyOuter"
+        OuterHolder.Size = UDim2.new(0, 362, 0, 36)
+        OuterHolder.Position = UDim2.new(0.5, -181, 0, 54)
+        OuterHolder.BackgroundTransparency = 1
+        OuterHolder.ClipsDescendants = false
+        OuterHolder.Parent = ScreenGui
+
+        TopBar = Instance.new("Frame")
+        TopBar.Name = "TopBar"
+        TopBar.Size = UDim2.new(1, 0, 0, 36)
+        TopBar.Position = UDim2.new(0, 0, 0, 0)
+        TopBar.BackgroundColor3 = Color3.fromRGB(14, 17, 26)
+        TopBar.BackgroundTransparency = 0.12
+        TopBar.BorderSizePixel = 0
+        TopBar.Active = true
+        TopBar.Parent = OuterHolder
+
+        local barCorner = Instance.new("UICorner")
+        barCorner.CornerRadius = UDim.new(0, 11)
+        barCorner.Parent = TopBar
+
+        local barStroke = Instance.new("UIStroke")
+        barStroke.Color = Color3.fromRGB(78, 108, 165)
+        barStroke.Thickness = 1.25
+        barStroke.Transparency = 0.25
+        barStroke.Parent = TopBar
+
+        local topSpecs = {
+            { Key = "Keys",      X = 6,   W = 104 },
+            { Key = "MagicDust", X = 115, W = 114 },
+            { Key = "Crystals",  X = 234, W = 88  },
+        }
+
+        for _, sp in ipairs(topSpecs) do
+            local meta = GetMeta(sp.Key)
+
+            local pill = Instance.new("Frame")
+            pill.Name = sp.Key .. "Pill"
+            pill.Size = UDim2.new(0, sp.W, 0, 26)
+            pill.Position = UDim2.new(0, sp.X, 0.5, -13)
+            pill.BackgroundColor3 = Color3.fromRGB(22, 27, 41)
+            pill.BackgroundTransparency = 0.12
+            pill.BorderSizePixel = 0
+            pill.Parent = TopBar
+
+            local pCorner = Instance.new("UICorner")
+            pCorner.CornerRadius = UDim.new(0, 8)
+            pCorner.Parent = pill
+
+            local pStroke = Instance.new("UIStroke")
+            pStroke.Color = meta.Color
+            pStroke.Thickness = 1
+            pStroke.Transparency = 0.48
+            pStroke.Parent = pill
+
+            CreateIconWidget(pill, sp.Key, 18, UDim2.new(0, 5, 0.5, -9))
+
+            local valLbl = Instance.new("TextLabel")
+            valLbl.Name = "Value"
+            valLbl.Size = UDim2.new(1, -28, 1, 0)
+            valLbl.Position = UDim2.new(0, 26, 0, 0)
+            valLbl.BackgroundTransparency = 1
+            valLbl.Font = Enum.Font.GothamBold
+            valLbl.TextSize = 12
+            valLbl.TextColor3 = Color3.fromRGB(244, 248, 255)
+            valLbl.TextXAlignment = Enum.TextXAlignment.Left
+            valLbl.TextTruncate = Enum.TextTruncate.AtEnd
+            valLbl.Text = "0"
+            valLbl.Parent = pill
+
+            local gainLbl = Instance.new("TextLabel")
+            gainLbl.Name = "Gain"
+            gainLbl.Size = UDim2.new(1, 0, 0, 14)
+            gainLbl.Position = UDim2.new(0, 0, 0, -15)
+            gainLbl.BackgroundTransparency = 1
+            gainLbl.Font = Enum.Font.GothamBold
+            gainLbl.TextSize = 11
+            gainLbl.TextStrokeTransparency = 0.3
+            gainLbl.TextColor3 = Color3.fromRGB(0, 240, 155)
+            gainLbl.Text = ""
+            gainLbl.Visible = false
+            gainLbl.Parent = pill
+
+            ValueLabels[sp.Key] = valLbl
+            GainLabels[sp.Key] = gainLbl
+        end
+
+        ArrowBtn = Instance.new("TextButton")
+        ArrowBtn.Name = "ExpandArrowBtn"
+        ArrowBtn.Size = UDim2.new(0, 28, 0, 26)
+        ArrowBtn.Position = UDim2.new(1, -34, 0.5, -13)
+        ArrowBtn.BackgroundColor3 = Color3.fromRGB(30, 38, 58)
+        ArrowBtn.BackgroundTransparency = 0.08
+        ArrowBtn.BorderSizePixel = 0
+        ArrowBtn.Text = ""
+        ArrowBtn.AutoButtonColor = true
+        ArrowBtn.ZIndex = 5
+        ArrowBtn.Parent = TopBar
+
+        local aCorner = Instance.new("UICorner")
+        aCorner.CornerRadius = UDim.new(0, 8)
+        aCorner.Parent = ArrowBtn
+
+        local aStroke = Instance.new("UIStroke")
+        aStroke.Color = Color3.fromRGB(95, 165, 255)
+        aStroke.Thickness = 1.1
+        aStroke.Transparency = 0.30
+        aStroke.Parent = ArrowBtn
+
+        ArrowText = Instance.new("TextLabel")
+        ArrowText.Size = UDim2.new(1, 0, 1, 0)
+        ArrowText.BackgroundTransparency = 1
+        ArrowText.Font = Enum.Font.GothamBold
+        ArrowText.TextSize = 12
+        ArrowText.TextColor3 = Color3.fromRGB(165, 215, 255)
+        ArrowText.Text = IsExpanded and "▲" or "▼"
+        ArrowText.ZIndex = 6
+        ArrowText.Parent = ArrowBtn
+
+        ArrowBtn.Activated:Connect(function()
+            SetExpandedState(not IsExpanded, false)
+        end)
+
+        DrawerFrame = Instance.new("Frame")
+        DrawerFrame.Name = "ExpandedDrawer"
+        DrawerFrame.Size = UDim2.new(1, 0, 0, 0)
+        DrawerFrame.Position = UDim2.new(0, 0, 0, 40)
+        DrawerFrame.BackgroundColor3 = Color3.fromRGB(14, 17, 26)
+        DrawerFrame.BackgroundTransparency = 0.10
+        DrawerFrame.BorderSizePixel = 0
+        DrawerFrame.ClipsDescendants = true
+        DrawerFrame.Visible = false
+        DrawerFrame.Parent = OuterHolder
+
+        local dCorner = Instance.new("UICorner")
+        dCorner.CornerRadius = UDim.new(0, 11)
+        dCorner.Parent = DrawerFrame
+
+        local dStroke = Instance.new("UIStroke")
+        dStroke.Color = Color3.fromRGB(78, 108, 165)
+        dStroke.Thickness = 1.2
+        dStroke.Transparency = 0.28
+        dStroke.Parent = DrawerFrame
+
+        DrawerScroll = Instance.new("ScrollingFrame")
+        DrawerScroll.Name = "CurrencyGrid"
+        DrawerScroll.Size = UDim2.new(1, 0, 1, 0)
+        DrawerScroll.BackgroundTransparency = 1
+        DrawerScroll.BorderSizePixel = 0
+        DrawerScroll.ScrollBarThickness = 3
+        DrawerScroll.ScrollBarImageColor3 = Color3.fromRGB(95, 165, 255)
+        DrawerScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+        DrawerScroll.Parent = DrawerFrame
+
+        local dPad = Instance.new("UIPadding")
+        dPad.PaddingTop = UDim.new(0, 7)
+        dPad.PaddingBottom = UDim.new(0, 7)
+        dPad.PaddingLeft = UDim.new(0, 7)
+        dPad.PaddingRight = UDim.new(0, 7)
+        dPad.Parent = DrawerScroll
+
+        local grid = Instance.new("UIGridLayout")
+        grid.CellSize = UDim2.new(0.5, -4, 0, 38)
+        grid.CellPadding = UDim2.new(0, 6, 0, 6)
+        grid.SortOrder = Enum.SortOrder.LayoutOrder
+        grid.Parent = DrawerScroll
+
+        for idx, key in ipairs(EXTRA_ORDER) do
+            EnsureDrawerCard(key, idx)
+        end
+
+        SetExpandedState(IsExpanded, true)
+        MakeDraggable(TopBar, OuterHolder)
+    end
+
+    -- ==========================================
+    -- REAL-TIME UPDATE ENGINE (0.1s + .Changed)
+    -- ==========================================
+    local function UpdateCurrencyValue(key, val)
+        local num = tonumber(val) or 0
+        local lbl = ValueLabels[key]
+        if not (lbl and lbl.Parent) then return end
+
+        lbl.Text = FormatNumber(num)
+
+        if key == "MagicDust" then
+            lbl.TextColor3 = (num >= 500000) and Color3.fromRGB(255, 85, 85) or Color3.fromRGB(244, 248, 255)
+        end
+
+        local prev = LastValues[key]
+        if prev ~= nil and num ~= prev then
+            FlashGain(key, num - prev)
+        end
+        LastValues[key] = num
+    end
+
+    local function BindCurrencyObject(obj, orderIdx)
+        if not (obj and obj:IsA("ValueBase")) then return end
+        local key = obj.Name
+
+        if not TOP_SET[key] then
+            EnsureDrawerCard(key, orderIdx or 50)
+        end
+
+        UpdateCurrencyValue(key, obj.Value)
+
+        if BoundObjs[key] ~= obj then
+            BoundObjs[key] = obj
+            local conn = obj.Changed:Connect(function(newVal)
+                if HUDEnabled then
+                    UpdateCurrencyValue(key, newVal)
+                end
+            end)
+            table.insert(BoundConns, conn)
+        end
+    end
+
+    local function SyncAllCurrenciesNow()
+        if not (HUDEnabled and OuterHolder and OuterHolder.Parent) then return end
+
+        local inLobby = IsInLobby()
+        OuterHolder.Visible = (not DungeonOnly) or (not inLobby)
+
+        local folder = GetCurrenciesFolder()
+        if not folder then return end
+
+        if BoundFolderRef ~= folder then
+            ClearBoundConns()
+            BoundFolderRef = folder
+            FolderChildConn = folder.ChildAdded:Connect(function(child)
+                if HUDEnabled then
+                    BindCurrencyObject(child, 80)
+                end
+            end)
+        end
+
+        local allKeys = {}
+        local extraIdx = #EXTRA_ORDER
+        for _, child in ipairs(folder:GetChildren()) do
+            if child:IsA("ValueBase") then
+                table.insert(allKeys, child.Name)
+                local idx = table.find(EXTRA_ORDER, child.Name)
+                if not idx and not TOP_SET[child.Name] then
+                    extraIdx += 1
+                    idx = extraIdx
+                end
+                BindCurrencyObject(child, idx)
+            end
+        end
+
+        local missingAny = false
+        for _, k in ipairs(allKeys) do
+            if not IconCache[k] then
+                missingAny = true
+                break
+            end
+        end
+        if missingAny and (os.clock() - LastIconScan) >= 4.0 then
+            LastIconScan = os.clock()
+            task.spawn(ScanOriginalIcons, allKeys)
+        end
+    end
+
+    local function StartCurrencyHUD()
+        WorkerId = WorkerId + 1
+        local myId = WorkerId
+
+        LoadIconCache()
+        CreateHUD()
+
+        local initialKeys = {}
+        for _, k in ipairs(TOP_CURRENCIES) do table.insert(initialKeys, k) end
+        for _, k in ipairs(EXTRA_ORDER) do table.insert(initialKeys, k) end
+        LastIconScan = os.clock()
+        task.spawn(ScanOriginalIcons, initialKeys)
+
+        pcall(SyncAllCurrenciesNow)
+
+        task.spawn(function()
+            while HUDEnabled and WorkerId == myId do
+                pcall(SyncAllCurrenciesNow)
+                task.wait(0.1)
+            end
+        end)
+    end
+
+    -- ==========================================
+    -- UI CONTROLS ON MISCELLANEOUSTAB
+    -- ==========================================
+    MiscellaneousTab:CreateToggle({
+        Name = "Show Live Currency HUD",
+        CurrentValue = false,
+        Flag = "DH_LiveCurrencyHUD",
+        Callback = function(Value)
+            HUDEnabled = (Value == true)
+            if HUDEnabled then
+                StartCurrencyHUD()
+            else
+                WorkerId = WorkerId + 1
+                DestroyHUD()
+            end
+        end,
+    })
+
+    MiscellaneousTab:CreateToggle({
+        Name = "Dungeon Only (Auto-Hide Currency HUD In Lobby)",
+        CurrentValue = false,
+        Flag = "DH_LiveCurrencyDungeonOnly",
+        Callback = function(Value)
+            DungeonOnly = (Value == true)
+            if HUDEnabled then
+                pcall(SyncAllCurrenciesNow)
+            end
+        end,
+    })
+
+    MiscellaneousTab:CreateButton({
+        Name = "Reset Currency Bar Position",
+        Callback = function()
+            if OuterHolder and OuterHolder.Parent then
+                OuterHolder.Position = UDim2.new(0.5, -181, 0, 54)
+            end
+        end,
+    })
+
+    MiscellaneousTab:CreateButton({
+        Name = "Rescan Original Currency Logos",
+        Callback = function()
+            table.clear(IconCache)
+            local allKeys = {}
+            local folder = GetCurrenciesFolder()
+            if folder then
+                for _, c in ipairs(folder:GetChildren()) do
+                    if c:IsA("ValueBase") then table.insert(allKeys, c.Name) end
+                end
+            end
+            task.spawn(ScanOriginalIcons, allKeys)
+        end,
+    })
+end
 
    -- ==========================================
 -- SPEED CONTROLS (SYNCED + LIVE REAL SPEED BADGE)
@@ -3652,6 +4680,7 @@ do
         "DailyDungeonQueue",
         "DailyEventDung",
         "DailyRaidDung",
+		"LiveCurrency", 
         "DailyWeeklyToo",
     }
 
