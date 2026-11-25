@@ -4473,397 +4473,678 @@ end,
 UtilityTab:CreateSection("Tween Mobs")
 
 --========================================================
--- DUNGEON HEROES | AUTO MOBS + PET LOCK + AUTO NOCLIP V4
--- High-Speed Stable (200-1000+) | Zero Velocity Anti-Fling
--- Auto NoClip on Toggle | Upright Lock | Movable Platform
+-- DUNGEON HEROES | AUTO MOBS V5 (ZERO-BREAK + AREA LOCK)
+-- * BodyVelocity + BodyGyro + Atomic PivotTo (100-1000+ Safe)
+-- * Anti-Ragdoll & Safe Ground-Unstuck Landing
+-- * Co-Op Exact Speed Lock + Sticky Target (No Weird Jumps)
+-- * Smart Area-Wise Lock + Unattackable HP-Stall Skip
 --========================================================
+do
+    local Players = game:GetService("Players")
+    local RunService = game:GetService("RunService")
 
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
+    local Player = Players.LocalPlayer
 
-local Player = Players.LocalPlayer
+    -- CONFIGURATION
+    local FloatHeight = 30
+    local MoveSpeed = 175
+    local PetOffset = Vector3.new(3, 2, 0)
 
--- CONFIGURATION
-local FloatHeight = 30
-local MoveSpeed = 175
+    local PlatformSize = Vector3.new(7, 1, 7)
+    local PlatformOffset = 3.5
 
-local PetOffset = Vector3.new(3, 2, 0)
+    local AREA_ANCHOR_RADIUS = 105
+    local AREA_LINK_RADIUS = 72
+    local UNATTACKABLE_TIMEOUT = 2.2
+    local UNATTACKABLE_COOLDOWN = 6.0
 
-local PlatformSize = Vector3.new(7, 1, 7)
-local PlatformOffset = 3.5
+    local AutoMobs = false
+    local IsFlying = false
+    local RunId = 0
 
-local AutoMobs = false
-local IsMovingToMob = false
-local RunId = 0
+    local MovementConnection = nil
+    local NoClipConnection = nil
+    local SupportPlatform = nil
+    local OriginalCollideStates = {}
 
-local MovementConnection = nil
-local NoClipConnection = nil
-local SupportPlatform = nil
-local OriginalCollideStates = {}
+    -- Area & Sticky Target State
+    local CurrentTargetMob = nil
+    local ActiveAreaAnchor = nil
+    local TargetTrackedHP = nil
+    local TargetLastDamageTime = 0
+    local UnattackableUntil = {}
 
--- CHARACTER HELPERS
-local function GetCharacter()
-    return Player.Character
-end
+    local DISABLED_STATES = {
+        Enum.HumanoidStateType.FallingDown,
+        Enum.HumanoidStateType.Ragdoll,
+        Enum.HumanoidStateType.Climbing,
+        Enum.HumanoidStateType.Seated,
+    }
 
-local function GetHRP()
-    local Character = GetCharacter()
-    return Character and Character:FindFirstChild("HumanoidRootPart")
-end
-
--- AUTO NOCLIP MANAGEMENT
-local function ApplyNoClipStep()
-    local Character = GetCharacter()
-    if not Character then return end
-
-    for _, Part in ipairs(Character:GetDescendants()) do
-        if Part:IsA("BasePart") then
-            if OriginalCollideStates[Part] == nil then
-                OriginalCollideStates[Part] = Part.CanCollide
-            end
-            Part.CanCollide = false
-        end
+    -- ==========================================
+    -- CHARACTER & PHYSICS STABILIZER HELPERS
+    -- ==========================================
+    local function GetCharacter()
+        return Player.Character
     end
-end
 
-local function RestoreCharacterCollision()
-    local Character = GetCharacter()
-    if Character then
-        for _, Part in ipairs(Character:GetDescendants()) do
+    local function GetHRP()
+        local Char = GetCharacter()
+        return Char and Char:FindFirstChild("HumanoidRootPart")
+    end
+
+    local function ApplyNoClipStep()
+        local Char = GetCharacter()
+        if not Char then return end
+        for _, Part in ipairs(Char:GetDescendants()) do
             if Part:IsA("BasePart") then
-                if OriginalCollideStates[Part] ~= nil then
-                    Part.CanCollide = OriginalCollideStates[Part]
-                elseif Part.Name == "HumanoidRootPart" or Part.Name == "Torso" or Part.Name == "UpperTorso" or Part.Name == "LowerTorso" then
-                    Part.CanCollide = true
+                if OriginalCollideStates[Part] == nil then
+                    OriginalCollideStates[Part] = Part.CanCollide
                 end
-            end
-        end
-    end
-    table.clear(OriginalCollideStates)
-end
-
--- EQUIPPED PET
-local function GetMyPet()
-    local MobsFolder = workspace:FindFirstChild("Mobs")
-    if not MobsFolder then return nil end
-
-    for _, Mob in ipairs(MobsFolder:GetChildren()) do
-        if Mob:GetAttribute("Owner") == Player.Name then
-            return Mob
-        end
-    end
-
-    return nil
-end
-
--- PET ROOT
-local function GetPetRoot(Pet)
-    if not Pet then return nil end
-
-    if Pet:IsA("BasePart") then
-        return Pet
-    end
-
-    if Pet:IsA("Model") then
-        return Pet:FindFirstChild("HumanoidRootPart")
-            or Pet.PrimaryPart
-            or Pet:FindFirstChildWhichIsA("BasePart", true)
-    end
-
-    return nil
-end
-
--- PET FOLLOW (ZERO VELOCITY STABILIZED)
-local function LockPetToPlayer(Root)
-    local Pet = GetMyPet()
-    if not Pet or not Pet.Parent then return end
-
-    local PetRoot = GetPetRoot(Pet)
-    if not PetRoot then return end
-
-    local TargetPosition = Root.CFrame:PointToWorldSpace(PetOffset)
-    local Difference = TargetPosition - PetRoot.Position
-
-    if Pet:IsA("Model") then
-        Pet:PivotTo(Pet:GetPivot() + Difference)
-    elseif Pet:IsA("BasePart") then
-        Pet.CFrame = CFrame.new(TargetPosition) * Pet.CFrame.Rotation
-    end
-
-    PetRoot.AssemblyLinearVelocity = Vector3.zero
-    PetRoot.AssemblyAngularVelocity = Vector3.zero
-end
-
--- CREATE OR UPDATE PLATFORM
-local function CreatePlatform(Root)
-    if SupportPlatform and SupportPlatform.Parent then
-        SupportPlatform.Anchored = true
-        SupportPlatform.CanCollide = true
-        SupportPlatform.AssemblyLinearVelocity = Vector3.zero
-        SupportPlatform.AssemblyAngularVelocity = Vector3.zero
-
-        SupportPlatform.CFrame = CFrame.new(
-            Root.Position - Vector3.new(0, PlatformOffset, 0)
-        )
-        return
-    end
-
-    local Platform = Instance.new("Part")
-    Platform.Name = "AutoMobs_SupportPlatform"
-    Platform.Size = PlatformSize
-    Platform.Anchored = true
-    Platform.CanCollide = true
-    Platform.CanTouch = false
-    Platform.CanQuery = false
-
-    Platform.Transparency = 0.35
-    Platform.Material = Enum.Material.ForceField
-    Platform.Color = Color3.fromRGB(130, 80, 255)
-
-    Platform.CFrame = CFrame.new(
-        Root.Position - Vector3.new(0, PlatformOffset, 0)
-    )
-
-    Platform.Parent = workspace
-    SupportPlatform = Platform
-end
-
--- RELEASE PLATFORM
-local function ReleasePlatform()
-    if SupportPlatform and SupportPlatform.Parent then
-        SupportPlatform.Anchored = false
-        SupportPlatform.CanCollide = true
-    end
-end
-
--- FIND NEAREST MOB IN ENTIRE DUNGEON
-local function GetNearestMob()
-    local Root = GetHRP()
-    if not Root then return nil end
-
-    local MobsFolder = workspace:FindFirstChild("Mobs")
-    if not MobsFolder then return nil end
-
-    local NearestMob = nil
-    local ShortestDistance = math.huge
-
-    for _, Mob in ipairs(MobsFolder:GetChildren()) do
-        local Owner = Mob:GetAttribute("Owner")
-        local HP = Mob:GetAttribute("HP")
-
-        -- Ignore TargetDummy and owned pets
-        if Mob.Name ~= "TargetDummy" and (Owner == nil or Owner == "") then
-            local MobRoot = Mob:FindFirstChild("HumanoidRootPart") or Mob.PrimaryPart
-            local ValidHP = (HP == nil) or (tonumber(HP) ~= nil and tonumber(HP) > 0)
-
-            if MobRoot and ValidHP then
-                local Distance = (MobRoot.Position - Root.Position).Magnitude
-                if Distance < ShortestDistance then
-                    ShortestDistance = Distance
-                    NearestMob = Mob
-                end
+                Part.CanCollide = false
             end
         end
     end
 
-    return NearestMob
-end
+    local function SafeLiftOutOfGround(Char, Root)
+        if not (Char and Root and Root.Parent) then return end
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        local ignore = {Char}
+        local mobsFolder = workspace:FindFirstChild("Mobs")
+        if mobsFolder then table.insert(ignore, mobsFolder) end
+        if SupportPlatform then table.insert(ignore, SupportPlatform) end
+        params.FilterDescendantsInstances = ignore
 
--- STOP AUTO MOBS + DISABLE NOCLIP
-local function StopAutoMobs()
-    AutoMobs = false
-    IsMovingToMob = false
-    RunId += 1
-
-    if MovementConnection then
-        MovementConnection:Disconnect()
-        MovementConnection = nil
+        -- Check slightly above player straight down to find true floor surface
+        local origin = Root.Position + Vector3.new(0, 7, 0)
+        local hit = workspace:Raycast(origin, Vector3.new(0, -14, 0), params)
+        if hit and hit.Position.Y > (Root.Position.Y - 2.6) then
+            local safePos = Vector3.new(Root.Position.X, hit.Position.Y + 4.2, Root.Position.Z)
+            local _, yaw, _ = Root.CFrame:ToEulerAnglesYXZ()
+            local targetRootCF = CFrame.new(safePos) * CFrame.Angles(0, yaw, 0)
+            local offset = Char:GetPivot():ToObjectSpace(Root.CFrame)
+            Char:PivotTo(targetRootCF * offset:Inverse())
+        end
     end
 
-    if NoClipConnection then
-        NoClipConnection:Disconnect()
-        NoClipConnection = nil
+    local function RestoreCharacterCollision()
+        local Char = GetCharacter()
+        local Root = Char and Char:FindFirstChild("HumanoidRootPart")
+        if Char and Root then
+            SafeLiftOutOfGround(Char, Root)
+            for _, Part in ipairs(Char:GetDescendants()) do
+                if Part:IsA("BasePart") then
+                    if OriginalCollideStates[Part] ~= nil then
+                        Part.CanCollide = OriginalCollideStates[Part]
+                    elseif Part.Name == "HumanoidRootPart" or Part.Name == "Torso" or Part.Name == "UpperTorso" or Part.Name == "LowerTorso" then
+                        Part.CanCollide = true
+                    end
+                end
+            end
+        end
+        table.clear(OriginalCollideStates)
     end
 
-    RestoreCharacterCollision()
+    local function EnableFlightStabilizer(Root, Humanoid)
+        if not Root then return end
 
-    local Root = GetHRP()
-    if Root then
+        local bv = Root:FindFirstChild("AutoMobs_ZeroVel")
+        if not bv then
+            bv = Instance.new("BodyVelocity")
+            bv.Name = "AutoMobs_ZeroVel"
+            bv.MaxForce = Vector3.new(1e7, 1e7, 1e7)
+            bv.Velocity = Vector3.zero
+            bv.P = 1e5
+            bv.Parent = Root
+        else
+            bv.MaxForce = Vector3.new(1e7, 1e7, 1e7)
+            bv.Velocity = Vector3.zero
+        end
+
+        local bg = Root:FindFirstChild("AutoMobs_Upright")
+        if not bg then
+            bg = Instance.new("BodyGyro")
+            bg.Name = "AutoMobs_Upright"
+            bg.MaxTorque = Vector3.new(1e7, 0, 1e7) -- Locks pitch & roll upright, free yaw
+            bg.P = 50000
+            bg.D = 1000
+            bg.CFrame = CFrame.new()
+            bg.Parent = Root
+        else
+            bg.MaxTorque = Vector3.new(1e7, 0, 1e7)
+            bg.CFrame = CFrame.new()
+        end
+
+        if Humanoid then
+            for _, st in ipairs(DISABLED_STATES) do
+                pcall(function() Humanoid:SetStateEnabled(st, false) end)
+            end
+            Humanoid.PlatformStand = false
+            Humanoid.Sit = false
+            local curState = Humanoid:GetState()
+            if curState == Enum.HumanoidStateType.FallingDown
+                or curState == Enum.HumanoidStateType.Ragdoll
+                or curState == Enum.HumanoidStateType.GettingUp then
+                pcall(function() Humanoid:ChangeState(Enum.HumanoidStateType.Running) end)
+            end
+        end
+    end
+
+    local function DisableFlightStabilizer(Root, Humanoid)
+        if Root then
+            local bv = Root:FindFirstChild("AutoMobs_ZeroVel")
+            if bv then bv:Destroy() end
+            local bg = Root:FindFirstChild("AutoMobs_Upright")
+            if bg then bg:Destroy() end
+            Root.AssemblyLinearVelocity = Vector3.zero
+            Root.AssemblyAngularVelocity = Vector3.zero
+        end
+        if Humanoid then
+            for _, st in ipairs(DISABLED_STATES) do
+                pcall(function() Humanoid:SetStateEnabled(st, true) end)
+            end
+        end
+    end
+
+    -- Atomic full-character move: prevents joint stretching/breaking at 500-1000+ speed
+    local function PivotCharacterToRootCFrame(Char, Root, TargetRootCF)
+        local pivotOffset = Char:GetPivot():ToObjectSpace(Root.CFrame)
+        Char:PivotTo(TargetRootCF * pivotOffset:Inverse())
         Root.AssemblyLinearVelocity = Vector3.zero
         Root.AssemblyAngularVelocity = Vector3.zero
     end
 
-    ReleasePlatform()
-end
-
--- START AUTO MOBS + ENABLE AUTO NOCLIP
-local function StartAutoMobs()
-    StopAutoMobs()
-
-    RunId += 1
-    local CurrentRun = RunId
-
-    AutoMobs = true
-
-    -- 1. Stepped Connection for Instant Auto-NoClip (Prevents wall/pillar collision at 200-1000+ speed)
-    NoClipConnection = RunService.Stepped:Connect(function()
-        if not AutoMobs or RunId ~= CurrentRun then
-            return
+    -- ==========================================
+    -- VISUAL PLATFORM & PET LOCK
+    -- ==========================================
+    local function UpdateVisualPlatform(Root)
+        if not (SupportPlatform and SupportPlatform.Parent) then
+            local Platform = Instance.new("Part")
+            Platform.Name = "AutoMobs_SupportPlatform"
+            Platform.Size = PlatformSize
+            Platform.Anchored = true
+            Platform.CanCollide = false -- Non-colliding while flying so player NEVER slams into it
+            Platform.CanTouch = false
+            Platform.CanQuery = false
+            Platform.Transparency = 0.40
+            Platform.Material = Enum.Material.ForceField
+            Platform.Color = Color3.fromRGB(130, 80, 255)
+            Platform.Parent = workspace
+            SupportPlatform = Platform
         end
-
-        if IsMovingToMob then
-            ApplyNoClipStep()
-        end
-    end)
-
-    -- 2. Heartbeat Connection for Smooth High-Speed CFrame Movement & Velocity Lock
-    MovementConnection = RunService.Heartbeat:Connect(function(DeltaTime)
-        if not AutoMobs or RunId ~= CurrentRun then
-            return
-        end
-
-        local StepTime = math.clamp(DeltaTime, 0.001, 0.1)
-
-        pcall(function()
-            local Character = GetCharacter()
-            local Root = Character and Character:FindFirstChild("HumanoidRootPart")
-            local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
-
-            if not Root or not Humanoid or Humanoid.Health <= 0 then
-                IsMovingToMob = false
-                return
-            end
-
-            -- Prevent tripping / ragdoll / falling states at high speeds
-            if Humanoid.PlatformStand then
-                Humanoid.PlatformStand = false
-            end
-            if Humanoid.Sit then
-                Humanoid.Sit = false
-            end
-
-            -- SEARCH ENTIRE DUNGEON
-            local Mob = GetNearestMob()
-
-            -- NO VALID MOB ANYWHERE
-            if not Mob then
-                if IsMovingToMob then
-                    IsMovingToMob = false
-                    RestoreCharacterCollision()
-                    Root.AssemblyLinearVelocity = Vector3.zero
-                    Root.AssemblyAngularVelocity = Vector3.zero
-                end
-                ReleasePlatform()
-                return
-            end
-
-            local MobRoot = Mob:FindFirstChild("HumanoidRootPart") or Mob.PrimaryPart
-            if not MobRoot then
-                IsMovingToMob = false
-                ReleasePlatform()
-                return
-            end
-
-            -- Active Mob Target Found -> Enable NoClip & Anti-Fling Physics Lock
-            IsMovingToMob = true
-
-            -- Kill all physics forces so character never flings or breaks joints
-            Root.AssemblyLinearVelocity = Vector3.zero
-            Root.AssemblyAngularVelocity = Vector3.zero
-
-            -- CREATE OR RE-ANCHOR PLATFORM
-            CreatePlatform(Root)
-
-            -- TARGET POSITION ABOVE MOB
-            local TargetPosition = MobRoot.Position + Vector3.new(0, FloatHeight, 0)
-            local Difference = TargetPosition - Root.Position
-            local Distance = Difference.Magnitude
-
-            -- Keep character strictly upright (prevents tilting/spinning after bumping obstacles)
-            local _, CurrentYaw, _ = Root.CFrame:ToEulerAnglesYXZ()
-            local UprightRotation = CFrame.Angles(0, CurrentYaw, 0)
-
-            if Distance > 0.05 then
-                local Step = math.min(MoveSpeed * StepTime, Distance)
-                local NewPosition = Root.Position + (Difference.Unit * Step)
-                Root.CFrame = CFrame.new(NewPosition) * UprightRotation
-            else
-                Root.CFrame = CFrame.new(TargetPosition) * UprightRotation
-            end
-
-            -- PLATFORM LOCKED UNDER PLAYER
-            if SupportPlatform and SupportPlatform.Parent then
-                SupportPlatform.CFrame = CFrame.new(
-                    Root.Position - Vector3.new(0, PlatformOffset, 0)
-                )
-            end
-
-            -- PET FOLLOWS ONLY WHEN VALID MOB EXISTS
-            LockPetToPlayer(Root)
-        end)
-    end)
-end
-
--- MAIN TOGGLE
-UtilityTab:CreateToggle({
-    Name = "Auto Mobs",
-    CurrentValue = false,
-    Flag = "AutoMobsToggle",
-
-    Callback = function(Value)
-        if Value then
-            StartAutoMobs()
-        else
-            StopAutoMobs()
-        end
+        SupportPlatform.CFrame = CFrame.new(Root.Position - Vector3.new(0, PlatformOffset, 0))
     end
-})
 
--- FLOAT HEIGHT
-UtilityTab:CreateSlider({
-    Name = "Mob Float Height",
-    Range = {10, 200},
-    Increment = 1,
-    Suffix = "Studs",
-    CurrentValue = 30,
-    Flag = "MobFloatHeight",
-
-    Callback = function(Value)
-        FloatHeight = Value
-    end
-})
-
--- MOVEMENT SPEED
-UtilityTab:CreateSlider({
-    Name = "Movement Speed",
-    Range = {100, 1000},
-    Increment = 25,
-    Suffix = "Speed",
-    CurrentValue = 175,
-    Flag = "MovementSpeed",
-
-    Callback = function(Value)
-        MoveSpeed = Value
-    end
-})
-
--- RESPAWN CLEANUP
-Player.CharacterAdded:Connect(function()
-    table.clear(OriginalCollideStates)
-
-    if SupportPlatform then
-        SupportPlatform:Destroy()
+    local function DestroyPlatform()
+        if SupportPlatform and SupportPlatform.Parent then
+            SupportPlatform:Destroy()
+        end
         SupportPlatform = nil
     end
 
-    -- If toggle is still ON after respawn, automatically re-attach after character loads
-    if AutoMobs then
-        task.wait(0.5)
-        if AutoMobs then
-            StartAutoMobs()
+    local function GetMyPet()
+        local MobsFolder = workspace:FindFirstChild("Mobs")
+        if not MobsFolder then return nil end
+        for _, Mob in ipairs(MobsFolder:GetChildren()) do
+            if Mob:GetAttribute("Owner") == Player.Name then
+                return Mob
+            end
         end
+        return nil
     end
-end)
+
+    local function GetPetRoot(Pet)
+        if not Pet then return nil end
+        if Pet:IsA("BasePart") then return Pet end
+        if Pet:IsA("Model") then
+            return Pet:FindFirstChild("HumanoidRootPart")
+                or Pet.PrimaryPart
+                or Pet:FindFirstChildWhichIsA("BasePart", true)
+        end
+        return nil
+    end
+
+    local function LockPetToPlayer(Root)
+        local Pet = GetMyPet()
+        if not Pet or not Pet.Parent then return end
+        local PetRoot = GetPetRoot(Pet)
+        if not PetRoot then return end
+
+        local TargetPos = Root.CFrame:PointToWorldSpace(PetOffset)
+        local Diff = TargetPos - PetRoot.Position
+        if Pet:IsA("Model") then
+            Pet:PivotTo(Pet:GetPivot() + Diff)
+        elseif Pet:IsA("BasePart") then
+            Pet.CFrame = CFrame.new(TargetPos) * Pet.CFrame.Rotation
+        end
+        PetRoot.AssemblyLinearVelocity = Vector3.zero
+        PetRoot.AssemblyAngularVelocity = Vector3.zero
+    end
+
+    -- ==========================================
+    -- AREA-WISE & ATTACKABILITY TARGET ENGINE
+    -- ==========================================
+    local function GetMobRoot(Mob)
+        if not (Mob and Mob.Parent) then return nil end
+        return Mob:FindFirstChild("HumanoidRootPart") or Mob.PrimaryPart
+    end
+
+    local function GetMobHP(Mob)
+        local hpAttr = Mob:GetAttribute("HP")
+        if hpAttr ~= nil then
+            return tonumber(hpAttr) or 0
+        end
+        local hum = Mob:FindFirstChildOfClass("Humanoid")
+        if hum then
+            return hum.Health
+        end
+        return nil
+    end
+
+    local function GetMobRoomIndex(Mob)
+        for _, attr in ipairs({"Room", "RoomIndex", "RoomNumber", "Area", "AreaIndex", "Zone", "Section", "Stage", "Wave"}) do
+            local v = Mob:GetAttribute(attr)
+            if tonumber(v) then
+                return tonumber(v)
+            end
+        end
+        return nil
+    end
+
+    local function IsMobExplicitlyLocked(Mob)
+        if Mob:FindFirstChildOfClass("ForceField") then return true end
+        for _, attr in ipairs({"Invulnerable", "Immune", "Untargetable", "Locked", "IsLocked", "Invincible", "Untouchable"}) do
+            if Mob:GetAttribute(attr) == true then
+                return true
+            end
+        end
+        for _, attr in ipairs({"Attackable", "CanTakeDamage", "Targetable", "Damageable"}) do
+            if Mob:GetAttribute(attr) == false then
+                return true
+            end
+        end
+        return false
+    end
+
+    local function IsMobValidTarget(Mob, IgnoreCooldown)
+        if not (Mob and Mob.Parent) then return false end
+        if Mob.Name == "TargetDummy" then return false end
+
+        local Owner = Mob:GetAttribute("Owner")
+        if Owner ~= nil and Owner ~= "" then return false end
+
+        local MobRoot = GetMobRoot(Mob)
+        if not MobRoot then return false end
+
+        local HP = GetMobHP(Mob)
+        if HP ~= nil and HP <= 0 then return false end
+
+        if IsMobExplicitlyLocked(Mob) then return false end
+
+        if not IgnoreCooldown then
+            local cd = UnattackableUntil[Mob]
+            if cd and os.clock() < cd then
+                return false
+            end
+        end
+
+        return true
+    end
+
+    local function CollectValidMobs(IgnoreCooldown)
+        local MobsFolder = workspace:FindFirstChild("Mobs")
+        local List = {}
+        if not MobsFolder then return List end
+
+        local Now = os.clock()
+        for m, exp in pairs(UnattackableUntil) do
+            if (not m or not m.Parent) or Now >= exp then
+                UnattackableUntil[m] = nil
+            end
+        end
+
+        for _, Mob in ipairs(MobsFolder:GetChildren()) do
+            if IsMobValidTarget(Mob, IgnoreCooldown) then
+                local mRoot = GetMobRoot(Mob)
+                if mRoot then
+                    table.insert(List, {
+                        Mob = Mob,
+                        Root = mRoot,
+                        Pos = mRoot.Position,
+                        Room = GetMobRoomIndex(Mob),
+                    })
+                end
+            end
+        end
+        return List
+    end
+
+    local function IsAnyCombatAuraActive()
+        local Flags = Rayfield and Rayfield.Flags
+        if type(Flags) ~= "table" then return true end
+        for _, flagName in ipairs({"KillAura", "PetKillAura", "SkillAura", "AutoSkillSpam"}) do
+            local obj = Flags[flagName]
+            if type(obj) == "table" and obj.CurrentValue == true then
+                return true
+            end
+        end
+        return false
+    end
+
+    local function PickBestMobInArea(Root)
+        local AllMobs = CollectValidMobs(false)
+        if #AllMobs == 0 then
+            -- If everything was temporarily on unattackable cooldown, retry them cleanly
+            AllMobs = CollectValidMobs(true)
+            if #AllMobs == 0 then
+                CurrentTargetMob = nil
+                ActiveAreaAnchor = nil
+                return nil
+            end
+        end
+
+        -- 1. Keep sticky target if still valid (eliminates co-op ping-pong & weird jumps)
+        if CurrentTargetMob and IsMobValidTarget(CurrentTargetMob, false) then
+            local curRoot = GetMobRoot(CurrentTargetMob)
+            if curRoot then
+                return CurrentTargetMob
+            end
+        end
+        CurrentTargetMob = nil
+
+        -- 2. Room-Attribute Priority: ALWAYS finish the lowest numbered room/area first
+        local LowestRoom = math.huge
+        for _, entry in ipairs(AllMobs) do
+            if entry.Room and entry.Room < LowestRoom then
+                LowestRoom = entry.Room
+            end
+        end
+
+        local Pool = AllMobs
+        if LowestRoom < math.huge then
+            local roomPool = {}
+            for _, entry in ipairs(AllMobs) do
+                if entry.Room == LowestRoom then
+                    table.insert(roomPool, entry)
+                end
+            end
+            if #roomPool > 0 then
+                Pool = roomPool
+            end
+        end
+
+        -- 3. Spatial Area-Cluster Lock: finish ALL mobs in the current area before moving to next area
+        local CandidatePool = Pool
+        if ActiveAreaAnchor then
+            local InArea = {}
+            local Queue = {}
+
+            for i, entry in ipairs(Pool) do
+                local d = (entry.Pos - ActiveAreaAnchor).Magnitude
+                local dy = math.abs(entry.Pos.Y - ActiveAreaAnchor.Y)
+                if d <= AREA_ANCHOR_RADIUS and dy <= 40 then
+                    InArea[i] = true
+                    table.insert(Queue, entry)
+                end
+            end
+
+            -- BFS expand connected mobs inside the same room/area
+            local head = 1
+            while head <= #Queue do
+                local cur = Queue[head]
+                head += 1
+                for i, other in ipairs(Pool) do
+                    if not InArea[i] then
+                        local d = (other.Pos - cur.Pos).Magnitude
+                        local dy = math.abs(other.Pos.Y - cur.Pos.Y)
+                        if d <= AREA_LINK_RADIUS and dy <= 30 then
+                            InArea[i] = true
+                            table.insert(Queue, other)
+                        end
+                    end
+                end
+            end
+
+            if #Queue > 0 then
+                CandidatePool = Queue
+            else
+                -- Current area 100% cleared -> unlock anchor to advance to next area!
+                ActiveAreaAnchor = nil
+            end
+        end
+
+        -- 4. Pick closest mob in the locked area (or closest next area if current area cleared)
+        local BestEntry = nil
+        local BestDist = math.huge
+        local RefPos = ActiveAreaAnchor or Root.Position
+
+        for _, entry in ipairs(CandidatePool) do
+            local dist = (entry.Pos - RefPos).Magnitude
+            if dist < BestDist then
+                BestDist = dist
+                BestEntry = entry
+            end
+        end
+
+        if BestEntry then
+            CurrentTargetMob = BestEntry.Mob
+            ActiveAreaAnchor = BestEntry.Pos
+            TargetTrackedHP = GetMobHP(BestEntry.Mob)
+            TargetLastDamageTime = os.clock()
+            return BestEntry.Mob
+        end
+
+        return nil
+    end
+
+    -- ==========================================
+    -- STOP / START AUTO MOBS
+    -- ==========================================
+    local function StopAutoMobs()
+        AutoMobs = false
+        IsFlying = false
+        CurrentTargetMob = nil
+        ActiveAreaAnchor = nil
+        table.clear(UnattackableUntil)
+        RunId += 1
+
+        if MovementConnection then
+            MovementConnection:Disconnect()
+            MovementConnection = nil
+        end
+        if NoClipConnection then
+            NoClipConnection:Disconnect()
+            NoClipConnection = nil
+        end
+
+        local Char = GetCharacter()
+        local Root = Char and Char:FindFirstChild("HumanoidRootPart")
+        local Hum = Char and Char:FindFirstChildOfClass("Humanoid")
+
+        DisableFlightStabilizer(Root, Hum)
+        RestoreCharacterCollision()
+        DestroyPlatform()
+    end
+
+    local function StartAutoMobs()
+        StopAutoMobs()
+
+        RunId += 1
+        local CurrentRun = RunId
+        AutoMobs = true
+
+        local startRoot = GetHRP()
+        if startRoot then
+            ActiveAreaAnchor = startRoot.Position
+        end
+
+        -- 1. Stepped: Continuous NoClip so limbs/walls never snag
+        NoClipConnection = RunService.Stepped:Connect(function()
+            if not AutoMobs or RunId ~= CurrentRun then return end
+            if IsFlying then
+                ApplyNoClipStep()
+            end
+        end)
+
+        -- 2. Heartbeat: Exact-Speed Atomic Pivot Flight + Area-Lock Monitor
+        MovementConnection = RunService.Heartbeat:Connect(function(DeltaTime)
+            if not AutoMobs or RunId ~= CurrentRun then return end
+
+            -- Strict dt clamp prevents giant lag-spike teleports in co-op
+            local StepTime = math.clamp(DeltaTime, 0.001, 0.035)
+
+            pcall(function()
+                local Char = GetCharacter()
+                local Root = Char and Char:FindFirstChild("HumanoidRootPart")
+                local Hum = Char and Char:FindFirstChildOfClass("Humanoid")
+
+                if not Root or not Hum or Hum.Health <= 0 then
+                    IsFlying = false
+                    return
+                end
+
+                local Mob = PickBestMobInArea(Root)
+
+                -- No mobs left anywhere -> safely land & unlock player
+                if not Mob then
+                    if IsFlying then
+                        IsFlying = false
+                        DisableFlightStabilizer(Root, Hum)
+                        RestoreCharacterCollision()
+                        DestroyPlatform()
+                    end
+                    return
+                end
+
+                local MobRoot = GetMobRoot(Mob)
+                if not MobRoot then
+                    CurrentTargetMob = nil
+                    return
+                end
+
+                -- Active valid mob found -> engage full zero-break physics lock
+                IsFlying = true
+                ApplyNoClipStep()
+                EnableFlightStabilizer(Root, Hum)
+
+                local TargetPos = MobRoot.Position + Vector3.new(0, FloatHeight, 0)
+                local Diff = TargetPos - Root.Position
+                local Dist = Diff.Magnitude
+
+                local _, CurrentYaw, _ = Root.CFrame:ToEulerAnglesYXZ()
+                local UprightRot = CFrame.Angles(0, CurrentYaw, 0)
+
+                if Dist > 0.05 then
+                    local Step = math.min(MoveSpeed * StepTime, Dist)
+                    local NextPos = Root.Position + (Diff.Unit * Step)
+                    PivotCharacterToRootCFrame(Char, Root, CFrame.new(NextPos) * UprightRot)
+                else
+                    PivotCharacterToRootCFrame(Char, Root, CFrame.new(TargetPos) * UprightRot)
+                end
+
+                UpdateVisualPlatform(Root)
+                LockPetToPlayer(Root)
+
+                -- Live Unattackable Guard: if hovering over a locked-area mob & HP never drops, switch!
+                local HorizDist = Vector3.new(MobRoot.Position.X - Root.Position.X, 0, MobRoot.Position.Z - Root.Position.Z).Magnitude
+                if HorizDist <= 18 then
+                    local curHP = GetMobHP(Mob)
+                    if curHP ~= nil then
+                        if TargetTrackedHP == nil or curHP < TargetTrackedHP then
+                            TargetTrackedHP = curHP
+                            TargetLastDamageTime = os.clock()
+                        elseif IsAnyCombatAuraActive() and (os.clock() - TargetLastDamageTime) >= UNATTACKABLE_TIMEOUT then
+                            -- Only skip if another alive mob exists in a different area
+                            local allValid = CollectValidMobs(false)
+                            local hasOtherAreaMob = false
+                            for _, entry in ipairs(allValid) do
+                                if entry.Mob ~= Mob and (entry.Pos - MobRoot.Position).Magnitude > 45 then
+                                    hasOtherAreaMob = true
+                                    break
+                                end
+                            end
+
+                            if hasOtherAreaMob then
+                                local untilT = os.clock() + UNATTACKABLE_COOLDOWN
+                                UnattackableUntil[Mob] = untilT
+                                -- Also briefly cool down unattackable mobs right next to this locked mob
+                                for _, entry in ipairs(allValid) do
+                                    if (entry.Pos - MobRoot.Position).Magnitude <= 35 then
+                                        UnattackableUntil[entry.Mob] = untilT
+                                    end
+                                end
+                                CurrentTargetMob = nil
+                                ActiveAreaAnchor = nil
+                            else
+                                TargetLastDamageTime = os.clock()
+                            end
+                        end
+                    end
+                else
+                    -- Reset stall timer while still flying toward target
+                    TargetLastDamageTime = os.clock()
+                end
+            end)
+        end)
+    end
+
+    -- ==========================================
+    -- UI CONTROLS (SAME FLAGS — CONFIG SAFE!)
+    -- ==========================================
+    UtilityTab:CreateToggle({
+        Name = "Auto Mobs",
+        CurrentValue = false,
+        Flag = "AutoMobsToggle",
+        Callback = function(Value)
+            if Value then
+                StartAutoMobs()
+            else
+                StopAutoMobs()
+            end
+        end
+    })
+
+    UtilityTab:CreateSlider({
+        Name = "Mob Float Height",
+        Range = {10, 200},
+        Increment = 1,
+        Suffix = "Studs",
+        CurrentValue = 30,
+        Flag = "MobFloatHeight",
+        Callback = function(Value)
+            FloatHeight = Value
+        end
+    })
+
+    UtilityTab:CreateSlider({
+        Name = "Movement Speed",
+        Range = {100, 1000},
+        Increment = 25,
+        Suffix = "Speed",
+        CurrentValue = 175,
+        Flag = "MovementSpeed",
+        Callback = function(Value)
+            MoveSpeed = Value
+        end
+    })
+
+    -- RESPAWN CLEANUP
+    Player.CharacterAdded:Connect(function()
+        table.clear(OriginalCollideStates)
+        CurrentTargetMob = nil
+        ActiveAreaAnchor = nil
+        table.clear(UnattackableUntil)
+        DestroyPlatform()
+
+        if AutoMobs then
+            task.wait(0.5)
+            if AutoMobs then
+                StartAutoMobs()
+            end
+        end
+    end)
+end
                     
 --====================================================
 -- DUNGEON HEROES | 1-TOGGLE AUTO SKILL AURA (SLOTS 1-5)
