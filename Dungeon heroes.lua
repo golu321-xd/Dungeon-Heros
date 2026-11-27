@@ -5493,6 +5493,12 @@ do
 --========================================================
 -- DUNGEON HEROES | RAYFIELD TURBO PET AURA (SAFE EXEC)
 --========================================================
+--========================================================
+-- DUNGEON HEROES | RAYFIELD TURBO PET AURA (BEST ATK ONLY)
+-- * Locks ONLY onto Pet's Highest HitDamage Attack
+-- * Toggleable TargetDummy Exception
+-- * Max 50x Burst (Slider + Custom Input) with Saved Flags
+--========================================================
 
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
@@ -5504,8 +5510,8 @@ local PetDamageRemote = Remotes and (Remotes:FindFirstChild("PetDamage") or Remo
 
 local MobsSys = nil
 pcall(function()
-    local sysFolder = RS:FindFirstChild("Systems")
-    local mobsMod = sysFolder and sysFolder:FindFirstChild("Mobs")
+    local sys = RS:FindFirstChild("Systems")
+    local mobsMod = sys and sys:FindFirstChild("Mobs")
     if mobsMod then
         MobsSys = require(mobsMod)
     end
@@ -5513,22 +5519,24 @@ end)
 
 -- State
 local AuraEnabled = false
-local IgnoreTargetDummy = true
+local IgnoreTargetDummy = true -- ON = ignore TargetDummy | OFF = no exception
 local BurstCount = 30
-local SliderMax = 50
+local MaxBurst = 50
 local TickDelay = 0.03
-local ChunkSize = 120
+local ChunkSize = 50
 
 local BestAtkCache = {}
+local LastShownPet = nil
 local BurstSliderRef = nil
 local BurstInputRef = nil
-local SyncingBurstUI = false
+local BestAtkLabelRef = nil
+local SyncingUI = false
 
 local function GetMyPet()
     local mobsFolder = workspace:FindFirstChild("Mobs")
     if not mobsFolder then return nil end
     for _, m in ipairs(mobsFolder:GetChildren()) do
-        if m:GetAttribute("Owner") == LP.Name and (m:GetAttribute("HP") or 0) > 0 and m.PrimaryPart then
+        if m:GetAttribute("Owner") == LP.Name and (tonumber(m:GetAttribute("HP")) or 0) > 0 and m.PrimaryPart then
             return m
         end
     end
@@ -5543,11 +5551,8 @@ local function IsValidEnemy(Mob, MyPet)
         return false
     end
 
+    -- EXCEPTION: Ignore TargetDummy only when toggle is ON
     if IgnoreTargetDummy and Mob.Name == "TargetDummy" then
-        return false
-    end
-
-    if Mob:GetAttribute("IneligibleTarget") then
         return false
     end
 
@@ -5558,6 +5563,10 @@ local function IsValidEnemy(Mob, MyPet)
 
     if string.find(Mob.Name, "Dummy") then
         return true
+    end
+
+    if Mob:GetAttribute("IneligibleTarget") then
+        return false
     end
 
     local HP = tonumber(Mob:GetAttribute("HP"))
@@ -5573,38 +5582,70 @@ local function IsValidEnemy(Mob, MyPet)
     return true
 end
 
+-- Scans all attacks of current pet and locks ONLY the single highest HitDamage attack/part
 local function GetBestPetAttack(pet)
-    if BestAtkCache[pet] then return BestAtkCache[pet] end
+    if BestAtkCache[pet] then
+        return BestAtkCache[pet]
+    end
+
+    -- Clean stale dead pet references
+    for cachedPet in pairs(BestAtkCache) do
+        if not cachedPet or not cachedPet.Parent then
+            BestAtkCache[cachedPet] = nil
+        end
+    end
 
     local best = nil
     if MobsSys then
         pcall(function()
             local mobData = MobsSys:GetMobDataFromModel(pet)
-            local diff = mobData and mobData.difficulty or nil
+            local diff = (mobData and mobData.difficulty) or pet:GetAttribute("Difficulty")
             local folder = MobsSys:GetMobAttacksFolder(pet.Name, diff)
+            if not folder then
+                folder = MobsSys:GetMobAttacksFolder(pet.Name)
+            end
             if not folder then return end
 
             local bestDmg = -1
+            local bestRange = -1
+
+            local function EvaluateCandidate(atk, atkRange, partName)
+                local okR, resolved = pcall(function()
+                    return MobsSys:ResolvePetAttackHitPart(pet.Name, atk.Name, partName, diff)
+                end)
+                if not okR or not resolved then return end
+                if resolved:FindFirstChild("IsHeal") then return end
+
+                local hd = resolved:FindFirstChild("HitDamage") or atk:FindFirstChild("HitDamage")
+                local dmgMult = (hd and tonumber(hd.Value)) or 1
+
+                if dmgMult > bestDmg or (dmgMult == bestDmg and atkRange > bestRange) then
+                    bestDmg = dmgMult
+                    bestRange = atkRange
+                    best = {
+                        AtkName = atk.Name,
+                        PartName = partName,
+                        Range = atkRange + 10,
+                        Mult = dmgMult,
+                    }
+                end
+            end
+
             for _, atk in ipairs(folder:GetChildren()) do
-                local atkRange = (atk:FindFirstChild("AttackRange") and atk.AttackRange.Value) or 30
+                local atkRangeObj = atk:FindFirstChild("AttackRange")
+                local atkRange = (atkRangeObj and tonumber(atkRangeObj.Value)) or 30
+
+                local checkedNames = {}
                 for _, child in ipairs(atk:GetDescendants()) do
-                    local resolved = nil
-                    pcall(function()
-                        resolved = MobsSys:ResolvePetAttackHitPart(pet.Name, atk.Name, child.Name, diff)
-                    end)
-                    if resolved and not resolved:FindFirstChild("IsHeal") then
-                        local hd = resolved:FindFirstChild("HitDamage")
-                        local dmgMult = (hd and tonumber(hd.Value)) or 1
-                        if dmgMult > bestDmg then
-                            bestDmg = dmgMult
-                            best = {
-                                AtkName = atk.Name,
-                                PartName = child.Name,
-                                Range = atkRange + 10,
-                                Mult = dmgMult,
-                            }
-                        end
+                    if not checkedNames[child.Name] then
+                        checkedNames[child.Name] = true
+                        EvaluateCandidate(atk, atkRange, child.Name)
                     end
+                end
+
+                -- Fallback if attack resolves by its own name
+                if not checkedNames[atk.Name] then
+                    EvaluateCandidate(atk, atkRange, atk.Name)
                 end
             end
         end)
@@ -5628,7 +5669,7 @@ local function GetValidTargets(pet, atkRange)
     local playerPos = root.Position
     local petPos = petRoot.Position
     local scale = tonumber(pet:GetAttribute("Scale")) or 1
-    local maxHitRange = (atkRange * scale)
+    local maxHitRange = atkRange * scale
 
     local closestMobPos = nil
     local closestDist = math.huge
@@ -5670,15 +5711,15 @@ local function GetValidTargets(pet, atkRange)
     return targets, spoofPos
 end
 
-local function SetBurstValue(val, fromSlider)
-    if SyncingBurstUI then return end
-    local num = math.max(1, math.floor(tonumber(val) or 1))
+local function ApplyBurst(val, fromSlider)
+    if SyncingUI then return end
+    local num = math.clamp(math.floor(tonumber(val) or 1), 1, MaxBurst)
     BurstCount = num
 
-    SyncingBurstUI = true
+    SyncingUI = true
     if not fromSlider and BurstSliderRef and type(BurstSliderRef.Set) == "function" then
         pcall(function()
-            BurstSliderRef:Set(math.clamp(num, 1, SliderMax))
+            BurstSliderRef:Set(num)
         end)
     end
     if BurstInputRef and type(BurstInputRef.Set) == "function" then
@@ -5686,13 +5727,16 @@ local function SetBurstValue(val, fromSlider)
             BurstInputRef:Set(tostring(num))
         end)
     end
-    SyncingBurstUI = false
-end 
+    SyncingUI = false
+end
+
+
+BestAtkLabelRef = MainTab:CreateLabel("Locked Attack: Waiting for pet...")
 
 MainTab:CreateToggle({
-    Name = "Pet Aura (Instant kill)",
+    Name = "Pet Aura",
     CurrentValue = false,
-    Flag = "TurboPetAuraFlag", 
+    Flag = "DH_TurboPetAura_Enabled",
     Callback = function(Value)
         AuraEnabled = Value
     end,
@@ -5701,79 +5745,94 @@ MainTab:CreateToggle({
 MainTab:CreateToggle({
     Name = "Ignore TargetDummy",
     CurrentValue = true,
-    Flag = "IgnoreTargetDummyFlag", 
+    Flag = "DH_TurboPetAura_IgnoreTargetDummy",
     Callback = function(Value)
         IgnoreTargetDummy = Value
     end,
 })
 
 BurstSliderRef = MainTab:CreateSlider({
-    Name = "Burst Multiplier (Max 50x)",
-    Range = {1, SliderMax},
+    Name = "Burst Multiplier",
+    Range = {1, MaxBurst},
     Increment = 1,
     Suffix = "x",
     CurrentValue = BurstCount,
-    Flag = "PetBurstSliderFlag", 
+    Flag = "DH_TurboPetAura_BurstSlider",
     Callback = function(Value)
-        SetBurstValue(Value, true)
+        ApplyBurst(Value, true)
     end,
 })
 
 BurstInputRef = MainTab:CreateInput({
-    Name = "Custom Burst Count",
+    Name = "Type Burst Count",
     CurrentValue = tostring(BurstCount),
-    PlaceholderText = "Type burst",
+    PlaceholderText = "Enter 1 to 50",
     RemoveTextAfterFocusLost = false,
-    Flag = "PetBurstInputFlag", 
+    Flag = "DH_TurboPetAura_BurstInput",
     Callback = function(Text)
         local cleaned = string.gsub(Text or "", "[^%d]", "")
         local parsed = tonumber(cleaned)
         if parsed and parsed >= 1 then
-            SetBurstValue(parsed, false)
+            ApplyBurst(parsed, false)
         else
-            SetBurstValue(BurstCount, false)
+            ApplyBurst(BurstCount, false)
         end
     end,
 })
 
+pcall(function()
+    Rayfield:LoadConfiguration()
+end)
+
 -- ==========================================
--- BURST EXECUTION LOOP
+-- MAIN BURST LOOP (HIGHEST DMG ATTACK ONLY)
 -- ==========================================
 task.spawn(function()
     while true do
-        if AuraEnabled and PetDamageRemote then
-            local pet = GetMyPet()
-            if pet then
-                local bestAtk = GetBestPetAttack(pet)
-                if bestAtk then
-                    local targets, spoofPos = GetValidTargets(pet, bestAtk.Range)
-                    if #targets > 0 then
-                        local remaining = BurstCount
-                        while remaining > 0 and AuraEnabled do
-                            local batch = math.min(remaining, ChunkSize)
-                            for _ = 1, batch do
-                                pcall(function()
-                                    PetDamageRemote:FireServer(pet, bestAtk.AtkName, bestAtk.PartName, targets, spoofPos)
-                                end)
-                            end
-                            remaining -= batch
-                            if remaining > 0 then
-                                RunService.Heartbeat:Wait()
-                            end
+        local pet = GetMyPet()
+        if pet then
+            local bestAtk = GetBestPetAttack(pet)
+            if bestAtk and pet ~= LastShownPet then
+                LastShownPet = pet
+                if BestAtkLabelRef and type(BestAtkLabelRef.Set) == "function" then
+                    pcall(function()
+                        BestAtkLabelRef:Set(string.format(
+                            "Locked Attack: %s (%sx DMG)",
+                            tostring(bestAtk.AtkName),
+                            tostring(bestAtk.Mult)
+                        ))
+                    end)
+                end
+            end
+
+            if AuraEnabled and PetDamageRemote and bestAtk then
+                local targets, spoofPos = GetValidTargets(pet, bestAtk.Range)
+                if #targets > 0 then
+                    local remaining = BurstCount
+                    while remaining > 0 and AuraEnabled do
+                        local batch = math.min(remaining, ChunkSize)
+                        for _ = 1, batch do
+                            pcall(function()
+                                PetDamageRemote:FireServer(pet, bestAtk.AtkName, bestAtk.PartName, targets, spoofPos)
+                            end)
+                        end
+                        remaining = remaining - batch
+                        if remaining > 0 then
+                            RunService.Heartbeat:Wait()
                         end
                     end
                 end
+                task.wait(TickDelay)
+            else
+                task.wait(0.15)
             end
-            task.wait(TickDelay)
         else
-            task.wait(0.2)
+            LastShownPet = nil
+            task.wait(0.25)
         end
     end
 end)
-
 end
-
-
 
 -- ==========================================
 -- SCRIPT LOADERS (FOLLOW PLAYER & EMOTE V2)
