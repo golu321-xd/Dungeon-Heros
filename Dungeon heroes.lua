@@ -5487,7 +5487,8 @@ CONFIG.AttackSpeed = Value
 end
 })
 
--- ================= Pet Aura =======================
+do
+-- ================= Pet Ara =======================
 
 --========================================================
 -- DUNGEON HEROES | RAYFIELD TURBO PET AURA (SAFE EXEC)
@@ -5769,6 +5770,10 @@ task.spawn(function()
         end
     end
 end)
+
+end
+
+
 
 -- ==========================================
 -- SCRIPT LOADERS (FOLLOW PLAYER & EMOTE V2)
