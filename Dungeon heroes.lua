@@ -5492,9 +5492,6 @@ end
 --========================================================
 -- DUNGEON HEROES | RAYFIELD TURBO PET AURA (SAFE EXEC)
 --========================================================
-if not game:IsLoaded() then
-    game.Loaded:Wait()
-end
 
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
@@ -5694,7 +5691,7 @@ end
 MainTab:CreateToggle({
     Name = "Pet Aura (Instant kill)",
     CurrentValue = false,
-    Flag = "TurboPetAuraFlag"
+    Flag = "TurboPetAuraFlag", 
     Callback = function(Value)
         AuraEnabled = Value
     end,
@@ -5703,7 +5700,7 @@ MainTab:CreateToggle({
 MainTab:CreateToggle({
     Name = "Ignore TargetDummy",
     CurrentValue = true,
-    Flag = "IgnoreTargetDummyFlag"
+    Flag = "IgnoreTargetDummyFlag", 
     Callback = function(Value)
         IgnoreTargetDummy = Value
     end,
@@ -5715,7 +5712,7 @@ BurstSliderRef = MainTab:CreateSlider({
     Increment = 1,
     Suffix = "x",
     CurrentValue = BurstCount,
-    Flag = "PetBurstSliderFlag"
+    Flag = "PetBurstSliderFlag", 
     Callback = function(Value)
         SetBurstValue(Value, true)
     end,
@@ -5726,7 +5723,7 @@ BurstInputRef = MainTab:CreateInput({
     CurrentValue = tostring(BurstCount),
     PlaceholderText = "Type burst",
     RemoveTextAfterFocusLost = false,
-    Flag = "PetBurstInputFlag"
+    Flag = "PetBurstInputFlag", 
     Callback = function(Text)
         local cleaned = string.gsub(Text or "", "[^%d]", "")
         local parsed = tonumber(cleaned)
