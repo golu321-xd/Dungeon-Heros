@@ -5489,272 +5489,289 @@ end
 
 -- ================= Pet Aura =======================
 
+--========================================================
+-- DUNGEON HEROES | RAYFIELD TURBO PET AURA (SAFE EXEC)
+--========================================================
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
+
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local LocalPlayer = Players.LocalPlayer
+local RS = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
-local function GetMobsFolder()
-	return workspace:FindFirstChild("Mobs")
-end
+local LP = Players.LocalPlayer
+local Remotes = RS:WaitForChild("Remotes", 15)
+local PetDamageRemote = Remotes and (Remotes:FindFirstChild("PetDamage") or Remotes:WaitForChild("PetDamage", 10))
 
-local PetDamage = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("PetDamage")
-local MobsSystem = require(ReplicatedStorage:WaitForChild("Systems"):WaitForChild("Mobs"))
+local MobsSys = nil
+pcall(function()
+    local sysFolder = RS:FindFirstChild("Systems")
+    local mobsMod = sysFolder and sysFolder:FindFirstChild("Mobs")
+    if mobsMod then
+        MobsSys = require(mobsMod)
+    end
+end)
 
-local CONFIG = {
-	KillRange = 300,
-	AttackSpeed = 0.001,
-	ClusterRadius = 25
-}
+-- State
+local AuraEnabled = false
+local IgnoreTargetDummy = true
+local BurstCount = 30
+local SliderMax = 50
+local TickDelay = 0.03
+local ChunkSize = 120
 
--- Cache table taaki har pet ka best attack 1 hi baar scan ho
-local CachedBestAttack = {}
+local BestAtkCache = {}
+local BurstSliderRef = nil
+local BurstInputRef = nil
+local SyncingBurstUI = false
 
-local KillEnabled = false
-local LoopId = 0
-
--- Find equipped pet
 local function GetMyPet()
-	local MobsFolder = GetMobsFolder()
-	if not MobsFolder then return nil end
-
-	for _, Mob in ipairs(MobsFolder:GetChildren()) do
-		if Mob:GetAttribute("Owner") == LocalPlayer.Name then
-			return Mob
-		end
-	end
-	return nil
+    local mobsFolder = workspace:FindFirstChild("Mobs")
+    if not mobsFolder then return nil end
+    for _, m in ipairs(mobsFolder:GetChildren()) do
+        if m:GetAttribute("Owner") == LP.Name and (m:GetAttribute("HP") or 0) > 0 and m.PrimaryPart then
+            return m
+        end
+    end
+    return nil
 end
 
--- Auto-Detect ONLY the #1 Highest Damage Skill of the Equipped Pet
-local function GetBestPetAttack(Pet)
-	if not Pet then return nil end
-	local PetName = Pet.Name
-
-	if CachedBestAttack[PetName] then
-		return CachedBestAttack[PetName]
-	end
-
-	local Ok, AttacksFolder = pcall(function()
-		return MobsSystem:GetMobAttacksFolder(PetName)
-	end)
-
-	if not Ok or not AttacksFolder then
-		return nil
-	end
-
-	local BestSkill = nil
-	local BestDamage = -1
-	local BestRange = -1
-	local BestCooldown = -1
-
-	for _, AttackFolder in ipairs(AttacksFolder:GetChildren()) do
-		if AttackFolder:IsA("Folder") and not AttackFolder:FindFirstChild("PetsCannotUse") then
-			local RangeObj = AttackFolder:FindFirstChild("AttackRange")
-			local CooldownObj = AttackFolder:FindFirstChild("Cooldown")
-			local AtkRange = (RangeObj and tonumber(RangeObj.Value)) or 0
-			local AtkCooldown = (CooldownObj and tonumber(CooldownObj.Value)) or 0
-
-			for _, Child in ipairs(AttackFolder:GetChildren()) do
-				if Child:IsA("BasePart") and not Child:FindFirstChild("IsHeal") then
-					-- HitDamage check karo (default = 1)
-					local DmgObj = Child:FindFirstChild("HitDamage") or AttackFolder:FindFirstChild("HitDamage")
-					local HitDmg = (DmgObj and tonumber(DmgObj.Value)) or 1
-
-					-- Sabse zyada HitDamage wali skill chuno (Tie hone par zyada Range/Cooldown wali Heavy skill)
-					local IsBetter = false
-					if HitDmg > BestDamage then
-						IsBetter = true
-					elseif HitDmg == BestDamage then
-						if AtkRange > BestRange then
-							IsBetter = true
-						elseif AtkRange == BestRange and AtkCooldown > BestCooldown then
-							IsBetter = true
-						end
-					end
-
-					if IsBetter then
-						BestDamage = HitDmg
-						BestRange = AtkRange
-						BestCooldown = AtkCooldown
-						BestSkill = { AttackFolder.Name, Child.Name, HitDmg }
-					end
-				end
-			end
-		end
-	end
-
-	if BestSkill then
-		CachedBestAttack[PetName] = BestSkill
-		print(string.format("[Pet Kill Aura] %s -> Best Skill: %s (%s) | Skill Damage Mult: %s", PetName, BestSkill[1], BestSkill[2], tostring(BestSkill[3])))
-		return BestSkill
-	end
-
-	return nil
-end
-
--- Check if mob is valid enemy
 local function IsValidEnemy(Mob, MyPet)
-	if Mob == MyPet then return false end
+    if not Mob or not Mob:IsA("Model") or not Mob.PrimaryPart then
+        return false
+    end
+    if Mob == MyPet then
+        return false
+    end
 
-	-- EXCEPTION: Completely ignore TargetDummy
-	if Mob.Name == "TargetDummy" then return false end
+    if IgnoreTargetDummy and Mob.Name == "TargetDummy" then
+        return false
+    end
 
-	local Owner = Mob:GetAttribute("Owner")
-	if Owner ~= nil and Owner ~= "" then return false end
+    if Mob:GetAttribute("IneligibleTarget") then
+        return false
+    end
 
-	if string.find(Mob.Name, "Dummy") then return true end
+    local Owner = Mob:GetAttribute("Owner")
+    if Owner ~= nil and Owner ~= "" then
+        return false
+    end
 
-	local HP = tonumber(Mob:GetAttribute("HP"))
-	if HP ~= nil then return HP > 0 end
+    if string.find(Mob.Name, "Dummy") then
+        return true
+    end
 
-	local Humanoid = Mob:FindFirstChildOfClass("Humanoid")
-	if Humanoid then return Humanoid.Health > 0 end
+    local HP = tonumber(Mob:GetAttribute("HP"))
+    if HP ~= nil then
+        return HP > 0
+    end
 
-	return true
+    local Humanoid = Mob:FindFirstChildOfClass("Humanoid")
+    if Humanoid then
+        return Humanoid.Health > 0
+    end
+
+    return true
 end
 
--- Collect enemies in range
-local function GetTargets(HRP, MyPet)
-	local Targets = {}
-	local MobsFolder = GetMobsFolder()
-	if not MobsFolder then return Targets end
+local function GetBestPetAttack(pet)
+    if BestAtkCache[pet] then return BestAtkCache[pet] end
 
-	for _, Mob in ipairs(MobsFolder:GetChildren()) do
-		local MobHRP = Mob:FindFirstChild("HumanoidRootPart") or Mob.PrimaryPart
-		if MobHRP and IsValidEnemy(Mob, MyPet) then
-			local Distance = (MobHRP.Position - HRP.Position).Magnitude
-			if Distance <= CONFIG.KillRange then
-				table.insert(Targets, {
-					Instance = Mob,
-					Position = MobHRP.Position,
-					Distance = Distance
-				})
-			end
-		end
-	end
+    local best = nil
+    if MobsSys then
+        pcall(function()
+            local mobData = MobsSys:GetMobDataFromModel(pet)
+            local diff = mobData and mobData.difficulty or nil
+            local folder = MobsSys:GetMobAttacksFolder(pet.Name, diff)
+            if not folder then return end
 
-	table.sort(Targets, function(a, b)
-		return a.Distance < b.Distance
-	end)
+            local bestDmg = -1
+            for _, atk in ipairs(folder:GetChildren()) do
+                local atkRange = (atk:FindFirstChild("AttackRange") and atk.AttackRange.Value) or 30
+                for _, child in ipairs(atk:GetDescendants()) do
+                    local resolved = nil
+                    pcall(function()
+                        resolved = MobsSys:ResolvePetAttackHitPart(pet.Name, atk.Name, child.Name, diff)
+                    end)
+                    if resolved and not resolved:FindFirstChild("IsHeal") then
+                        local hd = resolved:FindFirstChild("HitDamage")
+                        local dmgMult = (hd and tonumber(hd.Value)) or 1
+                        if dmgMult > bestDmg then
+                            bestDmg = dmgMult
+                            best = {
+                                AtkName = atk.Name,
+                                PartName = child.Name,
+                                Range = atkRange + 10,
+                                Mult = dmgMult,
+                            }
+                        end
+                    end
+                end
+            end
+        end)
+    end
 
-	return Targets
+    if best then
+        BestAtkCache[pet] = best
+    end
+    return best
 end
 
--- Build hit clusters
-local function BuildHitClusters(TargetDataList)
-	local Clusters = {}
-	local Used = {}
+local function GetValidTargets(pet, atkRange)
+    local char = LP.Character
+    local root = char and char.PrimaryPart
+    local petRoot = pet and pet.PrimaryPart
+    if not (root and petRoot) then return {}, nil end
 
-	for i, Primary in ipairs(TargetDataList) do
-		if not Used[i] then
-			Used[i] = true
-			local GroupInstances = { Primary.Instance }
+    local mobsFolder = workspace:FindFirstChild("Mobs")
+    if not mobsFolder then return {}, nil end
 
-			for j = i + 1, #TargetDataList do
-				if not Used[j] then
-					local Secondary = TargetDataList[j]
-					if (Secondary.Position - Primary.Position).Magnitude <= CONFIG.ClusterRadius then
-						Used[j] = true
-						table.insert(GroupInstances, Secondary.Instance)
-					end
-				end
-			end
+    local playerPos = root.Position
+    local petPos = petRoot.Position
+    local scale = tonumber(pet:GetAttribute("Scale")) or 1
+    local maxHitRange = (atkRange * scale)
 
-			table.insert(Clusters, {
-				Mobs = GroupInstances,
-				Position = Primary.Position
-			})
-		end
-	end
+    local closestMobPos = nil
+    local closestDist = math.huge
+    local candidates = {}
 
-	return Clusters
+    for _, m in ipairs(mobsFolder:GetChildren()) do
+        if IsValidEnemy(m, pet) then
+            local d = (m.PrimaryPart.Position - playerPos).Magnitude
+            if d <= (85 + maxHitRange) then
+                table.insert(candidates, m)
+                if d < closestDist then
+                    closestDist = d
+                    closestMobPos = m.PrimaryPart.Position
+                end
+            end
+        end
+    end
+
+    if #candidates == 0 then return {}, nil end
+
+    local spoofPos = petPos
+    if closestMobPos then
+        local offset = closestMobPos - playerPos
+        if offset.Magnitude > 85 then
+            spoofPos = playerPos + (offset.Unit * 85)
+        else
+            spoofPos = closestMobPos
+        end
+    end
+
+    local targets = {}
+    for _, m in ipairs(candidates) do
+        local mp = m.PrimaryPart.Position
+        if (mp - petPos).Magnitude <= maxHitRange or (mp - spoofPos).Magnitude <= maxHitRange then
+            table.insert(targets, m)
+        end
+    end
+
+    return targets, spoofPos
 end
 
--- Pet Aura Loop (Fires ONLY the #1 Best Skill)
-local function StartKillAura()
-	if not KillEnabled then return end
+local function SetBurstValue(val, fromSlider)
+    if SyncingBurstUI then return end
+    local num = math.max(1, math.floor(tonumber(val) or 1))
+    BurstCount = num
 
-	LoopId += 1
-	local CurrentId = LoopId
+    SyncingBurstUI = true
+    if not fromSlider and BurstSliderRef and type(BurstSliderRef.Set) == "function" then
+        pcall(function()
+            BurstSliderRef:Set(math.clamp(num, 1, SliderMax))
+        end)
+    end
+    if BurstInputRef and type(BurstInputRef.Set) == "function" then
+        pcall(function()
+            BurstInputRef:Set(tostring(num))
+        end)
+    end
+    SyncingBurstUI = false
+end 
 
-	task.spawn(function()
-		while KillEnabled and LoopId == CurrentId do
-			local Character = LocalPlayer.Character
-			local HRP = Character and Character:FindFirstChild("HumanoidRootPart")
-
-			if HRP then
-				local Pet = GetMyPet()
-				local BestAttack = GetBestPetAttack(Pet)
-
-				if Pet and BestAttack then
-					local TargetData = GetTargets(HRP, Pet)
-
-					if #TargetData > 0 then
-						local Clusters = BuildHitClusters(TargetData)
-
-						for _, Cluster in ipairs(Clusters) do
-							if not KillEnabled or LoopId ~= CurrentId then
-								break
-							end
-
-							PetDamage:FireServer(
-								Pet,
-								BestAttack[1],
-								BestAttack[2],
-								Cluster.Mobs,
-								Cluster.Position
-							)
-						end
-					end
-				end
-			end
-
-			task.wait(CONFIG.AttackSpeed)
-		end
-	end)
-end
-
--- ON/OFF Toggle
 MainTab:CreateToggle({
-	Name = "Pet Aura ( Dark Shark recommended)",
-	CurrentValue = false,
-	Flag = "PetKillAura",
-	Callback = function(Value)
-		KillEnabled = Value
-		if Value then
-			StartKillAura()
-		else
-			LoopId += 1
-		end
-	end
+    Name = "Pet Aura (Instant kill)",
+    CurrentValue = false,
+    Flag = "TurboPetAuraFlag"
+    Callback = function(Value)
+        AuraEnabled = Value
+    end,
 })
 
--- Pet Kill Range
-MainTab:CreateSlider({
-	Name = "Pet Kill Range",
-	Range = {10, 300},
-	Increment = 5,
-	Suffix = "Studs",
-	CurrentValue = 200,
-	Flag = "PetKillRange",
-	Callback = function(Value)
-		CONFIG.KillRange = Value
-	end
+MainTab:CreateToggle({
+    Name = "Ignore TargetDummy",
+    CurrentValue = true,
+    Flag = "IgnoreTargetDummyFlag"
+    Callback = function(Value)
+        IgnoreTargetDummy = Value
+    end,
 })
 
--- Pet Attack Speed
-MainTab:CreateSlider({
-	Name = "Pet Attack Speed",
-	Range = {0.001, 1},
-	Increment = 0.01,
-	Suffix = "Seconds",
-	CurrentValue = 0.001,
-	Flag = "PetAttackSpeed",
-	Callback = function(Value)
-		CONFIG.AttackSpeed = Value
-	end
+BurstSliderRef = MainTab:CreateSlider({
+    Name = "Burst Multiplier (Max 50x)",
+    Range = {1, SliderMax},
+    Increment = 1,
+    Suffix = "x",
+    CurrentValue = BurstCount,
+    Flag = "PetBurstSliderFlag"
+    Callback = function(Value)
+        SetBurstValue(Value, true)
+    end,
 })
 
+BurstInputRef = MainTab:CreateInput({
+    Name = "Custom Burst Count",
+    CurrentValue = tostring(BurstCount),
+    PlaceholderText = "Type burst",
+    RemoveTextAfterFocusLost = false,
+    Flag = "PetBurstInputFlag"
+    Callback = function(Text)
+        local cleaned = string.gsub(Text or "", "[^%d]", "")
+        local parsed = tonumber(cleaned)
+        if parsed and parsed >= 1 then
+            SetBurstValue(parsed, false)
+        else
+            SetBurstValue(BurstCount, false)
+        end
+    end,
+})
+
+-- ==========================================
+-- BURST EXECUTION LOOP
+-- ==========================================
+task.spawn(function()
+    while true do
+        if AuraEnabled and PetDamageRemote then
+            local pet = GetMyPet()
+            if pet then
+                local bestAtk = GetBestPetAttack(pet)
+                if bestAtk then
+                    local targets, spoofPos = GetValidTargets(pet, bestAtk.Range)
+                    if #targets > 0 then
+                        local remaining = BurstCount
+                        while remaining > 0 and AuraEnabled do
+                            local batch = math.min(remaining, ChunkSize)
+                            for _ = 1, batch do
+                                pcall(function()
+                                    PetDamageRemote:FireServer(pet, bestAtk.AtkName, bestAtk.PartName, targets, spoofPos)
+                                end)
+                            end
+                            remaining -= batch
+                            if remaining > 0 then
+                                RunService.Heartbeat:Wait()
+                            end
+                        end
+                    end
+                end
+            end
+            task.wait(TickDelay)
+        else
+            task.wait(0.2)
+        end
+    end
+end)
 
 -- ==========================================
 -- SCRIPT LOADERS (FOLLOW PLAYER & EMOTE V2)
