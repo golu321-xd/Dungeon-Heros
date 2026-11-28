@@ -5537,16 +5537,23 @@ local ContentH = math.ceil(DropLayout.AbsoluteContentSize.Y / CurScale) + 8
         Library:SaveConfiguration()
     end
 
-    -- Floating Quick-Toggle Shortcut Spawner (Draggable On-Screen Pill)
-    Internal.ToggleFloatingBtnFn = function(KeyName)
-        local Existing = Internal.FloatingButtons[KeyName]
-        if Existing then
-            if Existing.Frame and Existing.Frame.Parent then Existing.Frame:Destroy() end
-            Internal.FloatingButtons[KeyName] = nil
-            local Entry = Internal.PinnableRegistry[KeyName]
-            if Entry and Entry.UpdateFloatVisual then Entry.UpdateFloatVisual(false) end
-            return
-        end
+        -- Floating Quick-Toggle Shortcut Spawner (Auto-Save State + Exact Position)
+    local SavedFloatData = {}
+    local FloatFlagObj = {CurrentValue = SavedFloatData}
+
+    local function RecordFloatPos(KeyName, Pos)
+        if typeof(Pos) ~= "UDim2" then return end
+        SavedFloatData[KeyName] = {
+            xs = Pos.X.Scale,
+            xo = Pos.X.Offset,
+            ys = Pos.Y.Scale,
+            yo = Pos.Y.Offset,
+        }
+        FloatFlagObj.CurrentValue = SavedFloatData
+    end
+
+    local function SpawnFloatingBtn(KeyName, SavedPos, SkipSave)
+        if Internal.FloatingButtons[KeyName] then return end
 
         local Entry = Internal.PinnableRegistry[KeyName]
         if not Entry or Entry.Kind ~= "Toggle" then return end
@@ -5554,11 +5561,21 @@ local ContentH = math.ceil(DropLayout.AbsoluteContentSize.Y / CurScale) + 8
         local ActiveCount = 0
         for _ in pairs(Internal.FloatingButtons) do ActiveCount = ActiveCount + 1 end
 
+        local StartUDim = UDim2.new(0, 18, 0.25, ActiveCount * 38)
+        if type(SavedPos) == "table" then
+            StartUDim = UDim2.new(
+                tonumber(SavedPos.xs) or 0,
+                tonumber(SavedPos.xo) or 18,
+                tonumber(SavedPos.ys) or 0.25,
+                tonumber(SavedPos.yo) or (ActiveCount * 38)
+            )
+        end
+
         local State = Entry.GetState()
         local FloatBtn = Make("Frame", {
             Name = "Float_" .. KeyName,
             Size = UDim2.new(0, 114, 0, 32),
-            Position = UDim2.new(0, 18, 0.25, ActiveCount * 38),
+            Position = StartUDim,
             BackgroundColor3 = Color3.fromRGB(14, 17, 26),
             BackgroundTransparency = 0.20,
             ZIndex = 56
@@ -5591,7 +5608,7 @@ local ContentH = math.ceil(DropLayout.AbsoluteContentSize.Y / CurScale) + 8
             Internal.ToggleFloatingBtnFn(KeyName)
         end)
 
-        -- Draggable + Tap to Toggle (drag >= 10px moves, tap < 10px toggles!)
+        -- Draggable + Tap to Toggle + Auto-Save Exact Drop Position
         local Dragging, ActiveIn, StartPos, FrameStart, Moved = false, nil, nil, nil, 0
         FloatBtn.InputBegan:Connect(function(In)
             if In.UserInputType == Enum.UserInputType.MouseButton1 or In.UserInputType == Enum.UserInputType.Touch then
@@ -5599,7 +5616,7 @@ local ContentH = math.ceil(DropLayout.AbsoluteContentSize.Y / CurScale) + 8
             end
         end)
         TrackConn(UserInputService.InputChanged:Connect(function(In)
-            if Dragging and (In == ActiveIn or In.UserInputType == Enum.UserInputType.MouseMovement) then
+            if Dragging and FloatBtn and FloatBtn.Parent and (In == ActiveIn or In.UserInputType == Enum.UserInputType.MouseMovement) then
                 local Delta = In.Position - StartPos
                 Moved = Delta.Magnitude
                 FloatBtn.Position = UDim2.new(FrameStart.X.Scale, FrameStart.X.Offset + Delta.X, FrameStart.Y.Scale, FrameStart.Y.Offset + Delta.Y)
@@ -5608,9 +5625,13 @@ local ContentH = math.ceil(DropLayout.AbsoluteContentSize.Y / CurScale) + 8
         TrackConn(UserInputService.InputEnded:Connect(function(In)
             if Dragging and (In == ActiveIn or In.UserInputType == Enum.UserInputType.MouseButton1 or In.UserInputType == Enum.UserInputType.Touch) then
                 Dragging = false; ActiveIn = nil
+                if not (FloatBtn and FloatBtn.Parent) then return end
                 if Moved < 10 then
                     PlayUISound("Toggle", Entry.GetState() and 0.95 or 1.2)
                     Entry.Toggle()
+                else
+                    RecordFloatPos(KeyName, FloatBtn.Position)
+                    Library:SaveConfiguration(nil, true)
                 end
             end
         end))
@@ -5623,7 +5644,68 @@ local ContentH = math.ceil(DropLayout.AbsoluteContentSize.Y / CurScale) + 8
             end
         }
         if Entry.UpdateFloatVisual then Entry.UpdateFloatVisual(true) end
+
+        RecordFloatPos(KeyName, FloatBtn.Position)
+        if not SkipSave then
+            Library:SaveConfiguration(nil, true)
+        end
     end
+
+    Internal.ToggleFloatingBtnFn = function(KeyName)
+        local Existing = Internal.FloatingButtons[KeyName]
+        if Existing then
+            if Existing.Frame and Existing.Frame.Parent then Existing.Frame:Destroy() end
+            Internal.FloatingButtons[KeyName] = nil
+            SavedFloatData[KeyName] = nil
+            FloatFlagObj.CurrentValue = SavedFloatData
+            local Entry = Internal.PinnableRegistry[KeyName]
+            if Entry and Entry.UpdateFloatVisual then Entry.UpdateFloatVisual(false) end
+            Library:SaveConfiguration(nil, true)
+            return
+        end
+
+        SpawnFloatingBtn(KeyName, SavedFloatData[KeyName], false)
+    end
+
+    -- Persist Active FLT Buttons & Their Exact Positions Across TP / Rejoin
+    function FloatFlagObj:Set(SavedMap)
+        for KeyName, Obj in pairs(Internal.FloatingButtons) do
+            if Obj and Obj.Frame and Obj.Frame.Parent then Obj.Frame:Destroy() end
+            local Entry = Internal.PinnableRegistry[KeyName]
+            if Entry and Entry.UpdateFloatVisual then Entry.UpdateFloatVisual(false) end
+        end
+        table.clear(Internal.FloatingButtons)
+        table.clear(SavedFloatData)
+
+        if type(SavedMap) == "table" then
+            local Missing = {}
+            for KeyName, PosTbl in pairs(SavedMap) do
+                if type(PosTbl) == "table" then
+                    SavedFloatData[tostring(KeyName)] = PosTbl
+                    if Internal.PinnableRegistry[tostring(KeyName)] then
+                        SpawnFloatingBtn(tostring(KeyName), PosTbl, true)
+                    else
+                        table.insert(Missing, tostring(KeyName))
+                    end
+                end
+            end
+            if #Missing > 0 then
+                task.delay(0.5, function()
+                    for _, k in ipairs(Missing) do
+                        if SavedFloatData[k] and not Internal.FloatingButtons[k] and Internal.PinnableRegistry[k] then
+                            SpawnFloatingBtn(k, SavedFloatData[k], true)
+                        end
+                    end
+                end)
+            end
+        end
+        FloatFlagObj.CurrentValue = SavedFloatData
+    end
+
+    Library.Flags["SidUI_FloatingButtons"] = FloatFlagObj
+    Internal.DefaultValues["SidUI_FloatingButtons"] = {}
+        
+         
 
     Internal.SyncToggleExternalsFn = function(KeyName, NewVal)
         if PinnedMirrorUpdaters[KeyName] then pcall(PinnedMirrorUpdaters[KeyName], NewVal) end
