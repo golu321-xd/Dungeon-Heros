@@ -3716,20 +3716,27 @@ function Library:CreateWindow(Config)
             return {Set = function(_, Vis) Wrap.Visible = (Vis ~= false) end}
         end
 
-        function Tab:CreateLabel(Text, _Icon, ColorOverride)
+                function Tab:CreateLabel(Text, _Icon, ColorOverride)
             local Card = Make("Frame", {
                 Size = UDim2.new(1, 0, 0, 30), BackgroundColor3 = Theme.CardBg,
-                BackgroundTransparency = GetSurfaceSpec(LooksState.SurfaceMode).Card, ZIndex = 7
+                BackgroundTransparency = GetSurfaceSpec(LooksState.SurfaceMode).Card,
+                ClipsDescendants = true, ZIndex = 7
             }, TabPage)
             AddCorner(Card, 9); AddStroke(Card, typeof(ColorOverride) == "Color3" and ColorOverride or Theme.Stroke, 1, 0.45)
             table.insert(Registry.Cards, Card)
             local Lbl = Make("TextLabel", {
                 Size = UDim2.new(1, -20, 1, 0), Position = UDim2.new(0, 10, 0, 0), BackgroundTransparency = 1,
                 Font = Enum.Font.GothamMedium, TextSize = 12,
-                TextColor3 = typeof(ColorOverride) == "Color3" and ColorOverride or Theme.TextMuted,
-                TextXAlignment = Enum.TextXAlignment.Left, Text = tostring(Text or ""), ZIndex = 8
+                TextColor3 = typeof(ColorOverride) == "Color3" and ColorOverride or Theme.TextPrimary,
+                TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
+                Text = tostring(Text or ""), ZIndex = 8
             }, Card)
-            return {Set = function(_, NewText) Lbl.Text = tostring(NewText) end}
+            local Obj = {}
+            function Obj.Set(a, b)
+                local NewText = (a == Obj) and b or a
+                Lbl.Text = tostring(NewText or "")
+            end
+            return Obj
         end
 
         function Tab:CreateParagraph(Opts)
