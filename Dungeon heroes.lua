@@ -5582,73 +5582,109 @@ local function IsValidEnemy(Mob, MyPet)
     return true
 end
 
--- Scans all attacks of current pet and locks ONLY the single highest HitDamage attack/part
+local ModelProvider = nil
+pcall(function()
+    ModelProvider = require(RS.Systems.ModelProvider)
+end)
+
+local function GetAttacksFolderClient(pet)
+    -- 1. Try MobsSys first
+    if MobsSys then
+        local ok, folder = pcall(function()
+            local mobData = MobsSys:GetMobDataFromModel(pet)
+            local diff = (mobData and mobData.difficulty) or pet:GetAttribute("Difficulty")
+            return MobsSys:GetMobAttacksFolder(pet.Name, diff) or MobsSys:GetMobAttacksFolder(pet.Name)
+        end)
+        if ok and folder then
+            return folder, (pet:GetAttribute("Difficulty") or nil)
+        end
+    end
+
+    -- 2. Fallback: ModelProvider (same way game client loads pet attacks)
+    if ModelProvider then
+        local ok, tpl = pcall(function()
+            return ModelProvider:GetModel(pet.Name)
+        end)
+        if ok and tpl then
+            local diff = pet:GetAttribute("Difficulty")
+            local atkFolder = (diff and tpl:FindFirstChild("Attacks_" .. tostring(diff)))
+                or tpl:FindFirstChild("Attacks")
+            if not atkFolder then
+                for _, d in ipairs(tpl:GetDescendants()) do
+                    if d:IsA("Folder") and string.find(string.lower(d.Name), "attack", 1, true) then
+                        atkFolder = d
+                        break
+                    end
+                end
+            end
+            return atkFolder, diff
+        end
+    end
+
+    return nil, nil
+end
+
 local function GetBestPetAttack(pet)
     if BestAtkCache[pet] then
         return BestAtkCache[pet]
     end
 
-    -- Clean stale dead pet references
     for cachedPet in pairs(BestAtkCache) do
         if not cachedPet or not cachedPet.Parent then
             BestAtkCache[cachedPet] = nil
         end
     end
 
+    local folder, diff = GetAttacksFolderClient(pet)
+    if not folder then return nil end
+
     local best = nil
-    if MobsSys then
-        pcall(function()
-            local mobData = MobsSys:GetMobDataFromModel(pet)
-            local diff = (mobData and mobData.difficulty) or pet:GetAttribute("Difficulty")
-            local folder = MobsSys:GetMobAttacksFolder(pet.Name, diff)
-            if not folder then
-                folder = MobsSys:GetMobAttacksFolder(pet.Name)
-            end
-            if not folder then return end
+    local bestDmg = -1
+    local bestRange = -1
 
-            local bestDmg = -1
-            local bestRange = -1
+    for _, atk in ipairs(folder:GetChildren()) do
+        local atkRangeObj = atk:FindFirstChild("AttackRange")
+        local atkRange = (atkRangeObj and tonumber(atkRangeObj.Value)) or 30
 
-            local function EvaluateCandidate(atk, atkRange, partName)
-                local okR, resolved = pcall(function()
-                    return MobsSys:ResolvePetAttackHitPart(pet.Name, atk.Name, partName, diff)
-                end)
-                if not okR or not resolved then return end
-                if resolved:FindFirstChild("IsHeal") then return end
-
-                local hd = resolved:FindFirstChild("HitDamage") or atk:FindFirstChild("HitDamage")
-                local dmgMult = (hd and tonumber(hd.Value)) or 1
-
-                if dmgMult > bestDmg or (dmgMult == bestDmg and atkRange > bestRange) then
-                    bestDmg = dmgMult
-                    bestRange = atkRange
-                    best = {
-                        AtkName = atk.Name,
-                        PartName = partName,
-                        Range = atkRange + 10,
-                        Mult = dmgMult,
-                    }
-                end
-            end
-
-            for _, atk in ipairs(folder:GetChildren()) do
-                local atkRangeObj = atk:FindFirstChild("AttackRange")
-                local atkRange = (atkRangeObj and tonumber(atkRangeObj.Value)) or 30
-
-                local checkedNames = {}
-                for _, child in ipairs(atk:GetDescendants()) do
-                    if not checkedNames[child.Name] then
-                        checkedNames[child.Name] = true
-                        EvaluateCandidate(atk, atkRange, child.Name)
+        local foundPart = false
+        for _, child in ipairs(atk:GetDescendants()) do
+            if not child:FindFirstChild("IsHeal") then
+                local hd = child:FindFirstChild("HitDamage")
+                if hd and tonumber(hd.Value) then
+                    foundPart = true
+                    local dmgMult = tonumber(hd.Value)
+                    if dmgMult > bestDmg or (dmgMult == bestDmg and atkRange > bestRange) then
+                        bestDmg = dmgMult
+                        bestRange = atkRange
+                        best = {
+                            AtkName = atk.Name,
+                            PartName = child.Name,
+                            Range = atkRange + 10,
+                            Mult = dmgMult,
+                        }
                     end
                 end
-
-                -- Fallback if attack resolves by its own name
-                if not checkedNames[atk.Name] then
-                    EvaluateCandidate(atk, atkRange, atk.Name)
-                end
             end
-        end)
+        end
+
+        -- Fallback if HitDamage is directly on attack or default 1x
+        if not foundPart and not atk:FindFirstChild("IsHeal") then
+            local hd = atk:FindFirstChild("HitDamage")
+            local dmgMult = (hd and tonumber(hd.Value)) or 1
+            local firstPart = atk:FindFirstChildWhichIsA("BasePart") or atk:GetChildren()[1]
+            local partName = (firstPart and firstPart.Name) or atk.Name
+
+            if dmgMult > bestDmg or (dmgMult == bestDmg and atkRange > bestRange) then
+                bestDmg = dmgMult
+                bestRange = atkRange
+                best = {
+                    AtkName = atk.Name,
+                    PartName = partName,
+                    Range = atkRange + 10,
+                    Mult = dmgMult,
+                }
+            end
+        end
     end
 
     if best then
@@ -5656,6 +5692,7 @@ local function GetBestPetAttack(pet)
     end
     return best
 end
+
 
 local function GetValidTargets(pet, atkRange)
     local char = LP.Character
@@ -5787,22 +5824,35 @@ end)
 -- ==========================================
 -- MAIN BURST LOOP (HIGHEST DMG ATTACK ONLY)
 -- ==========================================
+local LastLabelText = ""
+local function UpdateLockedLabel(txt)
+    if txt == LastLabelText then return end
+    LastLabelText = txt
+    if BestAtkLabelRef and type(BestAtkLabelRef.Set) == "function" then
+        pcall(function()
+            BestAtkLabelRef:Set(txt)
+        end)
+    end
+end
+
 task.spawn(function()
     while true do
         local pet = GetMyPet()
-        if pet then
+        if not pet then
+            LastShownPet = nil
+            UpdateLockedLabel("Locked Skill: No active pet")
+            task.wait(0.25)
+        else
             local bestAtk = GetBestPetAttack(pet)
-            if bestAtk and pet ~= LastShownPet then
-                LastShownPet = pet
-                if BestAtkLabelRef and type(BestAtkLabelRef.Set) == "function" then
-                    pcall(function()
-                        BestAtkLabelRef:Set(string.format(
-                            "Locked Attack: %s (%sx DMG)",
-                            tostring(bestAtk.AtkName),
-                            tostring(bestAtk.Mult)
-                        ))
-                    end)
-                end
+            if bestAtk then
+                UpdateLockedLabel(string.format(
+                    "Locked Skill: %s [%s] (%sx)",
+                    tostring(bestAtk.AtkName),
+                    tostring(bestAtk.PartName),
+                    tostring(bestAtk.Mult)
+                ))
+            else
+                UpdateLockedLabel("Locked Skill: Attacks folder not found (" .. tostring(pet.Name) .. ")")
             end
 
             if AuraEnabled and PetDamageRemote and bestAtk then
@@ -5826,12 +5876,10 @@ task.spawn(function()
             else
                 task.wait(0.15)
             end
-        else
-            LastShownPet = nil
-            task.wait(0.25)
         end
     end
 end)
+
 end
 
 -- ==========================================
